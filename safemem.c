@@ -20,6 +20,22 @@ void *safe_malloc(size_t len)
 }
 
 //
+// Allocate a zeroed block of memory, and exit the program on error.
+//
+void *safe_zalloc(size_t len)
+{
+    void *blk = malloc(len);
+    if (!blk) {
+        fprintf(stderr, "out of memory\n");
+        exit(1);
+    }
+
+    memset(blk, 0, len);
+    
+    return blk;
+}
+
+//
 // Reallocate a block of memory, and exit the program on error.
 // Semantics are the same as realloc()
 //

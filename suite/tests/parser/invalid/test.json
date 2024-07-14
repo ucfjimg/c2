@@ -1,0 +1,4 @@
+{
+    "no-return-type.c": "parse:fail",
+    "stray-char.c": "parse:fail"
+}

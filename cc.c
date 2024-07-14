@@ -4,12 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "errors.h"
 #include "lexer.h"
+#include "parser.h"
 #include "safemem.h"
 #include "token.h"
 
 typedef enum {
     STAGE_LEX = 256,
+    STAGE_PARSE,
     STAGE_ALL,
 } Stage;
 
@@ -24,6 +27,7 @@ typedef struct {
 
 static struct option long_opts[] = {
     { "lex",    no_argument, 0, STAGE_LEX },
+    { "parse",    no_argument, 0, STAGE_PARSE },
     { 0, 0, 0, 0},    
 };
 
@@ -32,7 +36,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [-k] [--lex] srcfile\n");
+    fprintf(stderr, "cc: [-c] [-k] [--lex | --parse] srcfile\n");
     exit(1);
 }
 
@@ -111,6 +115,7 @@ static void parse_args(int argc, char *argv[], Args *args)
                 break;
 
             case STAGE_LEX:
+            case STAGE_PARSE:
                 if (args->stage != STAGE_ALL) {
                     fprintf(stderr, "--stage may only be specified once.\n");
                     usage();
@@ -228,6 +233,26 @@ static int lex_pass(Args *args)
     return status;
 }
 
+//
+// Run just the parser, and print the resulting AST. Return a 0 status
+// on success, 1 if there were errors.
+//
+static int parse_pass(Args *args)
+{
+    Lexer *lex = lexer_open(args->prefile);
+    if (!lex) {
+        return 1;
+    }
+
+    AstNode *prog = parser_parse(lex);
+
+    ast_free(prog);
+
+    lexer_close(lex);
+
+    return err_has_errors() ? 1 : 0;
+}
+
 int main(int argc, char *argv[])
 {
     int status = 0;
@@ -242,6 +267,11 @@ int main(int argc, char *argv[])
 
     if (args.stage == STAGE_LEX) {
         status = lex_pass(&args);
+        goto done;
+    }
+
+    if (args.stage == STAGE_PARSE) {
+        status = parse_pass(&args);
         goto done;
     }
 

@@ -36,7 +36,7 @@ def runtest(dir, name, test):
 
     stage, action = stest
 
-    if stage != 'lex':
+    if not stage in ['lex', 'parse']:
         print(f'invalid test stage `{stage}` for test `{name}` in dir `{dir}`.')
         sys.exit(1)
 
