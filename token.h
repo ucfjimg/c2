@@ -1,0 +1,50 @@
+#pragma once
+
+#include "fileline.h"
+
+typedef enum {
+    //
+    // operators/puncuation
+    //
+    TOK_LBRACE = '{',    
+    TOK_LPAREN = '(',
+    TOK_RBRACE = '}',
+    TOK_RPAREN = ')',
+    TOK_SEMI = ';',
+
+    TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
+
+    // 
+    // meta tokens
+    //
+    TOK_EOF,
+    TOK_ERROR,
+
+    //
+    // values
+    //
+    TOK_ID,
+    TOK_INT_CONST,
+    
+    //
+    // keywords
+    //
+    TOK_INT,
+    TOK_RETURN,
+    TOK_VOID,
+
+} TokenType;
+
+typedef struct {
+    TokenType type;             // type for discrimated union
+    FileLine file_line;         // file/line of first character of token
+
+    union {
+        char *id;               // if TOK_ID
+        unsigned long intval;   // if TOK_INT_CONST
+        char *err;              // if TOK_ERROR, the invalid token
+    };
+} Token;
+
+extern void token_free(Token *tok);
+extern char *token_describe(Token *tok);

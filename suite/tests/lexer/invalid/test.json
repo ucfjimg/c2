@@ -1,0 +1,4 @@
+{
+    "bad-char.c": "lex:fail",
+    "bad-identifier.c": "lex:fail"
+}

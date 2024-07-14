@@ -1,0 +1,98 @@
+#!/bin/env python3
+
+import json
+import os
+import subprocess
+import sys
+
+#
+# compiler to test
+#
+cc = os.getenv('CC')
+if cc == None:
+    root = os.path.dirname(os.path.abspath(sys.argv[0]))
+    cc = os.path.join(root, '../build/cc')
+cc = os.path.abspath(cc)
+if not os.access(cc, os.X_OK):
+    print(f'{cc} does not exist or is not executable.')
+    sys.exit(1)
+
+total_tests = 0
+failures = []
+
+def failtest(dir, name, msg):
+    global failures
+    failures += [(dir, name, msg)]
+    pass
+
+def runtest(dir, name, test):
+    global total_tests
+    total_tests += 1
+
+    stest = test.split(':')
+    if len(stest) != 2:
+        print(f'invalid test specification for test `{name}` in dir `{dir}`: `{test}`.')
+        sys.exit(1)
+
+    stage, action = stest
+
+    if stage != 'lex':
+        print(f'invalid test stage `{stage}` for test `{name}` in dir `{dir}`.')
+        sys.exit(1)
+
+    if not action in ['success', 'fail']:
+        print(f'invalid test action `{action}` for test `{name}` in dir `{dir}`.')
+        sys.exit(1)
+
+    src = os.path.join(dir, name)
+    if not os.access(src, os.R_OK):
+        print(f'invalid test: file {src} does not exist.')
+        sys.exit(1)
+
+    cmd = [cc,  f'--{stage}', os.path.join(dir, name)]
+    out = subprocess.run(cmd, capture_output = True, cwd='.')
+
+    success = True
+    if action == 'success':
+        if out.returncode != 0:
+            msg = "failed to process valid source"
+            success = False
+    elif action == 'fail':
+        if out.returncode == 0:
+            msg = "failed to flag invalid source"
+            success = False
+
+    if not success:
+        failtest(dir, name, msg)
+        print(f'FAIL: test {dir}::{name} - {msg}')        
+        err = out.stderr.decode('ascii')
+        if err:
+            for line in err.split('\n'):
+                print(f'STDERR: {line}')
+        else:
+            print("-- no output to stderr")
+
+        print()
+
+
+def rundir(dir):
+    try:
+        config = json.load(open(os.path.join(dir, 'test.json')))
+    except:
+        print(f'could not parse test.json in `{dir}`.')
+        sys.exit(1)
+
+    for name, test in config.items():
+        runtest(dir, name, test)
+
+
+os.chdir(root)
+for dir, _, files in os.walk('tests'):
+    if 'test.json' in files:
+        rundir(dir)
+
+print(f'{total_tests} tests.')
+if failures:
+    for dir, name, msg in failures:
+        print(f'FAIL: {dir}::{name} - {msg}')
+    print(f'{len(failures)} total failures.')
