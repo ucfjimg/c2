@@ -16,8 +16,14 @@ typedef enum {
     STAGE_ALL,
 } Stage;
 
+typedef enum {
+    OPT_KEEP = 512,
+    OPT_LINENOS,
+} Options;
+
 typedef struct {
     bool compile_only;                  // if set, don't link, just produce .s file
+    bool line_nos;                      // if set, print line number information
     bool keep;                          // if set, don't remove any produced files, even on error
     char *srcfile;                      // name of source file
     char *prefile;                      // computed name of preprocessed file (.i)
@@ -26,8 +32,10 @@ typedef struct {
 } Args;
 
 static struct option long_opts[] = {
-    { "lex",    no_argument, 0, STAGE_LEX },
-    { "parse",    no_argument, 0, STAGE_PARSE },
+    { "lex",        no_argument, 0, STAGE_LEX },
+    { "parse",      no_argument, 0, STAGE_PARSE },
+    { "keep",       no_argument, 0, OPT_KEEP },
+    { "line-nos",   no_argument, 0, OPT_LINENOS },
     { 0, 0, 0, 0},    
 };
 
@@ -36,7 +44,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [-k] [--lex | --parse] srcfile\n");
+    fprintf(stderr, "cc: [-c] [--lex | --parse] [--keep] [--line-no] srcfile\n");
     exit(1);
 }
 
@@ -104,14 +112,18 @@ static void parse_args(int argc, char *argv[], Args *args)
 
     args->stage = STAGE_ALL;
 
-    while ((flag = getopt_long(argc, argv, "ck", long_opts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "c", long_opts, NULL)) != -1) {
         switch (flag) {
             case 'c':
                 args->compile_only = true;
                 break;
 
-            case 'k':
+            case OPT_KEEP:
                 args->keep = true;
+                break;
+
+            case OPT_LINENOS:
+                args->line_nos = true;
                 break;
 
             case STAGE_LEX:
@@ -213,9 +225,11 @@ static int lex_pass(Args *args)
         Token tok;
         lexer_token(lex, &tok);
 
-        char *fl = fileline_describe(&tok.file_line);
-        printf("%s: ", fl);
-        safe_free(fl);
+        if (args->line_nos) {
+            char *fl = fileline_describe(&tok.loc);
+            printf("%s: ", fl);
+            safe_free(fl);
+        }
 
         char *desc = token_describe(&tok);
         printf("%s\n", desc);
@@ -246,7 +260,7 @@ static int parse_pass(Args *args)
 
     AstNode *prog = parser_parse(lex);
 
-    ast_print(prog);
+    ast_print(prog, args->line_nos);
     ast_free(prog);
 
     lexer_close(lex);

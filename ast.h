@@ -1,5 +1,9 @@
 #pragma once
 
+#include "fileline.h"
+
+#include <stdbool.h>
+
 typedef struct Expression Expression;
 typedef struct Statement Statement;
 typedef struct AstNode AstNode;
@@ -13,6 +17,7 @@ typedef enum {
 
 struct Expression {
     ExpressionTag tag;
+    FileLine loc;               
 
     union {
         unsigned long intval;
@@ -36,6 +41,7 @@ typedef struct {
 
 struct Statement {
     StatementTag tag;
+    FileLine loc;               
 
     union {
         StmtReturn ret;         // STMT_RETURN
@@ -65,6 +71,7 @@ typedef struct {
 
 struct AstNode {
     AstTag tag;
+    FileLine loc;               
 
     union {
         AstProgram prog;        // AST_PROGRAM
@@ -76,4 +83,4 @@ extern AstNode *ast_program(void);
 extern AstNode *ast_function(void);
 extern void ast_free(AstNode *ast);
 
-extern void ast_print(AstNode *ast);
+extern void ast_print(AstNode *ast, bool locs);

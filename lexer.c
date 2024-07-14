@@ -234,7 +234,7 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
         tok->type = TOK_ERROR;
         tok->err = stb_take(integer);
 
-        err_report(EC_ERROR, &tok->file_line, "invalid token `%s`", tok->err);
+        err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
     } else {
         unsigned long val = strtoul(integer->str, NULL, 10);
         
@@ -304,8 +304,8 @@ void lexer_token(Lexer *lex, Token *tok)
     }
 
     tok->type = TOK_ERROR;
-    tok->file_line.fname = lexer_current_file(lex);
-    tok->file_line.line = lex->line;
+    tok->loc.fname = lexer_current_file(lex);
+    tok->loc.line = lex->line;
 
     switch (lex->ch) {
         case '{': tok->type = TOK_LBRACE; break;
@@ -337,7 +337,7 @@ void lexer_token(Lexer *lex, Token *tok)
         tok->err = saprintf("char-%02x", lex->ch & 0xff);
     }
 
-    err_report(EC_ERROR, &tok->file_line, "invalid token `%s`", tok->err);
+    err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
 
     lexer_next_char(lex);
 }

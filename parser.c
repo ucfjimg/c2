@@ -25,7 +25,7 @@ static void parse_next_token(Parser *parser)
 static void report_expected_err(Token *tok, char *expected)
 {
     char *tok_desc = token_describe(tok);
-    err_report(EC_ERROR, &tok->file_line, "expected %s; found `%s`.", expected, tok_desc);
+    err_report(EC_ERROR, &tok->loc, "expected %s; found `%s`.", expected, tok_desc);
     safe_free(tok_desc);
 }
 
@@ -34,18 +34,23 @@ static void report_expected_err(Token *tok, char *expected)
 //
 static Expression *parse_expression(Parser *parser)
 {
+    FileLine loc = parser->tok.loc;
+
     //
     // <expression> := <int>
     //
     if (parser->tok.type != TOK_INT_CONST) {
         report_expected_err(&parser->tok, "integer constant");
 
-        return exp_int(0);
+        Expression *exp = exp_int(0);
+        exp->loc = loc;
+        return exp;
     }
 
     Expression *exp = exp_int(parser->tok.intval);
     parse_next_token(parser);
 
+    exp->loc = loc;
     return exp;
 }
 
@@ -54,12 +59,16 @@ static Expression *parse_expression(Parser *parser)
 //
 static Statement *parse_statement(Parser *parser)
 {
+    FileLine loc = parser->tok.loc;
+
     //
     // <statement> := "return" <exp> ";"
     //
     if (parser->tok.type != TOK_RETURN) {
         report_expected_err(&parser->tok, "`return`");
-        return stmt_null();
+        Statement *null = stmt_null();
+        null->loc = loc;
+        return null;
     }
 
     parse_next_token(parser);
@@ -70,7 +79,9 @@ static Statement *parse_statement(Parser *parser)
     }
     parse_next_token(parser);
 
-    return stmt_return(exp);
+    Statement *stmt = stmt_return(exp);
+    stmt->loc = loc;
+    return stmt;
 }
 
 //
@@ -82,6 +93,8 @@ static AstNode *parse_function(Parser *parser)
     // <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
     //
     AstNode *node = ast_function();
+    node->loc = parser->tok.loc;
+
     AstFunction *func = &node->func;
 
     if (parser->tok.type != TOK_INT) {
@@ -144,6 +157,7 @@ AstNode *parser_parse(Lexer *lex)
     // <program> := <function>
     //
     AstNode *prog = ast_program();
+    prog->loc = parser.tok.loc;
 
     prog->prog.func = parse_function(&parser);
 

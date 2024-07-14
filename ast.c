@@ -135,9 +135,15 @@ void ast_free(AstNode *ast)
 //
 // Recusively print an expression, starting at indent `tab`
 //
-static void exp_print_recurse(Expression *exp, int tab)
+static void exp_print_recurse(Expression *exp, int tab, bool locs)
 {
     char *indent = str_repeat(tab, ' ');
+
+    if (locs) {
+        char *loc = fileline_describe(&exp->loc);
+        printf("%s/* %s */\n", indent, loc);
+        safe_free(loc);
+    }
 
     switch (exp->tag) {
         case EXP_INT:
@@ -151,9 +157,15 @@ static void exp_print_recurse(Expression *exp, int tab)
 //
 // Recusively print a statement, starting at indent `tab`
 //
-static void stmt_print_recurse(Statement *stmt, int tab)
+static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
 {
     char *indent = str_repeat(tab, ' ');
+
+    if (locs) {
+        char *loc = fileline_describe(&stmt->loc);
+        printf("%s/* %s */\n", indent, loc);
+        safe_free(loc);
+    }
 
     switch (stmt->tag) {
         case STMT_NULL:
@@ -162,7 +174,7 @@ static void stmt_print_recurse(Statement *stmt, int tab)
 
         case STMT_RETURN:
             printf("%sreturn {\n", indent);
-            exp_print_recurse(stmt->ret.exp, tab + 2);
+            exp_print_recurse(stmt->ret.exp, tab + 2, locs);
             printf("%s}\n", indent);
             break;
     }
@@ -173,20 +185,26 @@ static void stmt_print_recurse(Statement *stmt, int tab)
 //
 // Recursively print an AST, starting at indent `tab`.
 //
-static void ast_print_recurse(AstNode *ast, int tab)
+static void ast_print_recurse(AstNode *ast, int tab, bool locs)
 {
     char *indent = str_repeat(tab, ' ');
+
+    if (locs) {
+        char *loc = fileline_describe(&ast->loc);
+        printf("%s/* %s */\n", indent, loc);
+        safe_free(loc);
+    }
 
     switch (ast->tag) {
         case AST_PROGRAM:
             printf("%sprogram() {\n", indent);
-            ast_print_recurse(ast->prog.func, tab + 2);
+            ast_print_recurse(ast->prog.func, tab + 2, locs);
             printf("%s}\n", indent);
             break;
 
         case AST_FUNCTION:
             printf("%sfunction(int, %s) {\n", indent, ast->func.name);
-            stmt_print_recurse(ast->func.stmt, tab + 2);
+            stmt_print_recurse(ast->func.stmt, tab + 2, locs);
             printf("%s}\n", indent);
             break;
     }
@@ -196,9 +214,10 @@ static void ast_print_recurse(AstNode *ast, int tab)
 }
 
 //
-// Recursively print an AST
+// Recursively print an AST. If `locs` is true, also print the file/line
+// location of each node.
 //
-void ast_print(AstNode *ast)
+void ast_print(AstNode *ast, bool locs)
 {
-    ast_print_recurse(ast, 0);
+    ast_print_recurse(ast, 0, locs);
 }

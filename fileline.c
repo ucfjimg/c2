@@ -8,5 +8,8 @@
 //
 char *fileline_describe(FileLine *fl)
 {
+    if (fl->fname == NULL) {
+        return saprintf("<invalid-location>");
+    }
     return saprintf("%s:%d", fl->fname, fl->line);
 }

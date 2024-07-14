@@ -37,7 +37,7 @@ typedef enum {
 
 typedef struct {
     TokenType type;             // type for discrimated union
-    FileLine file_line;         // file/line of first character of token
+    FileLine loc;               // file/line of first character of token
 
     union {
         char *id;               // if TOK_ID
