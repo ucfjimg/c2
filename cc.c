@@ -246,6 +246,7 @@ static int parse_pass(Args *args)
 
     AstNode *prog = parser_parse(lex);
 
+    ast_print(prog);
     ast_free(prog);
 
     lexer_close(lex);

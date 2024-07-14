@@ -75,3 +75,5 @@ struct AstNode {
 extern AstNode *ast_program(void);
 extern AstNode *ast_function(void);
 extern void ast_free(AstNode *ast);
+
+extern void ast_print(AstNode *ast);

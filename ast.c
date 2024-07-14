@@ -1,6 +1,9 @@
 #include "ast.h"
 
 #include "safemem.h"
+#include "strutil.h"
+
+#include <stdio.h>
 
 //
 // Construct an integer constant expression
@@ -129,3 +132,73 @@ void ast_free(AstNode *ast)
     }
 }
 
+//
+// Recusively print an expression, starting at indent `tab`
+//
+static void exp_print_recurse(Expression *exp, int tab)
+{
+    char *indent = str_repeat(tab, ' ');
+
+    switch (exp->tag) {
+        case EXP_INT:
+            printf("%sconst-int(%lu);\n", indent, exp->intval);
+            break;
+    }
+
+    safe_free(indent);
+}
+
+//
+// Recusively print a statement, starting at indent `tab`
+//
+static void stmt_print_recurse(Statement *stmt, int tab)
+{
+    char *indent = str_repeat(tab, ' ');
+
+    switch (stmt->tag) {
+        case STMT_NULL:
+            printf("%snull-statement;\n", indent);
+            break;
+
+        case STMT_RETURN:
+            printf("%sreturn {\n", indent);
+            exp_print_recurse(stmt->ret.exp, tab + 2);
+            printf("%s}\n", indent);
+            break;
+    }
+
+    safe_free(indent);
+}
+ 
+//
+// Recursively print an AST, starting at indent `tab`.
+//
+static void ast_print_recurse(AstNode *ast, int tab)
+{
+    char *indent = str_repeat(tab, ' ');
+
+    switch (ast->tag) {
+        case AST_PROGRAM:
+            printf("%sprogram() {\n", indent);
+            ast_print_recurse(ast->prog.func, tab + 2);
+            printf("%s}\n", indent);
+            break;
+
+        case AST_FUNCTION:
+            printf("%sfunction(int, %s) {\n", indent, ast->func.name);
+            stmt_print_recurse(ast->func.stmt, tab + 2);
+            printf("%s}\n", indent);
+            break;
+    }
+
+
+    safe_free(indent);
+}
+
+//
+// Recursively print an AST
+//
+void ast_print(AstNode *ast)
+{
+    ast_print_recurse(ast, 0);
+}

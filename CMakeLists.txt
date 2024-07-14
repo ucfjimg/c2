@@ -11,6 +11,7 @@ add_executable(cc
     parser.c
     safemem.c
     strbuilder.c
+    strutil.c
     token.c
 )
 
