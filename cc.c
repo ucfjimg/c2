@@ -172,6 +172,7 @@ static void free_args(Args *args)
     safe_free(args->srcfile);
     safe_free(args->prefile);
     safe_free(args->asmfile);
+    safe_free(args->binfile);
 }
 
 //
@@ -268,7 +269,6 @@ int link(Args *args)
     return status == 0 ? 0 : 1;
 }
 
-
 //
 // For debugging, lex the program and dump out the scanned tokens, but do not
 // parse.
@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
         goto done;
     }
 
-    if (!args.compile_only) {
+    if (args.stage == STAGE_ALL && !args.compile_only) {
         status = link(&args);
     }
 

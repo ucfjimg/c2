@@ -4,8 +4,7 @@
 
 #include <stdio.h>
 
-static void asm_print_recurse(AsmNode *node, FileLine loc, bool locs);
-
+static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs);
 
 //
 // Return a register name. The returned string is static, not allocated.
@@ -166,7 +165,7 @@ void asm_free(AsmNode *node)
 //
 // Print an entire assembly program.
 //
-static void asm_prog_print(AsmProgram *prog, FileLine loc, bool locs)
+static void asm_prog_print(AsmProgram *prog, FileLine *loc, bool locs)
 {
     printf("#\n# program\n#\n");
     asm_print_recurse(prog->func, loc, locs);
@@ -175,7 +174,7 @@ static void asm_prog_print(AsmProgram *prog, FileLine loc, bool locs)
 //
 // Print an assembly function.
 //
-static void asm_func_print(AsmFunction *func, FileLine loc, bool locs)
+static void asm_func_print(AsmFunction *func, FileLine *loc, bool locs)
 {
     printf("%s:\n", func->name);
 
@@ -208,12 +207,14 @@ static void asm_ret_print(void)
 //
 // Print the assembly AST.
 //
-static void asm_print_recurse(AsmNode *node, FileLine loc, bool locs)
+static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
 {
     if (locs) {
-        if (node->loc.fname != loc.fname || node->loc.line != loc.line) {
-            printf("# %s:%d\n", node->loc.fname, node->loc.line);
-            loc = node->loc;
+        if (node->loc.fname != loc->fname || node->loc.line != loc->line) {
+            *loc = node->loc;
+            char *sloc = fileline_describe(loc);
+            printf("# %s\n", sloc);
+            safe_free(sloc);
         }
     }
 
@@ -232,7 +233,7 @@ void asm_print(AsmNode *node, bool locs)
 {
     FileLine loc = { NULL, 0 };
 
-    asm_print_recurse(node, loc, locs);
+    asm_print_recurse(node, &loc, locs);
 }
 
 

@@ -1,5 +1,10 @@
 #include "emitcode.h"
 
+#include "fileline.h"
+#include "safemem.h"
+
+static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc);
+
 //
 // Emit a register value.
 //
@@ -52,23 +57,23 @@ static void emit_mov(FILE *out, AsmMov *mov)
 //
 // Emit a function.
 //
-static void emit_function(FILE *out, AsmFunction *func)
+static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
 {
     fprintf(out, "        .globl %s\n", func->name);
     fprintf(out, "%s:\n", func->name);
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
-        emitcode(out, node);
+        emitcode_recurse(out, node, loc);
     }
 }
 
 //
 // emit a top-level program.
 // 
-static void emit_program(FILE *out, AsmProgram *prog)
+static void emit_program(FILE *out, AsmProgram *prog, FileLine *loc)
 {
-    emitcode(out, prog->func);
+    emitcode_recurse(out, prog->func, loc);
 
     fprintf(out, "        .section .note.GNU-stack,\"\",@progbits\n");
 }
@@ -76,12 +81,29 @@ static void emit_program(FILE *out, AsmProgram *prog)
 //
 // Write actual assembly code out.
 //
-void emitcode(FILE *out, AsmNode *node)
+static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
 {
+    if (node->loc.fname != loc->fname || node->loc.line != loc->line) {
+        *loc = node->loc;
+        char *sloc = fileline_describe(loc);
+        fprintf(out, "# %s\n", sloc);
+        safe_free(sloc);
+    }
+
     switch (node->tag) {
-        case ASM_PROG: emit_program(out, &node->prog); break;
-        case ASM_FUNC: emit_function(out, &node->func); break;
+        case ASM_PROG: emit_program(out, &node->prog, loc); break;
+        case ASM_FUNC: emit_function(out, &node->func, loc); break;
         case ASM_MOV:  emit_mov(out, &node->mov); break;
         case ASM_RET:  emit_ret(out); break;
     }
+}
+
+//
+// Top level entry to emit code.
+//
+void emitcode(FILE *out, AsmNode *node)
+{
+    FileLine loc = { NULL, 0 };
+
+    emitcode_recurse(out, node, &loc);
 }
