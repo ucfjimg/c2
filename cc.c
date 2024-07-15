@@ -6,6 +6,7 @@
 
 #include "asm-ast.h"
 #include "codegen.h"
+#include "emitcode.h"
 #include "errors.h"
 #include "lexer.h"
 #include "parser.h"
@@ -31,6 +32,7 @@ typedef struct {
     char *srcfile;                      // name of source file
     char *prefile;                      // computed name of preprocessed file (.i)
     char *asmfile;                      // computed name of asm file (.s)
+    char *binfile;                      // the executable file
     Stage stage;                        // the last pass to run
 } Args;
 
@@ -159,6 +161,7 @@ static void parse_args(int argc, char *argv[], Args *args)
     
     args->prefile = replace_extension(args->srcfile, ".i");
     args->asmfile = replace_extension(args->srcfile, ".s");
+    args->binfile = replace_extension(args->srcfile, "");
 }
 
 //
@@ -205,6 +208,7 @@ static int compile(Args *args)
     int status = 0;
     AstNode *ast = NULL;
     AsmNode *asmcode = NULL;
+    FILE *asmfile;
 
     Lexer *lex = lexer_open(args->prefile);
     if (!lex) {
@@ -234,12 +238,36 @@ static int compile(Args *args)
         goto done;
     }
 
+    asmfile = fopen(args->asmfile, "w");
+    if (!asmfile) {
+        err_report(EC_ERROR, NULL, "cannot open assembly file `%s`,", args->asmfile);
+        status = 1;
+        goto done; 
+    }
+
+    emitcode(asmfile, asmcode);
+
+    fclose(asmfile);
+
 done:
     asm_free(asmcode);
     ast_free(ast);
     lexer_close(lex);
     return status;
 }
+
+//
+// Use gcc to link the final program.
+//
+int link(Args *args)
+{
+    char *cmd = saprintf("gcc -o %s %s", args->binfile, args->asmfile);
+    int status = system(cmd);
+    safe_free(cmd);
+
+    return status == 0 ? 0 : 1;
+}
+
 
 //
 // For debugging, lex the program and dump out the scanned tokens, but do not
@@ -303,6 +331,10 @@ int main(int argc, char *argv[])
     status = compile(&args);
     if (status) {
         goto done;
+    }
+
+    if (!args.compile_only) {
+        status = link(&args);
     }
 
 done:

@@ -7,6 +7,7 @@ add_executable(cc
     asm-ast.c
     ast.c
     codegen.c
+    emitcode.c
     errors.c
     fileline.c
     lexer.c
