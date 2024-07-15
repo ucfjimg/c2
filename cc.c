@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "asm-ast.h"
+#include "codegen.h"
 #include "errors.h"
 #include "lexer.h"
 #include "parser.h"
@@ -13,6 +15,7 @@
 typedef enum {
     STAGE_LEX = 256,
     STAGE_PARSE,
+    STAGE_CODEGEN,
     STAGE_ALL,
 } Stage;
 
@@ -34,6 +37,7 @@ typedef struct {
 static struct option long_opts[] = {
     { "lex",        no_argument, 0, STAGE_LEX },
     { "parse",      no_argument, 0, STAGE_PARSE },
+    { "codegen",    no_argument, 0, STAGE_CODEGEN },
     { "keep",       no_argument, 0, OPT_KEEP },
     { "line-nos",   no_argument, 0, OPT_LINENOS },
     { 0, 0, 0, 0},    
@@ -44,7 +48,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [--lex | --parse] [--keep] [--line-no] srcfile\n");
+    fprintf(stderr, "cc: [-c] [--lex | --parse | --codegen] [--keep] [--line-no] srcfile\n");
     exit(1);
 }
 
@@ -128,6 +132,7 @@ static void parse_args(int argc, char *argv[], Args *args)
 
             case STAGE_LEX:
             case STAGE_PARSE:
+            case STAGE_CODEGEN:
                 if (args->stage != STAGE_ALL) {
                     fprintf(stderr, "--stage may only be specified once.\n");
                     usage();
@@ -197,12 +202,43 @@ static int preprocess(Args *args)
 //
 static int compile(Args *args)
 {
+    int status = 0;
+    AstNode *ast = NULL;
+    AsmNode *asmcode = NULL;
+
     Lexer *lex = lexer_open(args->prefile);
     if (!lex) {
         return 1;
     }
 
+    ast = parser_parse(lex);
+    if (err_has_errors()) {
+        status = 1;
+    }
+
+    if (args->stage == STAGE_PARSE) {
+        ast_print(ast, args->line_nos);
+        goto done;
+    }
+
+    if (status) {
+        goto done;
+    }
+
+    asmcode = codegen(ast);
+    ast_free(ast);
+    ast = NULL;
+
+    if (args->stage == STAGE_CODEGEN) {
+        asm_print(asmcode);
+        goto done;
+    }
+
+done:
+    asm_free(asmcode);
+    ast_free(ast);
     lexer_close(lex);
+    return status;
 }
 
 //
@@ -247,27 +283,6 @@ static int lex_pass(Args *args)
     return status;
 }
 
-//
-// Run just the parser, and print the resulting AST. Return a 0 status
-// on success, 1 if there were errors.
-//
-static int parse_pass(Args *args)
-{
-    Lexer *lex = lexer_open(args->prefile);
-    if (!lex) {
-        return 1;
-    }
-
-    AstNode *prog = parser_parse(lex);
-
-    ast_print(prog, args->line_nos);
-    ast_free(prog);
-
-    lexer_close(lex);
-
-    return err_has_errors() ? 1 : 0;
-}
-
 int main(int argc, char *argv[])
 {
     int status = 0;
@@ -282,11 +297,6 @@ int main(int argc, char *argv[])
 
     if (args.stage == STAGE_LEX) {
         status = lex_pass(&args);
-        goto done;
-    }
-
-    if (args.stage == STAGE_PARSE) {
-        status = parse_pass(&args);
         goto done;
     }
 
