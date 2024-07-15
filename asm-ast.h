@@ -3,6 +3,8 @@
 #include "fileline.h"
 #include "list.h"
 
+#include <stdbool.h>
+
 typedef enum {
     REG_RAX,
 } Register;
@@ -54,6 +56,7 @@ typedef struct {
 struct AsmNode {
     AsmNodeTag tag;         // discriminated union tag
     ListNode list;          // keep instructions in list
+    FileLine loc;           // location in original source
 
     union {
         AsmProgram prog;    // ASM_PROG
@@ -67,5 +70,5 @@ extern AsmNode *asm_func(char *name);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst);
 extern AsmNode *asm_ret(void);
 extern void asm_free(AsmNode *node);
-extern void asm_print(AsmNode *node);
+extern void asm_print(AsmNode *node, bool locs);
 

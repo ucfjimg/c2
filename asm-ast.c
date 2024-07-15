@@ -4,6 +4,9 @@
 
 #include <stdio.h>
 
+static void asm_print_recurse(AsmNode *node, FileLine loc, bool locs);
+
+
 //
 // Return a register name. The returned string is static, not allocated.
 //
@@ -163,22 +166,22 @@ void asm_free(AsmNode *node)
 //
 // Print an entire assembly program.
 //
-static void asm_prog_print(AsmProgram *prog)
+static void asm_prog_print(AsmProgram *prog, FileLine loc, bool locs)
 {
     printf("#\n# program\n#\n");
-    asm_print(prog->func);
+    asm_print_recurse(prog->func, loc, locs);
 }
 
 //
 // Print an assembly function.
 //
-static void asm_func_print(AsmFunction *func)
+static void asm_func_print(AsmFunction *func, FileLine loc, bool locs)
 {
     printf("%s:\n", func->name);
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
-        asm_print(node);
+        asm_print_recurse(node, loc, locs);
     }
 }
 
@@ -205,14 +208,31 @@ static void asm_ret_print(void)
 //
 // Print the assembly AST.
 //
-extern void asm_print(AsmNode *node)
+static void asm_print_recurse(AsmNode *node, FileLine loc, bool locs)
 {
+    if (locs) {
+        if (node->loc.fname != loc.fname || node->loc.line != loc.line) {
+            printf("# %s:%d\n", node->loc.fname, node->loc.line);
+            loc = node->loc;
+        }
+    }
+
     switch (node->tag) {
-        case ASM_PROG: asm_prog_print(&node->prog); break;
-        case ASM_FUNC: asm_func_print(&node->func); break;
+        case ASM_PROG: asm_prog_print(&node->prog, loc, locs); break;
+        case ASM_FUNC: asm_func_print(&node->func, loc, locs); break;
         case ASM_MOV:  asm_mov_print(&node->mov); break;
         case ASM_RET:  asm_ret_print(); break;
     }
+}
+
+//
+// Top level entry to printing the assembly AST.
+// 
+void asm_print(AsmNode *node, bool locs)
+{
+    FileLine loc = { NULL, 0 };
+
+    asm_print_recurse(node, loc, locs);
 }
 
 

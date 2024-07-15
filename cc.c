@@ -230,7 +230,7 @@ static int compile(Args *args)
     ast = NULL;
 
     if (args->stage == STAGE_CODEGEN) {
-        asm_print(asmcode);
+        asm_print(asmcode, args->line_nos);
         goto done;
     }
 
