@@ -43,6 +43,9 @@ char *token_describe(Token *tok)
 
         case TOK_ID:            return saprintf("id(%s)", tok->id);
         case TOK_INT_CONST:     return saprintf("int-const(%lu)", tok->intval);
+
+        case TOK_INCREMENT:     return saprintf("++");
+        case TOK_DECREMENT:     return saprintf("--");
         
         case TOK_INT:           return saprintf("int");
         case TOK_RETURN:        return saprintf("return");

@@ -246,6 +246,39 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
 }
 
 //
+// Scan for multi-character operators, and set the token appropriately.
+// Returns true if a token was found, else false.
+//
+static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
+{
+    if (lex->ch == '-') {
+        lexer_next_char(lex);
+        if (lex->ch == '-') {
+            lexer_next_char(lex);
+            tok->type = TOK_DECREMENT;
+        } else {
+            tok->type = TOK_MINUS;
+        }
+
+        return true;
+    }
+
+    if (lex->ch == '+') {
+        lexer_next_char(lex);
+        if (lex->ch == '+') {
+            lexer_next_char(lex);
+            tok->type = TOK_INCREMENT;
+        } else {
+            tok->type = TOK_PLUS;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+//
 // Allocate and initialize a Lexer object.
 //
 Lexer *lexer_open(char *fname)
@@ -313,10 +346,15 @@ void lexer_token(Lexer *lex, Token *tok)
         case '(': tok->type = TOK_LPAREN; break;
         case ')': tok->type = TOK_RPAREN; break;
         case ';': tok->type = TOK_SEMI; break;
+        case '~': tok->type = TOK_NOT; break;
     }
 
     if (tok->type != TOK_ERROR) {
         lexer_next_char(lex);
+        return;
+    }
+
+    if (lexer_scan_multichar_op(lex, tok)) {
         return;
     }
 

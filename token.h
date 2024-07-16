@@ -11,6 +11,9 @@ typedef enum {
     TOK_RBRACE = '}',
     TOK_RPAREN = ')',
     TOK_SEMI = ';',
+    TOK_PLUS = '+',
+    TOK_MINUS = '-',
+    TOK_NOT = '~',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
@@ -25,7 +28,13 @@ typedef enum {
     //
     TOK_ID,
     TOK_INT_CONST,
-    
+
+    //
+    // multi-char operators
+    //
+    TOK_INCREMENT,          // ++
+    TOK_DECREMENT,          // --
+
     //
     // keywords
     //

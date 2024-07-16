@@ -1,0 +1,8 @@
+{
+    "single-unary-minus.c": "lex:success",
+    "single-unary-not.c": "lex:success",
+    "single-unary-plus.c": "lex:success",
+    "minus-not.c": "lex:success",
+    "lex-increment.c": "lex:success",
+    "lex-decrement.c": "lex:success"
+}
