@@ -1,4 +1,6 @@
 {
+    "bad-char.c": "lex:fail",
+    "bad-identifier.c": "lex:fail",
     "no-return-type.c": "parse:fail",
     "stray-char.c": "parse:fail"
 }
