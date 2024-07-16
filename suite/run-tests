@@ -20,12 +20,48 @@ if not os.access(cc, os.X_OK):
 total_tests = 0
 failures = []
 
-def failtest(dir, name, msg):
+def failtest(dir, name, msg, stage):
     global failures
-    failures += [(dir, name, msg)]
+    failures += [(dir, name, msg, stage)]
     pass
 
-def runtest(dir, name, test):
+def stage_test(stage, dir, name):
+    cmd = [cc,  f'--{stage}', os.path.join(dir, name)]
+    out = subprocess.run(cmd, capture_output = True, cwd='.')
+
+    return (out.returncode == 0, out.stderr.decode('ascii'))
+
+
+def gcc_retval_test(dir, name):
+    srcfile = os.path.join(dir, name)
+    binfile = os.path.splitext(srcfile)
+    if binfile[1] != '.c':
+        print(f'gcc_retval_test: test `{name}` in `{dir}` mist name a c source file.')
+        sys.exit(1)
+    binfile = binfile[0]
+
+    cmd = ['gcc', '-o', binfile, srcfile]
+    out = subprocess.run(cmd, capture_output = True, cwd = '.')
+    if out.returncode != 0:
+        return (False, f'gcc compilation failed.\n' + out.stderr.decode('ascii'))
+    
+    out = subprocess.run(binfile)
+    gccrc = out.returncode
+
+    cmd = [cc, srcfile]
+    out = subprocess.run(cmd, capture_output = True, cwd='.')
+    if out.returncode != 0:
+        return (False, f'compilation failed.\n' + out.stderr.decode('ascii'))
+
+    out = subprocess.run(binfile)
+    ccrc = out.returncode
+
+    if gccrc != ccrc:
+        return (False, f'program returned {ccrc}; expected {gccrc}.')
+
+    return (True, '')
+
+def runtest(dir, name, test, verbose):
     global total_tests
     total_tests += 1
 
@@ -36,7 +72,7 @@ def runtest(dir, name, test):
 
     stage, action = stest
 
-    if not stage in ['lex', 'parse']:
+    if not stage in ['lex', 'parse', 'gcc-retval']:
         print(f'invalid test stage `{stage}` for test `{name}` in dir `{dir}`.')
         sys.exit(1)
 
@@ -44,38 +80,40 @@ def runtest(dir, name, test):
         print(f'invalid test action `{action}` for test `{name}` in dir `{dir}`.')
         sys.exit(1)
 
+    if verbose:
+        print(f'RUN: {dir}::{name}::{stage}')
+
     src = os.path.join(dir, name)
     if not os.access(src, os.R_OK):
         print(f'invalid test: file {src} does not exist.')
         sys.exit(1)
 
-    cmd = [cc,  f'--{stage}', os.path.join(dir, name)]
-    out = subprocess.run(cmd, capture_output = True, cwd='.')
+    if stage in ['lex', 'parse']:
+        passed, out = stage_test(stage, dir, name)
+    elif stage == 'gcc-retval':
+        passed, out = gcc_retval_test(dir, name)
 
     success = True
-    if action == 'success':
-        if out.returncode != 0:
-            msg = "failed to process valid source"
-            success = False
-    elif action == 'fail':
-        if out.returncode == 0:
-            msg = "failed to flag invalid source"
-            success = False
+    if action == 'success' and not passed:
+        success = False
+    elif action == 'fail' and passed:
+        success = False
 
     if not success:
-        failtest(dir, name, msg)
-        print(f'FAIL: test {dir}::{name} - {msg}')        
-        err = out.stderr.decode('ascii')
-        if err:
-            for line in err.split('\n'):
+        out = out.split('\n')
+        msg = out[0]
+        out = out[1:]
+        failtest(dir, name, msg, stage)
+        print(f'FAIL: test {dir}::{name}::{stage} - {msg}')        
+        if out:
+            for line in out:
                 print(f'STDERR: {line}')
         else:
             print("-- no output to stderr")
 
         print()
 
-
-def rundir(dir):
+def rundir(dir, verbose):
     try:
         config = json.load(open(os.path.join(dir, 'test.json')))
     except:
@@ -83,16 +121,23 @@ def rundir(dir):
         sys.exit(1)
 
     for name, test in config.items():
-        runtest(dir, name, test)
+        runtest(dir, name, test, verbose)
 
+verbose = False
+args = sys.argv[1:]
+if args and args[0] == '-v':
+    args = args[1:]
+    verbose = True
 
 os.chdir(root)
 for dir, _, files in os.walk('tests'):
     if 'test.json' in files:
-        rundir(dir)
+        rundir(dir, verbose)
 
-print(f'{total_tests} tests.')
 if failures:
-    for dir, name, msg in failures:
-        print(f'FAIL: {dir}::{name} - {msg}')
-    print(f'{len(failures)} total failures.')
+    print('\n=== failure summary ===')
+    for dir, name, msg, stage in failures:
+        print(f'FAIL: {dir}::{name}::{stage} - {msg}')
+    print(f'{len(failures)} total failures of {total_tests} tests.')
+else:
+    print(f'{total_tests} tests.')

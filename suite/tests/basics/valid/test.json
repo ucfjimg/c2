@@ -1,4 +1,6 @@
 {
     "simple.c": "lex:success",
-    "simple.c": "parse:success"
+    "simple.c": "parse:success",
+    "simple.c": "gcc-retval:success",
+    "return-2.c": "gcc-retval:success"
 }
