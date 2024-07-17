@@ -346,7 +346,7 @@ void lexer_token(Lexer *lex, Token *tok)
         case '(': tok->type = TOK_LPAREN; break;
         case ')': tok->type = TOK_RPAREN; break;
         case ';': tok->type = TOK_SEMI; break;
-        case '~': tok->type = TOK_NOT; break;
+        case '~': tok->type = TOK_COMPLEMENT; break;
     }
 
     if (tok->type != TOK_ERROR) {

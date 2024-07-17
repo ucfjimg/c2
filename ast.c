@@ -6,16 +6,42 @@
 #include <stdio.h>
 
 //
-// Construct an integer constant expression
+// Allocator for all expression objects.
+// 
+static Expression *exp_alloc(ExpressionTag tag)
+{
+    Expression *exp = safe_zalloc(sizeof(Expression));
+    exp->tag = tag;
+    return exp;
+}
+
+//
+// Construct an integer constant expression.
 //
 Expression *exp_int(unsigned long intval)
 {
-    Expression *exp = safe_zalloc(sizeof(Expression));
-
-    exp->tag = EXP_INT;
+    Expression *exp = exp_alloc(EXP_INT);
     exp->intval = intval;
-
     return exp;
+}
+
+//
+// Construct a unary operator.
+//
+Expression *exp_unary(UnaryOp op, Expression *exp)
+{
+    Expression *uexp = exp_alloc(EXP_UNARY);
+    uexp->unary.op = op;
+    uexp->unary.exp = exp;
+    return uexp;
+}
+
+//
+// Free a unary expression.
+//
+static void exp_unary_free(ExpUnary *unary)
+{
+    exp_free(unary->exp);
 }
 
 //
@@ -24,8 +50,22 @@ Expression *exp_int(unsigned long intval)
 void exp_free(Expression *exp)
 {
     if (exp) {
+        switch (exp->tag) {
+            case EXP_UNARY: exp_unary_free(&exp->unary); break;
+        }
+
         safe_free(exp);
     }
+}
+
+//
+// Allocatorfor all statement objects.
+//
+static Statement *stmt_alloc(StatementTag tag)
+{
+    Statement *stmt = safe_zalloc(sizeof(Statement));
+    stmt->tag = tag;
+    return stmt;
 }
 
 //
@@ -33,10 +73,7 @@ void exp_free(Expression *exp)
 //
 Statement *stmt_null(void)
 {
-    Statement *stmt = safe_zalloc(sizeof(Statement));
-
-    stmt->tag = STMT_NULL;
-
+    Statement *stmt = stmt_alloc(STMT_NULL);
     return stmt;
 }
 
@@ -45,11 +82,8 @@ Statement *stmt_null(void)
 //
 Statement *stmt_return(Expression *exp)
 {
-    Statement *stmt = safe_zalloc(sizeof(Statement));
-
-    stmt->tag = STMT_RETURN;
+    Statement *stmt = stmt_alloc(STMT_RETURN);
     stmt->ret.exp = exp;
-
     return stmt;
 }
 
@@ -75,16 +109,22 @@ void stmt_free(Statement *stmt)
     }
 }
 
+//
+// Allocator for all AST nodes.
+//
+AstNode *ast_alloc(AstTag tag)
+{
+    AstNode *ast = safe_zalloc(sizeof(AstNode));
+    ast->tag = tag;
+    return ast;
+}
 
 //
 // Construct a program with no contents.
 //
 AstNode *ast_program(void)
 {
-    AstNode *ast = safe_zalloc(sizeof(AstNode));
-
-    ast->tag = AST_PROGRAM;
-
+    AstNode *ast = ast_alloc(AST_PROGRAM);
     return ast;
 }
 
@@ -93,10 +133,7 @@ AstNode *ast_program(void)
 //
 AstNode *ast_function(void)
 {
-    AstNode *ast = safe_zalloc(sizeof(AstNode));
-
-    ast->tag = AST_FUNCTION;
- 
+    AstNode *ast = ast_alloc(AST_FUNCTION); 
     return ast;
 }
 
@@ -133,6 +170,20 @@ void ast_free(AstNode *ast)
 }
 
 //
+// Return a static string describing a unary operator.
+//
+static const char *uop_describe(UnaryOp uop)
+{
+    switch (uop) {
+        case UOP_MINUS:         return "-";
+        case UOP_PLUS:          return "+";
+        case UOP_COMPLEMENT:    return "~";
+    }
+
+    return "<invalid-unary-op>";
+}
+ 
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -148,6 +199,12 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
     switch (exp->tag) {
         case EXP_INT:
             printf("%sconst-int(%lu);\n", indent, exp->intval);
+            break;
+
+        case EXP_UNARY:
+            printf("%sunary(%s) {\n", indent, uop_describe(exp->unary.op));
+            exp_print_recurse(exp->unary.exp, tab + 2, locs);
+            printf("%s}\n", indent);
             break;
     }
 
@@ -181,7 +238,8 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
 
     safe_free(indent);
 }
- 
+
+
 //
 // Recursively print an AST, starting at indent `tab`.
 //

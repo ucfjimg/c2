@@ -30,6 +30,24 @@ static void report_expected_err(Token *tok, char *expected)
 }
 
 //
+// Parse a unary operator.
+//
+static bool parse_unary_op(Parser *parser, UnaryOp *uop)
+{
+    switch (parser->tok.type) {
+        case TOK_PLUS:          *uop = UOP_PLUS; break;
+        case TOK_MINUS:         *uop = UOP_MINUS; break;
+        case TOK_COMPLEMENT:    *uop = UOP_COMPLEMENT; break;
+
+        default:
+            return false;
+    }
+
+    parse_next_token(parser);
+    return true;
+}
+
+//
 // Parse an expression.
 //
 static Expression *parse_expression(Parser *parser)
@@ -37,19 +55,38 @@ static Expression *parse_expression(Parser *parser)
     FileLine loc = parser->tok.loc;
 
     //
-    // <expression> := <int>
+    // <expression> := <int> | <unop> <exp> | "(" <exp> ")"
     //
-    if (parser->tok.type != TOK_INT_CONST) {
-        report_expected_err(&parser->tok, "integer constant");
+    if (parser->tok.type == TOK_INT_CONST) {
+        Expression *exp = exp_int(parser->tok.intval);
+        exp->loc = loc;
+        parse_next_token(parser);
+        return exp;
+    }
 
-        Expression *exp = exp_int(0);
+    UnaryOp uop;
+    if (parse_unary_op(parser, &uop)) {
+        Expression *rhs = parse_expression(parser);
+        Expression *exp = exp_unary(uop, rhs);
         exp->loc = loc;
         return exp;
     }
 
-    Expression *exp = exp_int(parser->tok.intval);
-    parse_next_token(parser);
+    if (parser->tok.type == '(') {
+        parse_next_token(parser);
+        Expression *exp = parse_expression(parser);
+        exp->loc = loc;
+        if (parser->tok.type == ')') {
+            parse_next_token(parser);
+        } else {
+            report_expected_err(&parser->tok, ")");
+        }
+        return exp;
+    }
 
+    report_expected_err(&parser->tok, "constant, operator, or (");
+
+    Expression *exp = exp_int(0);
     exp->loc = loc;
     return exp;
 }

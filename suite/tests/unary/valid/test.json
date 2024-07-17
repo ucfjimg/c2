@@ -4,5 +4,9 @@
     "single-unary-plus.c": "lex:success",
     "minus-not.c": "lex:success",
     "lex-increment.c": "lex:success",
-    "lex-decrement.c": "lex:success"
+    "lex-decrement.c": "lex:success",
+    "single-unary-minus.c": "parse:success",
+    "single-unary-not.c": "parse:success",
+    "single-unary-plus.c": "parse:success",
+    "minus-not.c": "parse:success"
 }

@@ -11,9 +11,21 @@ typedef struct AstNode AstNode;
 //
 // expressions
 //
+typedef enum {
+    UOP_PLUS,
+    UOP_MINUS,
+    UOP_COMPLEMENT,
+} UnaryOp;
+
 typedef enum { 
     EXP_INT,
+    EXP_UNARY,
 } ExpressionTag;
+
+typedef struct {
+    UnaryOp op;
+    Expression *exp;
+} ExpUnary;
 
 struct Expression {
     ExpressionTag tag;
@@ -21,10 +33,12 @@ struct Expression {
 
     union {
         unsigned long intval;
+        ExpUnary unary;
     };
 };
 
 extern Expression *exp_int(unsigned long intval);
+extern Expression *exp_unary(UnaryOp op, Expression *exp);
 extern void exp_free(Expression *exp);
 
 //

@@ -1,0 +1,6 @@
+{
+    "decrement-const.c": "lex:success",
+    "unbal-parens.c": "lex:success",
+    "decrement-const.c": "parse:fail",
+    "unbal-parens.c": "parse:fail"
+}
