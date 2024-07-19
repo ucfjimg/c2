@@ -45,14 +45,26 @@ static TacNode *tcg_temporary(FileLine loc)
 //
 static TacNode *tcg_unary_op(TacState *state, Expression *unary)
 {
-    FileLine loc = unary->loc;
-
     TacNode *src = tcg_expression(state, unary->unary.exp);
     TacNode *dst = tcg_temporary(unary->loc);
 
-    tcg_append(state, tac_unary(unary->unary.op, src, dst, loc));
+    tcg_append(state, tac_unary(unary->unary.op, src, dst, unary->loc));
 
-    return tac_var(dst->var.name, loc);
+    return tac_var(dst->var.name, unary->loc);
+}
+
+//
+// Return TAC for a binary expression.
+// 
+static TacNode *tcg_binary_op(TacState *state, Expression *binary)
+{
+    TacNode *left = tcg_expression(state, binary->binary.left);
+    TacNode *right = tcg_expression(state, binary->binary.right);
+    TacNode *dst = tcg_temporary(binary->loc);
+
+    tcg_append(state, tac_binary(binary->binary.op, left, right, dst, binary->loc));
+
+    return tac_var(dst->var.name, binary->loc);
 }
 
 //
@@ -63,7 +75,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
     switch (exp->tag) {
         case EXP_INT:       return tac_const_int(exp->intval, exp->loc);
         case EXP_UNARY:     return tcg_unary_op(state, exp);
-        case EXP_BINARY:    /* TODO */ break;
+        case EXP_BINARY:    return tcg_binary_op(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));

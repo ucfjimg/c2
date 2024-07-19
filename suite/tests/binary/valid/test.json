@@ -1,5 +1,5 @@
 {
     "lex-binary.c": "lex:success",
-    "parse-arith.c": "parse:success",
-    "parse-arith-parens.c": "parse:success"
+    "parse-arith.c": "tacky:success",
+    "parse-arith-parens.c": "tacky:success"
 }

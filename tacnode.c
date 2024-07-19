@@ -103,6 +103,29 @@ void tac_unary_free(TacUnary *unary)
 }
 
 //
+// Constructor for a TAC binary operator.
+//
+TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_BINARY, loc);
+    tac->binary.op = op;
+    tac->binary.left = left;
+    tac->binary.right = right;
+    tac->binary.dst = dst;
+    return tac;
+}
+
+//
+// Free a TAC binary operator.
+//
+void tac_binary_free(TacBinary *binary)
+{
+    tac_free(binary->left);
+    tac_free(binary->right);
+    tac_free(binary->dst);
+}
+
+//
 // Construct a TAC constant integer.
 //
 TacNode *tac_const_int(unsigned long val, FileLine loc)
@@ -141,6 +164,7 @@ void tac_free(TacNode *tac)
             case TAC_FUNCDEF: tac_function_def_free(&tac->funcdef); break;
             case TAC_RETURN:  tac_return_free(&tac->ret); break;
             case TAC_UNARY:   tac_unary_free(&tac->unary); break;
+            case TAC_BINARY:  tac_binary_free(&tac->binary); break;
             case TAC_VAR:     tac_var_free(&tac->var); break;
 
         default:
@@ -209,6 +233,20 @@ static void tac_print_unary(TacUnary *unary, int tab, bool locs)
 }
 
 //
+// Print a TAC binary operator.
+//
+static void tac_print_binary(TacBinary *binary, int tab, bool locs)
+{
+    printf("%*sbinary {(\n", tab, "");
+    tac_print_recurse(binary->left, tab + 2, locs);
+    printf("%*s) %s (\n", tab + 2, "", bop_describe(binary->op));
+    tac_print_recurse(binary->right, tab + 2, locs);
+    printf("%*s) => (\n", tab + 2, "");
+    tac_print_recurse(binary->dst, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Print a TAC integer constant.
 //
 static void tac_print_const_int(TacConstInt *constint, int tab)
@@ -237,6 +275,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_FUNCDEF:   tac_print_funcdef(&tac->funcdef, tab, locs); break;
         case TAC_RETURN:    tac_print_return(&tac->ret, tab, locs); break;
         case TAC_UNARY:     tac_print_unary(&tac->unary, tab, locs); break;
+        case TAC_BINARY:    tac_print_binary(&tac->binary, tab, locs); break;
         case TAC_CONST_INT: tac_print_const_int(&tac->constint, tab); break;
         case TAC_VAR:       tac_print_var(&tac->var, tab); break;
 

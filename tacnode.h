@@ -12,6 +12,7 @@ typedef enum {
     TAC_FUNCDEF,
     TAC_RETURN,
     TAC_UNARY,
+    TAC_BINARY,
     TAC_CONST_INT,
     TAC_VAR,
 } TacTag;
@@ -38,6 +39,13 @@ typedef struct {
 } TacUnary;
 
 typedef struct {
+    BinaryOp op;                    // operation
+    TacNode *left;                  // left operand to operate on
+    TacNode *right;                 // right operand to operate on
+    TacNode *dst;                   // where to store result
+} TacBinary;
+
+typedef struct {
     unsigned long val;              // constant value
 } TacConstInt;
 
@@ -56,6 +64,7 @@ typedef struct TacNode {
         TacFuncDef  funcdef;
         TacReturn   ret;
         TacUnary    unary;
+        TacBinary   binary;
         TacConstInt constint;
         TacVar      var;
     };
@@ -65,6 +74,7 @@ extern TacNode *tac_program(TacNode *func, FileLine loc);
 extern TacNode *tac_function_def(char *name, List body, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc);
 extern TacNode *tac_const_int(unsigned long val, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
 

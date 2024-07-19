@@ -152,11 +152,14 @@ static Expression *parse_expression(Parser *parser, int min_prec)
         if (binop->prec_level < min_prec) {
             break;
         }
+
+        FileLine loc = parser->tok.loc;
+
         parse_next_token(parser);
         Expression *right = parse_expression(parser, binop->prec_level + 1);
 
         left = exp_binary(binop->op, left, right);
-
+        left->loc = loc;
     }
     return left;
 }

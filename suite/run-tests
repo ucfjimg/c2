@@ -72,7 +72,7 @@ def runtest(dir, name, test, verbose):
 
     stage, action = stest
 
-    if not stage in ['lex', 'parse', 'gcc-retval']:
+    if not stage in ['lex', 'parse', 'tacky', 'gcc-retval']:
         print(f'invalid test stage `{stage}` for test `{name}` in dir `{dir}`.')
         sys.exit(1)
 
@@ -88,7 +88,7 @@ def runtest(dir, name, test, verbose):
         print(f'invalid test: file {src} does not exist.')
         sys.exit(1)
 
-    if stage in ['lex', 'parse']:
+    if stage in ['lex', 'parse', 'tacky']:
         passed, out = stage_test(stage, dir, name)
     elif stage == 'gcc-retval':
         passed, out = gcc_retval_test(dir, name)
