@@ -117,10 +117,12 @@ void aoper_print(AsmOperand *op)
 //
 // Construct an empty assembly program.
 //
-AsmNode *asm_prog(void)
+AsmNode *asm_prog(FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
+    node->tag = ASM_PROG;
+    node->loc = loc;
     node->prog.func = NULL;
 
     return node;
@@ -129,11 +131,12 @@ AsmNode *asm_prog(void)
 //
 // Construct an assembly function with no instructions.
 //
-AsmNode *asm_func(char *name, List body)
+AsmNode *asm_func(char *name, List body, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_FUNC;
+    node->loc = loc;
     node->func.name = safe_strdup(name);
     node->func.body = body;
 
@@ -143,11 +146,12 @@ AsmNode *asm_func(char *name, List body)
 //
 // Construct an assembly mov instruction.
 //
-AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst)
+AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_MOV;
+    node->loc = loc;
     node->mov.src = src;
     node->mov.dst = dst;
 
@@ -157,11 +161,12 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst)
 //
 // Construct an assembly unary operator instruction.
 //
-AsmNode *asm_unary(UnaryOp op, AsmOperand *arg)
+AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_UNARY;
+    node->loc = loc;
     node->unary.op = op;
     node->unary.arg = arg;
 
@@ -172,11 +177,12 @@ AsmNode *asm_unary(UnaryOp op, AsmOperand *arg)
 //
 // Construct a return instruction.
 //
-AsmNode *asm_ret(void)
+AsmNode *asm_ret(FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_RET;
+    node->loc = loc;
 
     return node;
 }
@@ -185,11 +191,12 @@ AsmNode *asm_ret(void)
 // Construct a stack reserve instruction. `bytes` is the number of bytes to
 // allocate in the stack frame for local variables.
 //
-AsmNode *asm_stack_reserve(int bytes)
+AsmNode *asm_stack_reserve(int bytes, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_STACK_RESERVE;
+    node->loc = loc;
     node->stack_reserve.bytes = bytes;
 
     return node;

@@ -88,12 +88,12 @@ struct AsmNode {
     };
 };
 
-extern AsmNode *asm_prog(void);
-extern AsmNode *asm_func(char *name, List body);
-extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst);
-extern AsmNode *asm_unary(UnaryOp up, AsmOperand *arg);
-extern AsmNode *asm_ret(void);
-extern AsmNode *asm_stack_reserve(int bytes);
+extern AsmNode *asm_prog(FileLine loc);
+extern AsmNode *asm_func(char *name, List body, FileLine loc);
+extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_unary(UnaryOp up, AsmOperand *arg, FileLine loc);
+extern AsmNode *asm_ret(FileLine loc);
+extern AsmNode *asm_stack_reserve(int bytes, FileLine loc);
 extern void asm_free(AsmNode *node);
 extern void asm_print(AsmNode *node, bool locs);
 

@@ -71,8 +71,8 @@ void codegen_unary(CodegenState *state, TacNode *tac)
     AsmOperand *src = codegen_expression(state, tac->unary.src);
     AsmOperand *dst = codegen_expression(state, tac->unary.dst);
 
-    codegen_push_instr(state, asm_mov(src, dst));
-    codegen_push_instr(state, asm_unary(tac->unary.op, aoper_clone(dst)));
+    codegen_push_instr(state, asm_mov(src, dst, tac->loc));
+    codegen_push_instr(state, asm_unary(tac->unary.op, aoper_clone(dst), tac->loc));
 }
 
 //
@@ -84,8 +84,8 @@ void codegen_return(CodegenState *state, TacNode *tac)
 
     AsmOperand *retval = codegen_expression(state, tac->ret.val);
 
-    codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX)));
-    codegen_push_instr(state, asm_ret());
+    codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), tac->loc));
+    codegen_push_instr(state, asm_ret(tac->loc));
 }
 
 //
@@ -117,7 +117,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
         codegen_single(&funcstate, stmt);
     }
 
-    codegen_push_instr(state, asm_func(tac->funcdef.name, funcstate.code));
+    codegen_push_instr(state, asm_func(tac->funcdef.name, funcstate.code, tac->loc));
 }
 
 //
@@ -132,7 +132,7 @@ static AsmNode *codegen_program(CodegenState *state, TacNode *tac)
     // TODO this is hacky but will get fixed when the program is properly a list
     // of declarations.
     //
-    AsmNode *prog = asm_prog();
+    AsmNode *prog = asm_prog(tac->loc);
     prog->prog.func = CONTAINER_OF(state->code.head, AsmNode, list);
     return prog;
 }

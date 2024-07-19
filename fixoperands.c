@@ -21,8 +21,8 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
     // MOV cannot have both operands as memory.
     //
     if (mov->src->tag == AOP_STACK && mov->dst->tag == AOP_STACK) {
-        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10))->list);
-        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst))->list);
+        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), movnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst), movnode->loc)->list);
 
         asm_free(movnode);
         return;
@@ -49,7 +49,7 @@ static void asm_fixop_func(AsmNode *func)
     // If the function requires locals, reserve space for them.
     //
     if (func->func.locals_size) {
-        AsmNode *reserve = asm_stack_reserve(func->func.locals_size);
+        AsmNode *reserve = asm_stack_reserve(func->func.locals_size, func->loc);
         list_push_front(&newcode, &reserve->list);
     }
 
