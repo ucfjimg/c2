@@ -347,6 +347,9 @@ void lexer_token(Lexer *lex, Token *tok)
         case ')': tok->type = TOK_RPAREN; break;
         case ';': tok->type = TOK_SEMI; break;
         case '~': tok->type = TOK_COMPLEMENT; break;
+        case '*': tok->type = TOK_MULTIPLY; break;
+        case '/': tok->type = TOK_DIVIDE; break;
+        case '%': tok->type = TOK_MODULO; break;
     }
 
     if (tok->type != TOK_ERROR) {

@@ -13,6 +13,9 @@ typedef enum {
     TOK_SEMI = ';',
     TOK_PLUS = '+',
     TOK_MINUS = '-',
+    TOK_MULTIPLY = '*',
+    TOK_DIVIDE = '/',
+    TOK_MODULO = '%',
     TOK_COMPLEMENT = '~',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII

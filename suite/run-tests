@@ -123,16 +123,41 @@ def rundir(dir, verbose):
     for name, test in config.items():
         runtest(dir, name, test, verbose)
 
+def cleandir(dir, verbose):
+    try:
+        config = json.load(open(os.path.join(dir, 'test.json')))
+    except:
+        print(f'could not parse test.json in `{dir}`.')
+        sys.exit(1)
+
+    keep = ['test.json'] + list(config.keys())
+    keep = set(keep)
+    allfiles = [x for x in os.listdir(dir) if not os.path.isdir(x)]
+    removefiles = [os.path.join(dir, x) for x in allfiles if not x in keep]
+    for rm in removefiles:
+        if verbose:
+            print(f'REMOVE {rm}')
+
+        try:
+            os.remove(rm)
+        except:
+            print("-- failed to remove {rm}")
+
 verbose = False
 args = sys.argv[1:]
 if args and args[0] == '-v':
     args = args[1:]
     verbose = True
 
+action = rundir
+if args and args[0] == 'clean':
+    args = args[1:]
+    action = cleandir
+
 os.chdir(root)
 for dir, _, files in os.walk('tests'):
     if 'test.json' in files:
-        rundir(dir, verbose)
+        action(dir, verbose)
 
 if failures:
     print('\n=== failure summary ===')
