@@ -63,6 +63,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
     switch (exp->tag) {
         case EXP_INT:       return tac_const_int(exp->intval, exp->loc);
         case EXP_UNARY:     return tcg_unary_op(state, exp);
+        case EXP_BINARY:    /* TODO */ break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));

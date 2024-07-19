@@ -45,13 +45,36 @@ static void exp_unary_free(ExpUnary *unary)
 }
 
 //
+// Construct a binary operator.
+//
+Expression *exp_binary(BinaryOp op, Expression *left, Expression *right)
+{
+    Expression *bexp = exp_alloc(EXP_BINARY);
+    bexp->binary.op = op;
+    bexp->binary.left = left;
+    bexp->binary.right = right;
+ 
+    return bexp;
+}
+
+//
+// Free a binary expression.
+//
+static void exp_binary_free(ExpBinary *binary)
+{
+    exp_free(binary->left);
+    exp_free(binary->right);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
 {
     if (exp) {
         switch (exp->tag) {
-            case EXP_UNARY: exp_unary_free(&exp->unary); break;
+            case EXP_UNARY:  exp_unary_free(&exp->unary); break;
+            case EXP_BINARY: exp_binary_free(&exp->binary); break;
 
             default:
                 break;
@@ -196,6 +219,14 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_UNARY:
             printf("%sunary(%s) {\n", indent, uop_describe(exp->unary.op));
             exp_print_recurse(exp->unary.exp, tab + 2, locs);
+            printf("%s}\n", indent);
+            break;
+
+        case EXP_BINARY:
+            printf("%sbinary(%s) {\n", indent, bop_describe(exp->binary.op));
+            exp_print_recurse(exp->binary.left, tab + 2, locs);
+            printf("%s  ,\n", indent);
+            exp_print_recurse(exp->binary.right, tab + 2, locs);
             printf("%s}\n", indent);
             break;
     }

@@ -8,6 +8,23 @@ typedef struct {
     Token tok;
 } Parser;
 
+typedef struct {
+    TokenType tok;          // token type
+    BinaryOp op;            // matching operator
+    int prec_level;         // precedence level
+} BinOpPrecedence;
+
+static BinOpPrecedence bin_op_prec[] = {
+    { TOK_MULTIPLY, BOP_MULTIPLY, 50 },
+    { TOK_DIVIDE,   BOP_DIVIDE,   50 },
+    { TOK_MODULO,   BOP_MODULO,   50 },
+    { TOK_PLUS,     BOP_ADD,      45 },
+    { TOK_MINUS,    BOP_SUBRACT,  45 },
+};
+static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
+
+static Expression *parse_expression(Parser *parser, int min_prec);
+
 //
 // Free the current token and parse the next one.
 //
@@ -48,14 +65,15 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 }
 
 //
-// Parse an expression.
+// Parse a factor.
+// <factor> := <int> | <unop> <exp> | "(" <exp> ")"
 //
-static Expression *parse_expression(Parser *parser)
+static Expression *parse_factor(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
 
     //
-    // <expression> := <int> | <unop> <exp> | "(" <exp> ")"
+    // <factor> := <int>
     //
     if (parser->tok.type == TOK_INT_CONST) {
         Expression *exp = exp_int(parser->tok.intval);
@@ -64,17 +82,23 @@ static Expression *parse_expression(Parser *parser)
         return exp;
     }
 
+    //
+    // <factor> := <unop> <exp> 
+    //
     UnaryOp uop;
     if (parse_unary_op(parser, &uop)) {
-        Expression *rhs = parse_expression(parser);
+        Expression *rhs = parse_expression(parser, 0);
         Expression *exp = exp_unary(uop, rhs);
         exp->loc = loc;
         return exp;
     }
 
+    //
+    // <factor> := "(" <exp> ")"
+    //
     if (parser->tok.type == '(') {
         parse_next_token(parser);
-        Expression *exp = parse_expression(parser);
+        Expression *exp = parse_expression(parser, 0);
         exp->loc = loc;
         if (parser->tok.type == ')') {
             parse_next_token(parser);
@@ -84,7 +108,10 @@ static Expression *parse_expression(Parser *parser)
         return exp;
     }
 
-    report_expected_err(&parser->tok, "constant, operator, or (");
+    //
+    // Otherwise, parser error.
+    //
+    report_expected_err(&parser->tok, "constant, unary operator, or (");
 
     Expression *exp = exp_int(0);
     exp->loc = loc;
@@ -92,7 +119,51 @@ static Expression *parse_expression(Parser *parser)
 }
 
 //
+// Look up the given token in the precendence table. If found,
+// return the precedence table entry, else NULL.
+//
+static BinOpPrecedence *get_binop_prec(TokenType token)
+{
+    for (int i = 0; i < bin_op_prec_count; i++) {
+        if (bin_op_prec[i].tok == token) {
+            return &bin_op_prec[i];
+        }
+    }
+    return NULL;
+}
+
+//
+// Parse an expression.
+// <exp> := <factor> | <exp> <binop> <exp>
+//
+// Parses all binary operators using precedence climbing.
+// `min_prec` is the minimum precedence level of operators to accept; if an
+// operator is found that is lower precendence, then parsing will stop with
+// that operator as the next token.
+//
+// Top level callers should set `min_prec` to zero.
+//
+static Expression *parse_expression(Parser *parser, int min_prec)
+{
+    Expression *left = parse_factor(parser);
+
+    BinOpPrecedence *binop; 
+    while ((binop = get_binop_prec(parser->tok.type)) != NULL) {
+        if (binop->prec_level < min_prec) {
+            break;
+        }
+        parse_next_token(parser);
+        Expression *right = parse_expression(parser, binop->prec_level + 1);
+
+        left = exp_binary(binop->op, left, right);
+
+    }
+    return left;
+}
+
+//
 // Parse a statement.
+// <statement> := "return" <exp> ";"
 //
 static Statement *parse_statement(Parser *parser)
 {
@@ -109,7 +180,7 @@ static Statement *parse_statement(Parser *parser)
     }
 
     parse_next_token(parser);
-    Expression *exp = parse_expression(parser);
+    Expression *exp = parse_expression(parser, 0);
     
     if (parser->tok.type != ';') {
         report_expected_err(&parser->tok, "`;`");
@@ -123,6 +194,7 @@ static Statement *parse_statement(Parser *parser)
 
 //
 // Parse a function definition.
+// <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
 //
 static AstNode *parse_function(Parser *parser)
 {

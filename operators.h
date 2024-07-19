@@ -6,4 +6,13 @@ typedef enum {
     UOP_COMPLEMENT,
 } UnaryOp;
 
+typedef enum {
+    BOP_ADD,
+    BOP_SUBRACT,
+    BOP_MULTIPLY,
+    BOP_DIVIDE,
+    BOP_MODULO
+} BinaryOp;
+
 extern const char *uop_describe(UnaryOp uop);
+extern const char *bop_describe(BinaryOp bop);

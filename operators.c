@@ -14,3 +14,19 @@ const char *uop_describe(UnaryOp uop)
     return "<invalid-unary-op>";
 }
  
+//
+// Return a static string describing a binary operator.
+//
+const char *bop_describe(BinaryOp bop)
+{
+    switch (bop) {
+        case BOP_ADD:       return "+";
+        case BOP_SUBRACT:   return "-";
+        case BOP_MULTIPLY:  return "*";
+        case BOP_DIVIDE:    return "/";
+        case BOP_MODULO:    return "%";
+    }
+
+    return "<invalid-binary-op>";
+}
+ 
