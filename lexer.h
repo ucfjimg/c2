@@ -1,12 +1,13 @@
 #pragma once
 
+#include "list.h"
 #include "token.h"
 
 #include <stdbool.h>
 #include <stdio.h>
 
 typedef struct LexerFile {
-    struct LexerFile *next;     // next file in list
+    ListNode list;              // next file in list
     char *fname;                // filename of this file
 } LexerFile;
 
@@ -16,8 +17,7 @@ typedef struct {
     bool end_of_file;           // true if end of file has been reached
     int ch;                     // the next character to lex
     int line;                   // the line containing `ch`
-    LexerFile *file_head;       // list of filenames seen so far, file_tail
-    LexerFile *file_tail;       //   points to the active file
+    List files;                 // list of filenames seen so far
 } Lexer;
 
 extern Lexer *lexer_open(char *fname);

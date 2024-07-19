@@ -29,17 +29,7 @@ static Keyword keywords[] = {
 static void lexer_push_filename(Lexer *lex, char *fname)
 {
     LexerFile *file = safe_malloc(sizeof(LexerFile));
-
-    file->next = NULL;
-    file->fname = fname;
-
-    if (lex->file_head == NULL) {
-        lex->file_head = file;
-    } else {
-        lex->file_tail->next = file;
-    }
-
-    lex->file_tail = file;
+    list_push_back(&lex->files, &file->list);
 }
 
 //
@@ -47,7 +37,7 @@ static void lexer_push_filename(Lexer *lex, char *fname)
 //
 static char *lexer_current_file(Lexer *lex)
 {
-    return lex->file_tail->fname;
+    return CONTAINER_OF(lex->files.tail, LexerFile, list)->fname;
 }
 
 //
@@ -294,8 +284,7 @@ Lexer *lexer_open(char *fname)
     lex->line_start = true;
     lex->end_of_file = false;
     lex->line = 1;
-    lex->file_head = NULL;
-    lex->file_tail = NULL;
+    list_clear(&lex->files);
 
     lexer_push_filename(lex, safe_strdup(fname));
     lexer_next_char(lex);
@@ -309,11 +298,11 @@ Lexer *lexer_open(char *fname)
 void lexer_close(Lexer *lex)
 {
     if (lex) {
-        LexerFile *curr = lex->file_head;
-        while (curr) {
-            LexerFile *next = curr->next;
-            safe_free(curr->fname);
-            safe_free(curr);
+        for (ListNode *curr = lex->files.head; curr; ) {
+            ListNode *next = curr->next;
+            LexerFile *file = CONTAINER_OF(curr, LexerFile, list);
+            safe_free(file->fname);
+            safe_free(file);
             curr = next;
         }
     
