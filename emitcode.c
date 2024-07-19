@@ -42,6 +42,9 @@ static void emit_asmoper(FILE *out, AsmOperand *oper)
         case AOP_IMM:   emit_imm(out, oper->imm); break;
         case AOP_REG:   emit_reg(out, oper->reg); break;
         case AOP_STACK: emit_stack(out, oper->stack_offset); break;
+        
+        case AOP_PSEUDOREG:
+            ICE_ASSERT(((void)"pseuedoreg operand found at code emission time.", false));
     }
 }
 
@@ -101,8 +104,13 @@ static void emit_stack_reserve(FILE *out, AsmStackReserve *reserve)
 //
 static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
 {
+#ifdef __APPLE__
+    fprintf(out, "        .globl _%s\n", func->name);
+    fprintf(out, "_%s:\n", func->name);
+#else   
     fprintf(out, "        .globl %s\n", func->name);
     fprintf(out, "%s:\n", func->name);
+#endif
     fprintf(out, "        pushq %%rbp\n");
     fprintf(out, "        movq %%rsp, %%rbp\n");
 
@@ -119,7 +127,9 @@ static void emit_program(FILE *out, AsmProgram *prog, FileLine *loc)
 {
     emitcode_recurse(out, prog->func, loc);
 
+#ifndef __APPLE__
     fprintf(out, "        .section .note.GNU-stack,\"\",@progbits\n");
+#endif
 }
 
 //

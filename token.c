@@ -50,6 +50,9 @@ char *token_describe(Token *tok)
         case TOK_INT:           return saprintf("int");
         case TOK_RETURN:        return saprintf("return");
         case TOK_VOID:          return saprintf("void");
+
+        default:
+            break;
     }
 
     return saprintf("<unknown-token-type-%d>", tok->type);

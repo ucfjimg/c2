@@ -96,6 +96,9 @@ void aoper_free(AsmOperand *op)
     if (op) {
         switch (op->tag) { 
             case AOP_PSEUDOREG: safe_free(op->pseudoreg); break;
+
+            default:
+                break;
         }
         safe_free(op);
     }
@@ -254,6 +257,9 @@ void asm_free(AsmNode *node)
             case ASM_MOV:   asm_mov_free(&node->mov); break;
             case ASM_UNARY: asm_unary_free(&node->unary); break;
             case ASM_FUNC:  asm_func_free(&node->func); break; 
+
+            default:
+                break;
         }
 
         safe_free(node);

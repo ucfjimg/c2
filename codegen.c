@@ -59,6 +59,11 @@ AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
         default:
             ICE_ASSERT(("invalid TAC node in codegen_expression"));
     }
+
+    //
+    // never reached
+    //
+    return NULL;
 }
 
 //
@@ -98,7 +103,7 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_RETURN: codegen_return(state, tac); break;
 
     default:
-        ICE_ASSERT(("invalid TAC node in single", false));
+        ICE_ASSERT(((void)"invalid TAC node in single", false));
     }
 }
 

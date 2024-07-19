@@ -26,6 +26,7 @@ typedef struct
 static HashNode *vartab_alloc_varnode(void)
 {
     VarTableNode *node = safe_zalloc(sizeof(VarTableNode));
+    return &node->hash;
 }
 
 //
@@ -119,7 +120,7 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_UNARY: asm_alloc_unary(vartab, instr); break;
 
         default:
-            ICE_ASSERT(("invalid asm-ast node in asm_alloc_instr", false));
+            ICE_ASSERT(((void)"invalid asm-ast node in asm_alloc_instr", false));
     }
 }
 

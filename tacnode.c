@@ -76,7 +76,7 @@ TacNode *tac_return(TacNode *val, FileLine loc)
 //
 // Free a TAC return statement.
 //
-TacNode *tac_return_free(TacReturn *ret)
+void tac_return_free(TacReturn *ret)
 {
     tac_free(ret->val);
 }
@@ -96,7 +96,7 @@ TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc)
 //
 // Free a TAC unary operator.
 //
-TacNode *tac_unary_free(TacUnary *unary)
+void tac_unary_free(TacUnary *unary)
 {
     tac_free(unary->src);
     tac_free(unary->dst);
@@ -142,6 +142,9 @@ void tac_free(TacNode *tac)
             case TAC_RETURN:  tac_return_free(&tac->ret); break;
             case TAC_UNARY:   tac_unary_free(&tac->unary); break;
             case TAC_VAR:     tac_var_free(&tac->var); break;
+
+        default:
+            break;
         }
 
         safe_free(tac);

@@ -2,7 +2,7 @@
 
 #include "safemem.h"
 
-#include <string.h>>
+#include <string.h>
 
 //
 // Return an allocated string containing `count` contiguous `ch` 

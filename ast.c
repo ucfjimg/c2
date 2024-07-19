@@ -52,6 +52,9 @@ void exp_free(Expression *exp)
     if (exp) {
         switch (exp->tag) {
             case EXP_UNARY: exp_unary_free(&exp->unary); break;
+
+            default:
+                break;
         }
 
         safe_free(exp);
@@ -103,6 +106,9 @@ void stmt_free(Statement *stmt)
     if (stmt) {
         switch (stmt->tag) {
             case STMT_RETURN: stmt_return_free(&stmt->ret); break;
+
+            default:
+                break;
         }
 
         safe_free(stmt);

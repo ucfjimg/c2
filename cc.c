@@ -289,7 +289,7 @@ done:
 //
 // Use gcc to link the final program.
 //
-int link(Args *args)
+static int link_program(Args *args)
 {
     char *cmd = saprintf("gcc -o %s %s", args->binfile, args->asmfile);
     int status = system(cmd);
@@ -363,7 +363,7 @@ int main(int argc, char *argv[])
     }
 
     if (args.stage == STAGE_ALL && !args.compile_only) {
-        status = link(&args);
+        status = link_program(&args);
     }
 
 done:
