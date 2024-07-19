@@ -8,5 +8,9 @@
     "single-unary-minus.c": "parse:success",
     "single-unary-not.c": "parse:success",
     "single-unary-plus.c": "parse:success",
-    "minus-not.c": "parse:success"
+    "minus-not.c": "parse:success",
+    "single-unary-minus.c": "gcc-retval:success",
+    "single-unary-not.c": "gcc-retval:success",
+    "single-unary-plus.c": "gcc-retval:success",
+    "minus-not.c": "gcc-retval:success"
 }

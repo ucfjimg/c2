@@ -1,6 +1,7 @@
 #include "emitcode.h"
 
 #include "fileline.h"
+#include "ice.h"
 #include "safemem.h"
 
 static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc);
@@ -12,6 +13,7 @@ static void emit_reg(FILE *out, Register reg)
 {
     switch (reg) {
         case REG_RAX: fprintf(out, "%%eax"); break;
+        case REG_R10: fprintf(out, "%%r10d"); break;
     }
 }
 
@@ -24,13 +26,22 @@ static void emit_imm(FILE *out, unsigned long val)
 }
 
 //
+// Emit a stack frame reference.
+//
+static void emit_stack(FILE *out, int offset)
+{
+    fprintf(out, "%d(%%rbp)", offset);
+}
+
+//
 // Emit an assembly operand.
 //
 static void emit_asmoper(FILE *out, AsmOperand *oper)
 {
     switch (oper->tag) {
-        case AOP_IMM: emit_imm(out, oper->imm); break;
-        case AOP_REG: emit_reg(out, oper->reg); break;
+        case AOP_IMM:   emit_imm(out, oper->imm); break;
+        case AOP_REG:   emit_reg(out, oper->reg); break;
+        case AOP_STACK: emit_stack(out, oper->stack_offset); break;
     }
 }
 
@@ -39,6 +50,8 @@ static void emit_asmoper(FILE *out, AsmOperand *oper)
 //
 static void emit_ret(FILE *out)
 {
+    fprintf(out, "        movq %%rbp, %%rsp\n");
+    fprintf(out, "        popq %%rbp\n");
     fprintf(out, "        ret\n");
 }
 
@@ -55,17 +68,48 @@ static void emit_mov(FILE *out, AsmMov *mov)
 }
 
 //
+// Emit a unary instruction.
+//
+static void emit_unary(FILE *out, AsmUnary *unary)
+{
+    char *opcode = "???";
+
+    switch (unary->op) {
+        case UOP_PLUS:          return;
+        case UOP_MINUS:         opcode = "neg"; break;
+        case UOP_COMPLEMENT:    opcode = "not"; break;
+
+        default:
+            ICE_ASSERT(("invalid unary opcode in emit_unary", false));
+    }
+
+    fprintf(out, "        %sl ", opcode);
+    emit_asmoper(out, unary->arg);
+    fprintf(out, "\n");
+}
+
+//
+// Emit code to reserve locals on the stack.
+//
+static void emit_stack_reserve(FILE *out, AsmStackReserve *reserve)
+{
+    fprintf(out, "        subq $%d, %%rsp\n", reserve->bytes);
+}
+
+//
 // Emit a function.
 //
 static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
 {
     fprintf(out, "        .globl %s\n", func->name);
     fprintf(out, "%s:\n", func->name);
+    fprintf(out, "        pushq %%rbp\n");
+    fprintf(out, "        movq %%rsp, %%rbp\n");
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
         emitcode_recurse(out, node, loc);
-    }
+    }    
 }
 
 //
@@ -91,10 +135,12 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
     }
 
     switch (node->tag) {
-        case ASM_PROG: emit_program(out, &node->prog, loc); break;
-        case ASM_FUNC: emit_function(out, &node->func, loc); break;
-        case ASM_MOV:  emit_mov(out, &node->mov); break;
-        case ASM_RET:  emit_ret(out); break;
+        case ASM_PROG:          emit_program(out, &node->prog, loc); break;
+        case ASM_FUNC:          emit_function(out, &node->func, loc); break;
+        case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
+        case ASM_MOV:           emit_mov(out, &node->mov); break;
+        case ASM_UNARY:         emit_unary(out, &node->unary); break;
+        case ASM_RET:           emit_ret(out); break;
     }
 }
 

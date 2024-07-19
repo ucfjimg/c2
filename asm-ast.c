@@ -1,5 +1,7 @@
 #include "asm-ast.h"
 
+#include "ice.h"
+#include "operators.h"
 #include "safemem.h"
 
 #include <stdio.h>
@@ -13,9 +15,26 @@ char *reg_name(Register reg)
 {
     switch (reg) {
         case REG_RAX:   return "rax";
+        case REG_R10:   return "r10";
     }
 
     return "<invalid-reg>";
+}
+
+//
+// Clone an assembly operand.
+//
+AsmOperand *aoper_clone(AsmOperand *oper)
+{
+    switch (oper->tag) {
+        case AOP_IMM:       return aoper_imm(oper->imm);
+        case AOP_REG:       return aoper_reg(oper->reg);
+        case AOP_PSEUDOREG: return aoper_pseudoreg(oper->pseudoreg);
+        case AOP_STACK:     return aoper_stack(oper->stack_offset);
+
+    default:
+        ICE_ASSERT(("invalid operand in aoper_clone", false));
+    }
 }
 
 //
@@ -27,6 +46,19 @@ AsmOperand *aoper_reg(Register reg)
 
     op->tag = AOP_REG;
     op->reg = reg;
+
+    return op;
+}
+
+//
+// Constuct an assembly operand of a pseudo-register.
+//
+AsmOperand *aoper_pseudoreg(char *name)
+{
+    AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
+
+    op->tag = AOP_PSEUDOREG;
+    op->pseudoreg = safe_strdup(name);
 
     return op;
 }
@@ -44,11 +76,29 @@ AsmOperand *aoper_imm(unsigned long val)
 }
 
 //
+// Allocate a stack operaand. The offset is a (negative) offset from 
+// the frame pointer RBP.
+//
+AsmOperand *aoper_stack(int offset)
+{
+    AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
+
+    op->tag = AOP_STACK;
+    op->stack_offset = offset;
+    return op;
+}
+
+//
 // Free an assembly operand.
 //
 void aoper_free(AsmOperand *op)
 {
-    safe_free(op);
+    if (op) {
+        switch (op->tag) { 
+            case AOP_PSEUDOREG: safe_free(op->pseudoreg); break;
+        }
+        safe_free(op);
+    }
 }
 
 //
@@ -58,7 +108,9 @@ void aoper_print(AsmOperand *op)
 {
     switch (op->tag) {
         case AOP_IMM: printf("%lu", op->imm); break;
-        case AOP_REG: printf("%s", reg_name(op->reg)); break;
+        case AOP_REG: printf("$%s", reg_name(op->reg)); break;
+        case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
+        case AOP_STACK: printf("[$rbp%d]", op->stack_offset); break;
     }
 }
 
@@ -77,12 +129,13 @@ AsmNode *asm_prog(void)
 //
 // Construct an assembly function with no instructions.
 //
-AsmNode *asm_func(char *name)
+AsmNode *asm_func(char *name, List body)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_FUNC;
     node->func.name = safe_strdup(name);
+    node->func.body = body;
 
     return node;
 }
@@ -102,6 +155,21 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst)
 }
 
 //
+// Construct an assembly unary operator instruction.
+//
+AsmNode *asm_unary(UnaryOp op, AsmOperand *arg)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_UNARY;
+    node->unary.op = op;
+    node->unary.arg = arg;
+
+    return node;
+}
+
+
+//
 // Construct a return instruction.
 //
 AsmNode *asm_ret(void)
@@ -109,6 +177,20 @@ AsmNode *asm_ret(void)
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_RET;
+
+    return node;
+}
+
+//
+// Construct a stack reserve instruction. `bytes` is the number of bytes to
+// allocate in the stack frame for local variables.
+//
+AsmNode *asm_stack_reserve(int bytes)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_STACK_RESERVE;
+    node->stack_reserve.bytes = bytes;
 
     return node;
 }
@@ -128,6 +210,14 @@ void asm_mov_free(AsmMov *mov)
 {
     aoper_free(mov->src);
     aoper_free(mov->dst);
+}
+
+//
+// Free an assembly unary instruction.
+//
+void asm_unary_free(AsmUnary *unary)
+{
+    aoper_free(unary->arg);
 }
 
 //
@@ -155,8 +245,9 @@ void asm_free(AsmNode *node)
         switch (node->tag) {
             case ASM_PROG:  asm_prog_free(&node->prog); break;
             case ASM_MOV:   asm_mov_free(&node->mov); break;
+            case ASM_UNARY: asm_unary_free(&node->unary); break;
             case ASM_FUNC:  asm_func_free(&node->func); break; 
-       }
+        }
 
         safe_free(node);
     }
@@ -197,11 +288,29 @@ static void asm_mov_print(AsmMov *mov)
 }
 
 //
+// Print a unary operator instruction.
+//
+static void asm_unary_print(AsmUnary *unary)
+{
+    printf("        uop(%s) ", uop_describe(unary->op));
+    aoper_print(unary->arg);
+    printf("\n");
+}
+
+//
 // Print a ret instruction.
 //
 static void asm_ret_print(void)
 {
     printf("        ret\n");
+}
+
+//
+// Print a stack reserve instruction.
+//
+static void asm_stack_reserve_print(AsmStackReserve *reserve)
+{
+    printf("        stack-reserve %d\n", reserve->bytes);
 }
 
 //
@@ -219,10 +328,12 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
     }
 
     switch (node->tag) {
-        case ASM_PROG: asm_prog_print(&node->prog, loc, locs); break;
-        case ASM_FUNC: asm_func_print(&node->func, loc, locs); break;
-        case ASM_MOV:  asm_mov_print(&node->mov); break;
-        case ASM_RET:  asm_ret_print(); break;
+        case ASM_PROG:          asm_prog_print(&node->prog, loc, locs); break;
+        case ASM_FUNC:          asm_func_print(&node->func, loc, locs); break;
+        case ASM_MOV:           asm_mov_print(&node->mov); break;
+        case ASM_UNARY:         asm_unary_print(&node->unary); break;
+        case ASM_RET:           asm_ret_print(); break;
+        case ASM_STACK_RESERVE: asm_stack_reserve_print(&node->stack_reserve); break;
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fileline.h"
+#include "operators.h"
 
 #include <stdbool.h>
 
@@ -11,12 +12,6 @@ typedef struct AstNode AstNode;
 //
 // expressions
 //
-typedef enum {
-    UOP_PLUS,
-    UOP_MINUS,
-    UOP_COMPLEMENT,
-} UnaryOp;
-
 typedef enum { 
     EXP_INT,
     EXP_UNARY,

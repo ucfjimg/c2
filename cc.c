@@ -4,19 +4,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "allocvars.h"
 #include "asm-ast.h"
 #include "codegen.h"
 #include "emitcode.h"
 #include "errors.h"
+#include "fixoperands.h"
 #include "lexer.h"
 #include "parser.h"
 #include "safemem.h"
+#include "tacgen.h"
 #include "token.h"
 
 typedef enum {
     STAGE_LEX = 256,
     STAGE_PARSE,
     STAGE_CODEGEN,
+    STAGE_TACKY,
     STAGE_ALL,
 } Stage;
 
@@ -40,6 +44,7 @@ static struct option long_opts[] = {
     { "lex",        no_argument, 0, STAGE_LEX },
     { "parse",      no_argument, 0, STAGE_PARSE },
     { "codegen",    no_argument, 0, STAGE_CODEGEN },
+    { "tacky",      no_argument, 0, STAGE_TACKY },
     { "keep",       no_argument, 0, OPT_KEEP },
     { "line-nos",   no_argument, 0, OPT_LINENOS },
     { 0, 0, 0, 0},    
@@ -50,7 +55,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [--lex | --parse | --codegen] [--keep] [--line-no] srcfile\n");
+    fprintf(stderr, "cc: [-c] [--lex | --parse | --codegen | --tacky] [--keep] [--line-no] srcfile\n");
     exit(1);
 }
 
@@ -135,6 +140,7 @@ static void parse_args(int argc, char *argv[], Args *args)
             case STAGE_LEX:
             case STAGE_PARSE:
             case STAGE_CODEGEN:
+            case STAGE_TACKY:
                 if (args->stage != STAGE_ALL) {
                     fprintf(stderr, "--stage may only be specified once.\n");
                     usage();
@@ -209,6 +215,7 @@ static int compile(Args *args)
     int status = 0;
     AstNode *ast = NULL;
     AsmNode *asmcode = NULL;
+    TacNode *taccode = NULL;
     FILE *asmfile;
 
     Lexer *lex = lexer_open(args->prefile);
@@ -216,6 +223,9 @@ static int compile(Args *args)
         return 1;
     }
 
+    //
+    // Parse and AST transformation passes.
+    //
     ast = parser_parse(lex);
     if (err_has_errors()) {
         status = 1;
@@ -230,15 +240,33 @@ static int compile(Args *args)
         goto done;
     }
 
-    asmcode = codegen(ast);
+    //
+    // TAC generation.
+    //
+    taccode = tcg_gen(ast);
+    if (args->stage == STAGE_TACKY) {
+        tac_print(taccode, args->line_nos);
+        goto done;
+    }
+
+    //
+    // Code generation and assembly transformation passes.
+    //
+    asmcode = codegen(taccode);
     ast_free(ast);
     ast = NULL;
+
+    asm_allocate_vars(asmcode);
+    asm_fix_operands(asmcode);
 
     if (args->stage == STAGE_CODEGEN) {
         asm_print(asmcode, args->line_nos);
         goto done;
     }
 
+    //
+    // Final assembly source emission.
+    //
     asmfile = fopen(args->asmfile, "w");
     if (!asmfile) {
         err_report(EC_ERROR, NULL, "cannot open assembly file `%s`,", args->asmfile);
@@ -251,6 +279,7 @@ static int compile(Args *args)
     fclose(asmfile);
 
 done:
+    tac_free(taccode);
     asm_free(asmcode);
     ast_free(ast);
     lexer_close(lex);

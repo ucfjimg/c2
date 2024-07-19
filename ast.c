@@ -170,20 +170,6 @@ void ast_free(AstNode *ast)
 }
 
 //
-// Return a static string describing a unary operator.
-//
-static const char *uop_describe(UnaryOp uop)
-{
-    switch (uop) {
-        case UOP_MINUS:         return "-";
-        case UOP_PLUS:          return "+";
-        case UOP_COMPLEMENT:    return "~";
-    }
-
-    return "<invalid-unary-op>";
-}
- 
-//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
