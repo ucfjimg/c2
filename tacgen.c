@@ -65,7 +65,12 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_UNARY:     return tcg_unary_op(state, exp);
     }
 
-    ICE_ASSERT(("invalid expression node", false));
+    ICE_ASSERT(((void)"invalid expression node", false));
+    
+    //
+    // never reached
+    //
+    return NULL;
 }
 
 //

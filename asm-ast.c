@@ -33,8 +33,13 @@ AsmOperand *aoper_clone(AsmOperand *oper)
         case AOP_STACK:     return aoper_stack(oper->stack_offset);
 
     default:
-        ICE_ASSERT(("invalid operand in aoper_clone", false));
+        ICE_ASSERT(((void)"invalid operand in aoper_clone", false));
     }
+
+    //
+    // never reached.
+    //
+    return NULL;
 }
 
 //

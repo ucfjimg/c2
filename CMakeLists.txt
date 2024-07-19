@@ -26,3 +26,4 @@ add_executable(cc
     token.c
 )
 
+target_compile_options(cc PRIVATE -Wall -Werror)

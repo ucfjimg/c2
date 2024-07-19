@@ -83,7 +83,7 @@ static void emit_unary(FILE *out, AsmUnary *unary)
         case UOP_COMPLEMENT:    opcode = "not"; break;
 
         default:
-            ICE_ASSERT(("invalid unary opcode in emit_unary", false));
+            ICE_ASSERT(((void)"invalid unary opcode in emit_unary", false));
     }
 
     fprintf(out, "        %sl ", opcode);
