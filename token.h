@@ -22,6 +22,8 @@ typedef enum {
     TOK_BITAND = '&',
     TOK_BITOR = '|',
     TOK_BITXOR = '^',
+    TOK_LOGNOT = '!',
+    TOK_ASSIGN = '=',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
@@ -44,6 +46,12 @@ typedef enum {
     TOK_DECREMENT,          // --
     TOK_RSHIFT,             // >>
     TOK_LSHIFT,             // <<
+    TOK_LOGAND,             // &&
+    TOK_LOGOR,              // ||
+    TOK_EQUALITY,           // ==
+    TOK_NOTEQUAL,           // !=
+    TOK_LESSEQUAL,          // <=
+    TOK_GREATEREQUAL,       // >=
 
     //
     // keywords
