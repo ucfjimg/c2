@@ -295,7 +295,7 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
         if (lex->ch == '=') {
             lexer_next_char(lex);
             tok->type = TOK_GREATEREQUAL;
-        } else if (lex->ch == '<') {
+        } else if (lex->ch == '>') {
             lexer_next_char(lex);
             tok->type = TOK_RSHIFT;
         } else {
@@ -305,7 +305,7 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
     }
 
 
-    if (lex_twochar(lex, tok, '=', TOK_EQUALITY, TOK_ASSIGN)) {
+    if (lex_twochar(lex, tok, '=', TOK_ASSIGN, TOK_EQUALITY)) {
         return true;
     }
 
@@ -314,6 +314,17 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
     }
 
     if (lex_twochar(lex, tok, '&', TOK_BITAND, TOK_LOGAND)) {
+        return true;
+    }
+
+    if (lex->ch == '!') {
+        lexer_next_char(lex);
+        if (lex->ch == '=') {
+            lexer_next_char(lex);
+            tok->type = TOK_NOTEQUAL;
+        } else {
+            tok->type = TOK_LOGNOT;
+        }
         return true;
     }
     
@@ -392,7 +403,6 @@ void lexer_token(Lexer *lex, Token *tok)
         case '/': tok->type = TOK_DIVIDE; break;
         case '%': tok->type = TOK_MODULO; break;
         case '^': tok->type = TOK_BITXOR; break;
-        case '!': tok->type = TOK_LOGNOT; break;
     }
 
     if (tok->type != TOK_ERROR) {

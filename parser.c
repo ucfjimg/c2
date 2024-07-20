@@ -14,17 +14,44 @@ typedef struct {
     int prec_level;         // precedence level
 } BinOpPrecedence;
 
+//
+// C precedence table 
+//
 static BinOpPrecedence bin_op_prec[] = {
-    { TOK_MULTIPLY, BOP_MULTIPLY, 50 },
-    { TOK_DIVIDE,   BOP_DIVIDE,   50 },
-    { TOK_MODULO,   BOP_MODULO,   50 },
-    { TOK_PLUS,     BOP_ADD,      45 },
-    { TOK_MINUS,    BOP_SUBTRACT, 45 },
-    { TOK_LSHIFT,   BOP_LSHIFT,   40 },
-    { TOK_RSHIFT,   BOP_RSHIFT,   40 },
-    { TOK_BITAND,   BOP_BITAND,   30 },
-    { TOK_BITXOR,   BOP_BITXOR,   29 },
-    { TOK_BITOR,    BOP_BITOR,    28 },
+    // () call, [] subscript, ->, ., ++/-- postfix      // 15   left assoc
+
+    // ++/-- prefix, +/-/!/~ unary, (type) cast, 
+    //    * deref, & addrof, sizeof                     // 14   right assoc
+
+    { TOK_MULTIPLY,     BOP_MULTIPLY,       50 },       // 13   left assoc
+    { TOK_DIVIDE,       BOP_DIVIDE,         50 },
+    { TOK_MODULO,       BOP_MODULO,         50 },
+
+    { TOK_PLUS,         BOP_ADD,            45 },       // 12   left assoc
+    { TOK_MINUS,        BOP_SUBTRACT,       45 },
+
+    { TOK_LSHIFT,       BOP_LSHIFT,         40 },       // 11   left assoc
+    { TOK_RSHIFT,       BOP_RSHIFT,         40 },
+
+    { TOK_LESSTHAN,     BOP_LESSTHAN,       35 },       // 10   left assoc
+    { TOK_GREATERTHAN,  BOP_GREATERTHAN,    35 },
+    { TOK_LESSEQUAL,    BOP_LESSEQUAL,      35 },
+    { TOK_GREATEREQUAL, BOP_GREATEREQUAL,   35 },
+
+    { TOK_EQUALITY,     BOP_EQUALITY,       30 },       // 9    left assoc
+    { TOK_NOTEQUAL,     BOP_NOTEQUAL,       30 },
+
+    { TOK_BITAND,       BOP_BITAND,         25 },       // 8    left assoc
+    { TOK_BITXOR,       BOP_BITXOR,         24 },       // 7    left assoc
+    { TOK_BITOR,        BOP_BITOR,          23 },       // 6    left assoc
+
+    { TOK_LOGAND,       BOP_LOGAND,         10 },       // 5    left assoc
+    { TOK_LOGOR,        BOP_LOGOR,           5 },       // 4    left assoc
+    // ?: ternary right assoc                           // 3    right assoc
+    
+    // = (assignment) and all compound assignments      // 2    right assoc
+    
+    // ,                                                // 1    left assoc
 };
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
@@ -60,6 +87,7 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
         case TOK_PLUS:          *uop = UOP_PLUS; break;
         case TOK_MINUS:         *uop = UOP_MINUS; break;
         case TOK_COMPLEMENT:    *uop = UOP_COMPLEMENT; break;
+        case TOK_LOGNOT:        *uop = UOP_LOGNOT; break;
 
         default:
             return false;
