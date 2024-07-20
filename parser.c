@@ -22,6 +22,9 @@ static BinOpPrecedence bin_op_prec[] = {
     { TOK_MINUS,    BOP_SUBTRACT, 45 },
     { TOK_LSHIFT,   BOP_LSHIFT,   40 },
     { TOK_RSHIFT,   BOP_RSHIFT,   40 },
+    { TOK_BITAND,   BOP_BITAND,   30 },
+    { TOK_BITXOR,   BOP_BITXOR,   29 },
+    { TOK_BITOR,    BOP_BITOR,    28 },
 };
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 

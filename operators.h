@@ -14,6 +14,9 @@ typedef enum {
     BOP_MODULO,
     BOP_LSHIFT,
     BOP_RSHIFT,
+    BOP_BITAND,
+    BOP_BITOR,
+    BOP_BITXOR,
 } BinaryOp;
 
 extern const char *uop_describe(UnaryOp uop);

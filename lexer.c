@@ -364,6 +364,9 @@ void lexer_token(Lexer *lex, Token *tok)
         case '*': tok->type = TOK_MULTIPLY; break;
         case '/': tok->type = TOK_DIVIDE; break;
         case '%': tok->type = TOK_MODULO; break;
+        case '&': tok->type = TOK_BITAND; break;
+        case '|': tok->type = TOK_BITOR; break;
+        case '^': tok->type = TOK_BITXOR; break;
     }
 
     if (tok->type != TOK_ERROR) {

@@ -27,6 +27,9 @@ const char *bop_describe(BinaryOp bop)
         case BOP_MODULO:    return "%";
         case BOP_LSHIFT:    return "<<";
         case BOP_RSHIFT:    return ">>";
+        case BOP_BITAND:    return "&";
+        case BOP_BITOR:     return "|";
+        case BOP_BITXOR:    return "^";
     }
 
     return "<invalid-binary-op>";

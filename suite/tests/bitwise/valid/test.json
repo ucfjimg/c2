@@ -2,5 +2,10 @@
     "lshift.c": "gcc-retval:success",
     "rshift.c": "gcc-retval:success",
     "shiftprec.c": "gcc-retval:success",
-    "shift-is-signed.c": "gcc-retval:success"
+    "shift-is-signed.c": "gcc-retval:success",
+    "bitand.c": "gcc-retval:success",
+    "bitxor.c": "gcc-retval:success",
+    "bitor.c": "gcc-retval:success",
+    "bit-and-over-xor.c": "gcc-retval:success",
+    "bit-xor-over-or.c": "gcc-retval:success"
 }

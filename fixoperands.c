@@ -75,9 +75,13 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     ICE_ASSERT(binop->dst->tag != AOP_PSEUDOREG);
 
     //
-    // ADD and SUB cannot have both instructions as memory operands.
+    // ADD, SUB, XOR, AND, OR cannot have both instructions as memory operands.
     //
-    if ((binop->op == BOP_ADD || binop->op == BOP_SUBTRACT) &&
+    if ((binop->op == BOP_ADD || 
+         binop->op == BOP_SUBTRACT || 
+         binop->op == BOP_BITAND || 
+         binop->op == BOP_BITOR ||
+         binop->op == BOP_BITXOR) &&
         binop->src->tag == AOP_STACK &&
         binop->dst->tag == AOP_STACK) {
               
@@ -116,7 +120,6 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
 
         return;
     }
-      
 
     list_push_back(code, &binopnode->list);
 }

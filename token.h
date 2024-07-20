@@ -19,6 +19,9 @@ typedef enum {
     TOK_COMPLEMENT = '~',
     TOK_LESSTHAN = '<',
     TOK_GREATERTHAN = '>',
+    TOK_BITAND = '&',
+    TOK_BITOR = '|',
+    TOK_BITXOR = '^',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
