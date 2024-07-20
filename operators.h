@@ -8,7 +8,7 @@ typedef enum {
 
 typedef enum {
     BOP_ADD,
-    BOP_SUBRACT,
+    BOP_SUBTRACT,
     BOP_MULTIPLY,
     BOP_DIVIDE,
     BOP_MODULO

@@ -1,5 +1,17 @@
 {
     "lex-binary.c": "lex:success",
     "parse-arith.c": "tacky:success",
-    "parse-arith-parens.c": "tacky:success"
+    "parse-arith-parens.c": "tacky:success",
+    "bin-add.c": "gcc-retval:success",
+    "bin-div.c": "gcc-retval:success",
+    "bin-modulo.c": "gcc-retval:success",
+    "bin-mul.c": "gcc-retval:success",
+    "bin-signed-div2.c": "gcc-retval:success",
+    "bin-signed-div.c": "gcc-retval:success",
+    "bin-sub.c": "gcc-retval:success",
+    "lex-binary.c": "gcc-retval:success",
+    "parse-arith.c": "gcc-retval:success",
+    "parse-arith-parens.c": "gcc-retval:success",
+    "prec-1.c": "gcc-retval:success",
+    "comp-add.c": "gcc-retval:success"
 }

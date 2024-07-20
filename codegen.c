@@ -81,6 +81,36 @@ void codegen_unary(CodegenState *state, TacNode *tac)
 }
 
 //
+// Generate code for a binary operator.
+//
+void codegen_binary(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_BINARY);
+
+    AsmOperand *left = codegen_expression(state, tac->binary.left);
+    AsmOperand *right = codegen_expression(state, tac->binary.right);
+    AsmOperand *dst = codegen_expression(state, tac->binary.dst);
+
+    if (tac->binary.op == BOP_DIVIDE || tac->binary.op == BOP_MODULO) {
+        codegen_push_instr(state, asm_mov(left, aoper_reg(REG_RAX), tac->loc));
+        codegen_push_instr(state, asm_cdq(tac->loc));
+        codegen_push_instr(state, asm_idiv(right, tac->loc));
+
+        //
+        // idiv returns quotient in AX, remainder in DX
+        //
+        Register dstreg = tac->binary.op == BOP_DIVIDE ? REG_RAX : REG_RDX;
+        codegen_push_instr(state, asm_mov(aoper_reg(dstreg), dst, tac->loc));
+
+        return;
+    }
+
+    codegen_push_instr(state, asm_mov(left, dst, tac->loc));
+    dst = aoper_clone(dst);
+    codegen_push_instr(state, asm_binary(tac->binary.op, right, dst, tac->loc));
+}
+
+//
 // Generate code for a return instruction.
 //
 void codegen_return(CodegenState *state, TacNode *tac)
@@ -100,10 +130,11 @@ static void codegen_single(CodegenState *state, TacNode *tac)
 {
     switch (tac->tag) {
         case TAC_UNARY:  codegen_unary(state, tac); break;
+        case TAC_BINARY: codegen_binary(state, tac); break;
         case TAC_RETURN: codegen_return(state, tac); break;
 
     default:
-        ICE_ASSERT(((void)"invalid TAC node in single", false));
+        ICE_ASSERT(((void)"invalid TAC node in codegen_single", false));
     }
 }
 

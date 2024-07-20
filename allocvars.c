@@ -100,7 +100,7 @@ static void asm_alloc_mov(VarTable *vartab, AsmNode *instr)
 }
 
 //
-// Apply pseudoregisrte replacement to a unary instruction.
+// Apply pseudoregister replacement to a unary instruction.
 //
 static void asm_alloc_unary(VarTable *vartab, AsmNode *instr)
 {
@@ -110,14 +110,38 @@ static void asm_alloc_unary(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a binary instruction.
+//
+static void asm_alloc_binary(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_BINARY);
+
+    asm_alloc_operand(vartab, &instr->binary.src);
+    asm_alloc_operand(vartab, &instr->binary.dst);
+}
+
+//
+// Apply pseudoregister replacement to an idiv instruction.
+//
+static void asm_alloc_idiv(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_IDIV);
+
+    asm_alloc_operand(vartab, &instr->idiv.arg);
+}
+
+//
 // Apply pseudoregister replacement to an instruction.
 //
 static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
 {
     switch (instr->tag) {
-        case ASM_MOV:   asm_alloc_mov(vartab, instr); break;
-        case ASM_RET:   break;
-        case ASM_UNARY: asm_alloc_unary(vartab, instr); break;
+        case ASM_MOV:       asm_alloc_mov(vartab, instr); break;
+        case ASM_RET:       break;
+        case ASM_CDQ:       break;
+        case ASM_UNARY:     asm_alloc_unary(vartab, instr); break;
+        case ASM_BINARY:    asm_alloc_binary(vartab, instr); break;
+        case ASM_IDIV:      asm_alloc_idiv(vartab, instr); break;
 
         default:
             ICE_ASSERT(((void)"invalid asm-ast node in asm_alloc_instr", false));

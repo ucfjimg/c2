@@ -32,6 +32,84 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
 }
 
 //
+// Fix an IDIV instruction.
+//
+static void asm_fixop_idiv(List *code, AsmNode *idivnode)
+{
+    ICE_ASSERT(idivnode->tag == ASM_IDIV);
+    AsmIdiv *idiv = &idivnode->idiv;
+
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(idiv->arg->tag != AOP_PSEUDOREG);
+
+    //
+    // IDIV cannot take a constant argument.
+    //
+    if (idiv->arg->tag == AOP_IMM) {
+        list_push_back(code, &asm_mov(aoper_clone(idiv->arg), aoper_reg(REG_R10), idivnode->loc)->list);
+        list_push_back(code, &asm_idiv(aoper_reg(REG_R10), idivnode->loc)->list);
+
+        asm_free(idivnode);
+
+        return;
+    }
+    
+
+    list_push_back(code, &idivnode->list);
+}
+
+//
+// Fix operators for a binary operator instruction.
+//
+static void asm_fixop_binary(List *code, AsmNode *binopnode)
+{
+    ICE_ASSERT(binopnode->tag == ASM_BINARY);
+    AsmBinary *binop = &binopnode->binary;
+
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(binop->src->tag != AOP_PSEUDOREG);
+    ICE_ASSERT(binop->dst->tag != AOP_PSEUDOREG);
+
+    //
+    // ADD and SUB cannot have both instructions as memory operands.
+    //
+    if ((binop->op == BOP_ADD || binop->op == BOP_SUBTRACT) &&
+        binop->src->tag == AOP_STACK &&
+        binop->dst->tag == AOP_STACK) {
+              
+        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_R10), binopnode->loc)->list);
+        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_R10), aoper_clone(binop->dst), binopnode->loc)->list);
+  
+        asm_free(binopnode);
+
+        return;
+    }
+
+    //
+    // IMUL can't have a memory operand as its destination
+    //
+    if (binop->op == BOP_MULTIPLY && binop->dst->tag == AOP_STACK) {
+
+        list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), binopnode->loc)->list);
+        list_push_back(code, &asm_binary(
+            BOP_MULTIPLY, aoper_clone(binop->src), aoper_reg(REG_R11), binopnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(binop->dst), binopnode->loc)->list);
+
+        asm_free(binopnode);
+
+        return;
+    }
+      
+
+    list_push_back(code, &binopnode->list);
+}
+
+
+//
 // Fix instructions in a function.
 //
 static void asm_fixop_func(AsmNode *func)
@@ -59,7 +137,9 @@ static void asm_fixop_func(AsmNode *func)
 
         switch (node->tag)
         {
-            case ASM_MOV: asm_fixop_mov(&newcode, node); break;
+            case ASM_MOV:       asm_fixop_mov(&newcode, node); break;
+            case ASM_IDIV:      asm_fixop_idiv(&newcode, node); break;
+            case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
 
             default:
                 //

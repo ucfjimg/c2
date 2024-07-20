@@ -21,7 +21,7 @@ const char *bop_describe(BinaryOp bop)
 {
     switch (bop) {
         case BOP_ADD:       return "+";
-        case BOP_SUBRACT:   return "-";
+        case BOP_SUBTRACT:  return "-";
         case BOP_MULTIPLY:  return "*";
         case BOP_DIVIDE:    return "/";
         case BOP_MODULO:    return "%";

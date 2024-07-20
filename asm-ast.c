@@ -15,7 +15,9 @@ char *reg_name(Register reg)
 {
     switch (reg) {
         case REG_RAX:   return "rax";
+        case REG_RDX:   return "rdx";
         case REG_R10:   return "r10";
+        case REG_R11:   return "r11";
     }
 
     return "<invalid-reg>";
@@ -181,7 +183,48 @@ AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc)
     return node;
 }
 
+//
+// Construct an assembly binary operator instruction.
+//
+AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
+    node->tag = ASM_BINARY;
+    node->loc = loc;
+    node->binary.op = op;
+    node->binary.src = src;
+    node->binary.dst = dst;
+
+    return node;
+}
+
+//
+// Construct an assembly idiv (signed division) instruction.
+//
+AsmNode *asm_idiv(AsmOperand *arg, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_IDIV;
+    node->loc = loc;
+    node->idiv.arg = arg;
+
+    return node;
+}
+
+//
+// Construct a cdq (convert doubleword to quadword) instruction.
+//
+AsmNode *asm_cdq(FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_CDQ;
+    node->loc = loc;
+
+    return node;
+}
 //
 // Construct a return instruction.
 //
@@ -236,6 +279,23 @@ void asm_unary_free(AsmUnary *unary)
 }
 
 //
+// Free an assembly binary instruction.
+//
+void asm_binary_free(AsmBinary *binary)
+{
+    aoper_free(binary->src);
+    aoper_free(binary->dst);
+}
+
+//
+// Free an assembly idiv instruction.
+//
+void asm_idiv_free(AsmIdiv *idiv)
+{
+    aoper_free(idiv->arg);
+}
+
+//
 // Free an assembly function.
 //
 void asm_func_free(AsmFunction *func)
@@ -258,10 +318,12 @@ void asm_free(AsmNode *node)
 {
     if (node) {
         switch (node->tag) {
-            case ASM_PROG:  asm_prog_free(&node->prog); break;
-            case ASM_MOV:   asm_mov_free(&node->mov); break;
-            case ASM_UNARY: asm_unary_free(&node->unary); break;
-            case ASM_FUNC:  asm_func_free(&node->func); break; 
+            case ASM_PROG:      asm_prog_free(&node->prog); break;
+            case ASM_MOV:       asm_mov_free(&node->mov); break;
+            case ASM_UNARY:     asm_unary_free(&node->unary); break;
+            case ASM_BINARY:    asm_binary_free(&node->binary); break;
+            case ASM_IDIV:      asm_idiv_free(&node->idiv); break;
+            case ASM_FUNC:      asm_func_free(&node->func); break; 
 
             default:
                 break;
@@ -316,6 +378,36 @@ static void asm_unary_print(AsmUnary *unary)
 }
 
 //
+// Print a binary operator instruction.
+//
+static void asm_binary_print(AsmBinary *binary)
+{
+    printf("        bop(%s) ", bop_describe(binary->op));
+    aoper_print(binary->src);
+    printf(" => ");
+    aoper_print(binary->dst);
+    printf("\n");
+}
+
+//
+// Print an idiv instruction.
+//
+static void asm_idiv_print(AsmIdiv *idiv)
+{
+    printf("        idiv ");
+    aoper_print(idiv->arg);
+    printf("\n");
+}
+
+//
+// Print a cdq instruction.
+//
+static void asm_cdq_print(void)
+{
+    printf("        cdq\n");
+}
+
+//
 // Print a ret instruction.
 //
 static void asm_ret_print(void)
@@ -350,6 +442,9 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_FUNC:          asm_func_print(&node->func, loc, locs); break;
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
+        case ASM_BINARY:        asm_binary_print(&node->binary); break;
+        case ASM_IDIV:          asm_idiv_print(&node->idiv); break;
+        case ASM_CDQ:           asm_cdq_print(); break;
         case ASM_RET:           asm_ret_print(); break;
         case ASM_STACK_RESERVE: asm_stack_reserve_print(&node->stack_reserve); break;
     }

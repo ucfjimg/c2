@@ -19,7 +19,7 @@ static BinOpPrecedence bin_op_prec[] = {
     { TOK_DIVIDE,   BOP_DIVIDE,   50 },
     { TOK_MODULO,   BOP_MODULO,   50 },
     { TOK_PLUS,     BOP_ADD,      45 },
-    { TOK_MINUS,    BOP_SUBRACT,  45 },
+    { TOK_MINUS,    BOP_SUBTRACT, 45 },
 };
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
@@ -87,7 +87,7 @@ static Expression *parse_factor(Parser *parser)
     //
     UnaryOp uop;
     if (parse_unary_op(parser, &uop)) {
-        Expression *rhs = parse_expression(parser, 0);
+        Expression *rhs = parse_factor(parser);
         Expression *exp = exp_unary(uop, rhs);
         exp->loc = loc;
         return exp;

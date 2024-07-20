@@ -8,7 +8,9 @@
 
 typedef enum {
     REG_RAX,
+    REG_RDX,
     REG_R10,
+    REG_R11,
 } Register;
 
 extern char *reg_name(Register reg);
@@ -44,6 +46,9 @@ typedef enum {
     ASM_FUNC,
     ASM_MOV,
     ASM_UNARY,
+    ASM_BINARY,
+    ASM_IDIV,
+    ASM_CDQ,
     ASM_RET,
     ASM_STACK_RESERVE,
 } AsmNodeTag;
@@ -71,6 +76,16 @@ typedef struct {
 } AsmUnary;
 
 typedef struct {
+    BinaryOp op;            // operator
+    AsmOperand *src;        // source argument
+    AsmOperand *dst;        // destination argument
+} AsmBinary;
+
+typedef struct {
+    AsmOperand *arg;        // argument 
+} AsmIdiv;
+
+typedef struct {
     int bytes;              // number of bytes to reserve for local variables
 } AsmStackReserve;
 
@@ -84,6 +99,8 @@ struct AsmNode {
         AsmFunction func;               // ASM_FUNC
         AsmMov mov;                     // ASM_MOV
         AsmUnary unary;                 // ASM_UNARY
+        AsmBinary binary;               // ASM_BINARY
+        AsmIdiv idiv;                   // ASM_IDIV
         AsmStackReserve stack_reserve;  // ASM_STACK_RESERVE
     };
 };
@@ -91,7 +108,10 @@ struct AsmNode {
 extern AsmNode *asm_prog(FileLine loc);
 extern AsmNode *asm_func(char *name, List body, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc);
-extern AsmNode *asm_unary(UnaryOp up, AsmOperand *arg, FileLine loc);
+extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc);
+extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_idiv(AsmOperand *arg, FileLine loc);
+extern AsmNode *asm_cdq(FileLine loc);
 extern AsmNode *asm_ret(FileLine loc);
 extern AsmNode *asm_stack_reserve(int bytes, FileLine loc);
 extern void asm_free(AsmNode *node);

@@ -29,6 +29,7 @@ static Keyword keywords[] = {
 static void lexer_push_filename(Lexer *lex, char *fname)
 {
     LexerFile *file = safe_malloc(sizeof(LexerFile));
+    file->fname = fname;
     list_push_back(&lex->files, &file->list);
 }
 

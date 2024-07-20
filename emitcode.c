@@ -13,7 +13,9 @@ static void emit_reg(FILE *out, Register reg)
 {
     switch (reg) {
         case REG_RAX: fprintf(out, "%%eax"); break;
+        case REG_RDX: fprintf(out, "%%edx"); break;
         case REG_R10: fprintf(out, "%%r10d"); break;
+        case REG_R11: fprintf(out, "%%r11d"); break;
     }
 }
 
@@ -59,6 +61,14 @@ static void emit_ret(FILE *out)
 }
 
 //
+// Emit a CDQ instruction.
+//
+static void emit_cdq(FILE *out)
+{
+    fprintf(out, "        cdq\n");
+}
+
+//
 // Emit a mov instruction.
 //
 static void emit_mov(FILE *out, AsmMov *mov)
@@ -88,6 +98,42 @@ static void emit_unary(FILE *out, AsmUnary *unary)
 
     fprintf(out, "        %sl ", opcode);
     emit_asmoper(out, unary->arg);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a binary instruction.
+//
+static void emit_binary(FILE *out, AsmBinary *binary)
+{
+    char *opcode = "???";
+
+    switch (binary->op) {
+        case BOP_ADD:           opcode = "add"; break;
+        case BOP_SUBTRACT:      opcode = "sub"; break;
+        case BOP_MULTIPLY:      opcode = "imul"; break;
+
+        //
+        // NOTE idiv is handled as a special case.
+        //
+        default:
+            ICE_ASSERT(((void)"invalid binary opcode in emit_binary", false));
+    }
+
+    fprintf(out, "        %sl ", opcode);
+    emit_asmoper(out, binary->src);
+    fprintf(out, ", ");
+    emit_asmoper(out, binary->dst);
+    fprintf(out, "\n");
+}
+
+//
+// Emit an IDIV instruction.
+//
+static void emit_idiv(FILE *out, AsmIdiv *idiv)
+{
+    fprintf(out, "        idivl ");
+    emit_asmoper(out, idiv->arg);
     fprintf(out, "\n");
 }
 
@@ -150,7 +196,10 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
         case ASM_MOV:           emit_mov(out, &node->mov); break;
         case ASM_UNARY:         emit_unary(out, &node->unary); break;
+        case ASM_BINARY:        emit_binary(out, &node->binary); break;
         case ASM_RET:           emit_ret(out); break;
+        case ASM_CDQ:           emit_cdq(out); break;
+        case ASM_IDIV:          emit_idiv(out, &node->idiv); break;
     }
 }
 
