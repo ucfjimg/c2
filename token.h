@@ -17,6 +17,8 @@ typedef enum {
     TOK_DIVIDE = '/',
     TOK_MODULO = '%',
     TOK_COMPLEMENT = '~',
+    TOK_LESSTHAN = '<',
+    TOK_GREATERTHAN = '>',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
@@ -37,6 +39,8 @@ typedef enum {
     //
     TOK_INCREMENT,          // ++
     TOK_DECREMENT,          // --
+    TOK_RSHIFT,             // >>
+    TOK_LSHIFT,             // <<
 
     //
     // keywords

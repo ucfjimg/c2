@@ -15,6 +15,7 @@ char *reg_name(Register reg)
 {
     switch (reg) {
         case REG_RAX:   return "rax";
+        case REG_RCX:   return "rcx";
         case REG_RDX:   return "rdx";
         case REG_R10:   return "r10";
         case REG_R11:   return "r11";

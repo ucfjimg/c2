@@ -266,6 +266,30 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
         return true;
     }
 
+    if (lex->ch == '<') {
+        lexer_next_char(lex);
+        if (lex->ch == '<') {
+            lexer_next_char(lex);
+            tok->type = TOK_LSHIFT;
+        } else {
+            tok->type = TOK_LESSTHAN;
+        }
+
+        return true;
+    }
+
+    if (lex->ch == '>') {
+        lexer_next_char(lex);
+        if (lex->ch == '>') {
+            lexer_next_char(lex);
+            tok->type = TOK_RSHIFT;
+        } else {
+            tok->type = TOK_GREATERTHAN;
+        }
+
+        return true;
+    }
+
     return false;
 }
 

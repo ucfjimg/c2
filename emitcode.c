@@ -13,6 +13,7 @@ static void emit_reg(FILE *out, Register reg)
 {
     switch (reg) {
         case REG_RAX: fprintf(out, "%%eax"); break;
+        case REG_RCX: fprintf(out, "%%ecx"); break;
         case REG_RDX: fprintf(out, "%%edx"); break;
         case REG_R10: fprintf(out, "%%r10d"); break;
         case REG_R11: fprintf(out, "%%r11d"); break;
@@ -112,6 +113,8 @@ static void emit_binary(FILE *out, AsmBinary *binary)
         case BOP_ADD:           opcode = "add"; break;
         case BOP_SUBTRACT:      opcode = "sub"; break;
         case BOP_MULTIPLY:      opcode = "imul"; break;
+        case BOP_LSHIFT:        opcode = "shl"; break;
+        case BOP_RSHIFT:        opcode = "sar"; break;
 
         //
         // NOTE idiv is handled as a special case.

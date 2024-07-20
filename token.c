@@ -46,6 +46,8 @@ char *token_describe(Token *tok)
 
         case TOK_INCREMENT:     return saprintf("++");
         case TOK_DECREMENT:     return saprintf("--");
+        case TOK_LSHIFT:        return saprintf("<<");
+        case TOK_RSHIFT:        return saprintf(">>");
         
         case TOK_INT:           return saprintf("int");
         case TOK_RETURN:        return saprintf("return");

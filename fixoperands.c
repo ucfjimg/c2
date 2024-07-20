@@ -103,6 +103,19 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
 
         return;
     }
+
+    //
+    // SHR/SAR/SHL can't have a memory shift count, and the shift count must be in CL if
+    // a register is needed.
+    //
+    if ((binop->op == BOP_LSHIFT || binop->op == BOP_RSHIFT) && binop->src->tag == AOP_STACK) {
+        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), binopnode->loc)->list);
+        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_RCX), aoper_clone(binop->dst), binopnode->loc)->list);
+
+        asm_free(binopnode);
+
+        return;
+    }
       
 
     list_push_back(code, &binopnode->list);

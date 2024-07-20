@@ -11,7 +11,9 @@ typedef enum {
     BOP_SUBTRACT,
     BOP_MULTIPLY,
     BOP_DIVIDE,
-    BOP_MODULO
+    BOP_MODULO,
+    BOP_LSHIFT,
+    BOP_RSHIFT,
 } BinaryOp;
 
 extern const char *uop_describe(UnaryOp uop);

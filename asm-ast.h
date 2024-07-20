@@ -8,6 +8,7 @@
 
 typedef enum {
     REG_RAX,
+    REG_RCX,
     REG_RDX,
     REG_R10,
     REG_R11,

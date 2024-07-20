@@ -1,0 +1,6 @@
+{
+    "lshift.c": "gcc-retval:success",
+    "rshift.c": "gcc-retval:success",
+    "shiftprec.c": "gcc-retval:success",
+    "shift-is-signed.c": "gcc-retval:success"
+}

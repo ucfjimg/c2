@@ -25,6 +25,8 @@ const char *bop_describe(BinaryOp bop)
         case BOP_MULTIPLY:  return "*";
         case BOP_DIVIDE:    return "/";
         case BOP_MODULO:    return "%";
+        case BOP_LSHIFT:    return "<<";
+        case BOP_RSHIFT:    return ">>";
     }
 
     return "<invalid-binary-op>";
