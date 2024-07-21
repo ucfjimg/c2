@@ -8,23 +8,23 @@
 static void ast_print_recurse(AstNode *ast, int tab, bool locs);
 static void exp_print_recurse(Expression *exp, int tab, bool locs);
 
-
 //
 // Allocator for all expression objects.
 // 
-static Expression *exp_alloc(ExpressionTag tag)
+static Expression *exp_alloc(ExpressionTag tag, FileLine loc)
 {
     Expression *exp = safe_zalloc(sizeof(Expression));
     exp->tag = tag;
+    exp->loc = loc;
     return exp;
 }
 
 //
 // Construct an integer constant expression.
 //
-Expression *exp_int(unsigned long intval)
+Expression *exp_int(unsigned long intval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_INT);
+    Expression *exp = exp_alloc(EXP_INT, loc);
     exp->intval = intval;
     return exp;
 }
@@ -32,9 +32,9 @@ Expression *exp_int(unsigned long intval)
 //
 // Construct a variable reference expression.
 //
-Expression *exp_var(char *name)
+Expression *exp_var(char *name, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_VAR);
+    Expression *exp = exp_alloc(EXP_VAR, loc);
     exp->var.name = safe_strdup(name);
     return exp;
 }
@@ -50,9 +50,9 @@ static void exp_var_free(ExpVar *var)
 //
 // Construct a unary operator.
 //
-Expression *exp_unary(UnaryOp op, Expression *exp)
+Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc)
 {
-    Expression *uexp = exp_alloc(EXP_UNARY);
+    Expression *uexp = exp_alloc(EXP_UNARY, loc);
     uexp->unary.op = op;
     uexp->unary.exp = exp;
     return uexp;
@@ -69,9 +69,9 @@ static void exp_unary_free(ExpUnary *unary)
 //
 // Construct a binary operator.
 //
-Expression *exp_binary(BinaryOp op, Expression *left, Expression *right)
+Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc)
 {
-    Expression *bexp = exp_alloc(EXP_BINARY);
+    Expression *bexp = exp_alloc(EXP_BINARY, loc);
     bexp->binary.op = op;
     bexp->binary.left = left;
     bexp->binary.right = right;
@@ -91,9 +91,9 @@ static void exp_binary_free(ExpBinary *binary)
 //
 // Construct an assignment expression.
 //
-Expression *exp_assignment(Expression *left, Expression *right)
+Expression *exp_assignment(Expression *left, Expression *right, FileLine loc)
 {
-    Expression *assign = exp_alloc(EXP_ASSIGNMENT);
+    Expression *assign = exp_alloc(EXP_ASSIGNMENT, loc);
 
     assign->assignment.left = left;
     assign->assignment.right = right;
@@ -132,28 +132,29 @@ void exp_free(Expression *exp)
 //
 // Allocatorfor all statement objects.
 //
-static Statement *stmt_alloc(StatementTag tag)
+static Statement *stmt_alloc(StatementTag tag, FileLine loc)
 {
     Statement *stmt = safe_zalloc(sizeof(Statement));
     stmt->tag = tag;
+    stmt->loc = loc;
     return stmt;
 }
 
 //
 // Construct a null statement.
 //
-Statement *stmt_null(void)
+Statement *stmt_null(FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_NULL);
+    Statement *stmt = stmt_alloc(STMT_NULL, loc);
     return stmt;
 }
 
 //
 // Construct a declaration statement.
 //
-Statement *stmt_declaration(char *name, Expression *init)
+Statement *stmt_declaration(char *name, Expression *init, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_DECLARATION);
+    Statement *stmt = stmt_alloc(STMT_DECLARATION, loc);
 
     stmt->decl.name = safe_strdup(name);
     stmt->decl.init = init;
@@ -164,7 +165,7 @@ Statement *stmt_declaration(char *name, Expression *init)
 //
 // Free a declaration statement.
 //
-void stmt_declaration_free(StmtDeclaration *decl)
+static void stmt_declaration_free(StmtDeclaration *decl)
 {
     safe_free(decl->name);
     exp_free(decl->init);
@@ -173,9 +174,9 @@ void stmt_declaration_free(StmtDeclaration *decl)
 //
 // Construct a return statement around an expression (which may be NULL).
 //
-Statement *stmt_return(Expression *exp)
+Statement *stmt_return(Expression *exp, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_RETURN);
+    Statement *stmt = stmt_alloc(STMT_RETURN, loc);
     stmt->ret.exp = exp;
     return stmt;
 }
@@ -191,9 +192,9 @@ static void stmt_return_free(StmtReturn *ret)
 //
 // Construct an expression used as a statement.
 //
-Statement *stmt_expression(Expression *exp)
+Statement *stmt_expression(Expression *exp, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_EXPRESSION);
+    Statement *stmt = stmt_alloc(STMT_EXPRESSION, loc);
     stmt->exp.exp = exp;
     return stmt;
 }
@@ -228,28 +229,29 @@ void stmt_free(Statement *stmt)
 //
 // Allocator for all AST nodes.
 //
-AstNode *ast_alloc(AstTag tag)
+static AstNode *ast_alloc(AstTag tag, FileLine loc)
 {
     AstNode *ast = safe_zalloc(sizeof(AstNode));
     ast->tag = tag;
+    ast->loc = loc;
     return ast;
 }
 
 //
 // Construct a program with no contents.
 //
-AstNode *ast_program(void)
+AstNode *ast_program(FileLine loc)
 {
-    AstNode *ast = ast_alloc(AST_PROGRAM);
+    AstNode *ast = ast_alloc(AST_PROGRAM, loc);
     return ast;
 }
 
 //
 // Construct a function with the given name but no body.
 //
-AstNode *ast_function(void)
+AstNode *ast_function(FileLine loc)
 {
-    AstNode *ast = ast_alloc(AST_FUNCTION); 
+    AstNode *ast = ast_alloc(AST_FUNCTION, loc); 
     return ast;
 }
 

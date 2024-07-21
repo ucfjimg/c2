@@ -1,2 +1,1 @@
-* AST constructors should take locations
 * Function constructors should take a list of statements

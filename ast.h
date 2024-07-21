@@ -54,11 +54,11 @@ struct Expression {
     };
 };
 
-extern Expression *exp_int(unsigned long intval);
-extern Expression *exp_var(char *name);
-extern Expression *exp_unary(UnaryOp op, Expression *exp);
-extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right);
-extern Expression *exp_assignment(Expression *left, Expression *right);
+extern Expression *exp_int(unsigned long intval, FileLine loc);
+extern Expression *exp_var(char *name, FileLine loc);
+extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
+extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_assignment(Expression *left, Expression *right, FileLine loc);
 extern void exp_free(Expression *exp);
 
 //
@@ -96,10 +96,10 @@ struct Statement {
     };
 };
 
-extern Statement *stmt_declaration(char *name, Expression *init);
-extern Statement *stmt_null(void);
-extern Statement *stmt_return(Expression *exp);
-extern Statement *stmt_expression(Expression *exp);
+extern Statement *stmt_declaration(char *name, Expression *init, FileLine loc);
+extern Statement *stmt_null(FileLine loc);
+extern Statement *stmt_return(Expression *exp, FileLine loc);
+extern Statement *stmt_expression(Expression *exp, FileLine loc);
 extern void stmt_free(Statement *stmt);
 
 //
@@ -129,8 +129,8 @@ struct AstNode {
     };
 };
 
-extern AstNode *ast_program(void);
-extern AstNode *ast_function(void);
+extern AstNode *ast_program(FileLine loc);
+extern AstNode *ast_function(FileLine loc);
 extern void ast_free(AstNode *ast);
 
 extern void ast_print(AstNode *ast, bool locs);

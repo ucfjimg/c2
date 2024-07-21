@@ -109,8 +109,7 @@ static Expression *parse_factor(Parser *parser)
     // <factor> := <int>
     //
     if (parser->tok.type == TOK_INT_CONST) {
-        Expression *exp = exp_int(parser->tok.intval);
-        exp->loc = loc;
+        Expression *exp = exp_int(parser->tok.intval, loc);
         parse_next_token(parser);
         return exp;
     }
@@ -121,8 +120,7 @@ static Expression *parse_factor(Parser *parser)
     UnaryOp uop;
     if (parse_unary_op(parser, &uop)) {
         Expression *rhs = parse_factor(parser);
-        Expression *exp = exp_unary(uop, rhs);
-        exp->loc = loc;
+        Expression *exp = exp_unary(uop, rhs, loc);
         return exp;
     }
 
@@ -132,7 +130,6 @@ static Expression *parse_factor(Parser *parser)
     if (parser->tok.type == '(') {
         parse_next_token(parser);
         Expression *exp = parse_expression(parser, 0);
-        exp->loc = loc;
         if (parser->tok.type == ')') {
             parse_next_token(parser);
         } else {
@@ -146,8 +143,7 @@ static Expression *parse_factor(Parser *parser)
     //
     report_expected_err(&parser->tok, "constant, unary operator, or (");
 
-    Expression *exp = exp_int(0);
-    exp->loc = loc;
+    Expression *exp = exp_int(0, loc);
     return exp;
 }
 
@@ -191,8 +187,7 @@ static Expression *parse_expression(Parser *parser, int min_prec)
         parse_next_token(parser);
         Expression *right = parse_expression(parser, binop->prec_level + 1);
 
-        left = exp_binary(binop->op, left, right);
-        left->loc = loc;
+        left = exp_binary(binop->op, left, right, loc);
     }
     return left;
 }
@@ -210,8 +205,7 @@ static Statement *parse_statement(Parser *parser)
     //
     if (parser->tok.type != TOK_RETURN) {
         report_expected_err(&parser->tok, "`return`");
-        Statement *null = stmt_null();
-        null->loc = loc;
+        Statement *null = stmt_null(loc);
         return null;
     }
 
@@ -223,8 +217,7 @@ static Statement *parse_statement(Parser *parser)
     }
     parse_next_token(parser);
 
-    Statement *stmt = stmt_return(exp);
-    stmt->loc = loc;
+    Statement *stmt = stmt_return(exp, loc);
     return stmt;
 }
 
@@ -237,8 +230,7 @@ static AstNode *parse_function(Parser *parser)
     //
     // <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
     //
-    AstNode *node = ast_function();
-    node->loc = parser->tok.loc;
+    AstNode *node = ast_function(parser->tok.loc);
 
     AstFunction *func = &node->func;
 
@@ -279,8 +271,7 @@ static AstNode *parse_function(Parser *parser)
     list_clear(&func->stmts);
 
     if (parser->tok.type == '{') {
-        Statement *stmt = stmt_null();
-        stmt->loc = parser->tok.loc;
+        Statement *stmt = stmt_null(parser->tok.loc);
         list_push_back(&func->stmts, &stmt->list);
     } else {
         while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
@@ -313,8 +304,7 @@ AstNode *parser_parse(Lexer *lex)
     //
     // <program> := <function>
     //
-    AstNode *prog = ast_program();
-    prog->loc = parser.tok.loc;
+    AstNode *prog = ast_program(parser.tok.loc);
 
     prog->prog.func = parse_function(&parser);
 
