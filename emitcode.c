@@ -24,6 +24,14 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
             case REG_R10: fprintf(out, "%%r10d"); break;
             case REG_R11: fprintf(out, "%%r11d"); break;
         }
+    } else if (os == OS_BYTE) {
+        switch (reg) {
+            case REG_RAX: fprintf(out, "%%al"); break;
+            case REG_RCX: fprintf(out, "%%cl"); break;
+            case REG_RDX: fprintf(out, "%%dl"); break;
+            case REG_R10: fprintf(out, "%%r10b"); break;
+            case REG_R11: fprintf(out, "%%r11b"); break;
+        }
     }
 }
 
@@ -147,7 +155,12 @@ static void emit_binary(FILE *out, AsmBinary *binary)
     }
 
     fprintf(out, "        %sl ", opcode);
-    emit_asmoper(out, binary->src, OS_DWORD);
+
+    if (binary->op == BOP_RSHIFT || binary->op == BOP_LSHIFT) {
+        emit_asmoper(out, binary->src, OS_BYTE);
+    } else {
+        emit_asmoper(out, binary->src, OS_DWORD);
+    }
     fprintf(out, ", ");
     emit_asmoper(out, binary->dst, OS_DWORD);
     fprintf(out, "\n");
