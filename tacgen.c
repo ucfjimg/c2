@@ -129,8 +129,10 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
         case EXP_INT:       return tac_const_int(exp->intval, exp->loc);
+        case EXP_VAR:       /* TODO */ break;
         case EXP_UNARY:     return tcg_unary_op(state, exp);
         case EXP_BINARY:    return tcg_binary_op(state, exp);
+        case EXP_ASSIGNMENT:/* TODO */ break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -167,14 +169,16 @@ static TacNode *tcg_funcdef(TacState *state, AstNode *func)
 {
     ICE_ASSERT(func);
     ICE_ASSERT(func->tag == AST_FUNCTION);
-    ICE_ASSERT(func->func.stmt);
 
     FileLine loc = func->loc;
 
     TacState funcstate;
     list_clear(&funcstate.code);
 
-    tcg_return(&funcstate, func->func.stmt);
+    /* TODO properly generate functionb bodu
+        tcg_return(&funcstate, func->func.stmt);
+    */
+    tcg_return(state, NULL);
 
     return tac_function_def(func->func.name, funcstate.code, loc);
 }

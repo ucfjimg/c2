@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fileline.h"
+#include "list.h"
 #include "operators.h"
 
 #include <stdbool.h>
@@ -14,9 +15,15 @@ typedef struct AstNode AstNode;
 //
 typedef enum { 
     EXP_INT,
+    EXP_VAR,
     EXP_UNARY,
     EXP_BINARY,
+    EXP_ASSIGNMENT,
 } ExpressionTag;
+
+typedef struct {
+    char *name;
+} ExpVar;
 
 typedef struct {
     UnaryOp op;
@@ -29,45 +36,70 @@ typedef struct {
     Expression *right;
 } ExpBinary;
 
+typedef struct {
+    Expression *left;
+    Expression *right;
+} ExpAssignment;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;               
 
     union {
         unsigned long intval;
+        ExpVar var;
         ExpUnary unary;
         ExpBinary binary;
+        ExpAssignment assignment;
     };
 };
 
 extern Expression *exp_int(unsigned long intval);
+extern Expression *exp_var(char *name);
 extern Expression *exp_unary(UnaryOp op, Expression *exp);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right);
+extern Expression *exp_assignment(Expression *left, Expression *right);
 extern void exp_free(Expression *exp);
 
 //
 // statemements
 //
 typedef enum {
+    STMT_DECLARATION,
     STMT_NULL,
     STMT_RETURN,
+    STMT_EXPRESSION,
 } StatementTag;
+
+typedef struct {
+    char *name;                 // name of variable being declared
+    Expression *init;           // initializatiom (may be NULL)
+} StmtDeclaration;
 
 typedef struct {
     Expression *exp;            // return value (may be NULL) 
 } StmtReturn;
 
+typedef struct {
+    Expression *exp;            // expression used as statement
+} StmtExpression;
+
 struct Statement {
+    ListNode list;
     StatementTag tag;
     FileLine loc;               
 
     union {
+        StmtDeclaration decl;   // STMT_DECLARATION
         StmtReturn ret;         // STMT_RETURN
+        StmtExpression exp;     // STMT_EXPRESSION
     };
 };
 
+extern Statement *stmt_declaration(char *name, Expression *init);
 extern Statement *stmt_null(void);
 extern Statement *stmt_return(Expression *exp);
+extern Statement *stmt_expression(Expression *exp);
 extern void stmt_free(Statement *stmt);
 
 //
@@ -84,7 +116,7 @@ typedef struct {
 
 typedef struct {
     char *name;                 // name of function
-    Statement *stmt;            // function body
+    List stmts;                 // of <Statement>
 } AstFunction;
 
 struct AstNode {

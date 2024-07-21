@@ -275,7 +275,19 @@ static AstNode *parse_function(Parser *parser)
     }
 
     parse_next_token(parser);
-    func->stmt = parse_statement(parser);
+
+    list_clear(&func->stmts);
+
+    if (parser->tok.type == '{') {
+        Statement *stmt = stmt_null();
+        stmt->loc = parser->tok.loc;
+        list_push_back(&func->stmts, &stmt->list);
+    } else {
+        while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
+            Statement *stmt = parse_statement(parser);
+            list_push_back(&func->stmts, &stmt->list);
+        }
+    }
 
     if (parser->tok.type != '}') {
         report_expected_err(&parser->tok, "`}`");        

@@ -26,6 +26,24 @@ Expression *exp_int(unsigned long intval)
 }
 
 //
+// Construct a variable reference expression.
+//
+Expression *exp_var(char *name)
+{
+    Expression *exp = exp_alloc(EXP_VAR);
+    exp->var.name = safe_strdup(name);
+    return exp;
+}
+
+//
+// Free a variable reference expression.
+//
+static void exp_var_free(ExpVar *var)
+{
+    safe_free(var->name);
+}
+
+//
 // Construct a unary operator.
 //
 Expression *exp_unary(UnaryOp op, Expression *exp)
@@ -67,15 +85,38 @@ static void exp_binary_free(ExpBinary *binary)
 }
 
 //
+// Construct an assignment expression.
+//
+Expression *exp_assignment(Expression *left, Expression *right)
+{
+    Expression *assign = exp_alloc(EXP_ASSIGNMENT);
+
+    assign->assignment.left = left;
+    assign->assignment.right = right;
+
+    return assign;
+}
+
+//
+// Free an assignment expression.
+//
+void exp_assignment_free(ExpAssignment *assign)
+{
+    exp_free(assign->left);
+    exp_free(assign->right);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
 {
     if (exp) {
         switch (exp->tag) {
-            case EXP_UNARY:  exp_unary_free(&exp->unary); break;
-            case EXP_BINARY: exp_binary_free(&exp->binary); break;
-
+            case EXP_VAR:           exp_var_free(&exp->var); break;
+            case EXP_UNARY:         exp_unary_free(&exp->unary); break;
+            case EXP_BINARY:        exp_binary_free(&exp->binary); break;
+            case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
             default:
                 break;
         }
@@ -104,6 +145,28 @@ Statement *stmt_null(void)
 }
 
 //
+// Construct a declaration statement.
+//
+Statement *stmt_declaration(char *name, Expression *init)
+{
+    Statement *stmt = stmt_alloc(STMT_DECLARATION);
+
+    stmt->decl.name = safe_strdup(name);
+    stmt->decl.init = init;
+
+    return stmt;
+}
+
+//
+// Free a declaration statement.
+//
+void stmt_declaration_free(StmtDeclaration *decl)
+{
+    safe_free(decl->name);
+    exp_free(decl->init);
+}
+
+//
 // Construct a return statement around an expression (which may be NULL).
 //
 Statement *stmt_return(Expression *exp)
@@ -116,9 +179,27 @@ Statement *stmt_return(Expression *exp)
 //
 // Free a return statement
 //
-void stmt_return_free(StmtReturn *ret)
+static void stmt_return_free(StmtReturn *ret)
 {
     exp_free(ret->exp);
+}
+
+//
+// Construct an expression used as a statement.
+//
+Statement *stmt_expression(Expression *exp)
+{
+    Statement *stmt = stmt_alloc(STMT_EXPRESSION);
+    stmt->exp.exp = exp;
+    return stmt;
+}
+
+//
+// Free an expression statement
+//
+static void stmt_expression_free(StmtExpression *exp)
+{
+    exp_free(exp->exp);
 }
 
 //
@@ -128,7 +209,9 @@ void stmt_free(Statement *stmt)
 {
     if (stmt) {
         switch (stmt->tag) {
-            case STMT_RETURN: stmt_return_free(&stmt->ret); break;
+            case STMT_DECLARATION:  stmt_declaration_free(&stmt->decl); break;
+            case STMT_RETURN:       stmt_return_free(&stmt->ret); break;
+            case STMT_EXPRESSION:   stmt_expression_free(&stmt->exp); break;
 
             default:
                 break;
@@ -180,7 +263,15 @@ static void ast_free_program(AstProgram *prog)
 static void ast_free_function(AstFunction *func)
 {
     safe_free(func->name);
-    stmt_free(func->stmt);
+
+    for (ListNode *curr = func->stmts.head; curr; ) {
+        ListNode *next = curr->next;
+
+        stmt_free(CONTAINER_OF(curr, Statement, list));
+
+        curr = next;
+    }
+
 }
 
 //
@@ -216,6 +307,10 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
             printf("%sconst-int(%lu);\n", indent, exp->intval);
             break;
 
+        case EXP_VAR:
+            printf("%svar(%s);\n", indent, exp->var.name);
+            break;
+
         case EXP_UNARY:
             printf("%sunary(%s) {\n", indent, uop_describe(exp->unary.op));
             exp_print_recurse(exp->unary.exp, tab + 2, locs);
@@ -229,6 +324,15 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
             exp_print_recurse(exp->binary.right, tab + 2, locs);
             printf("%s}\n", indent);
             break;
+
+        case EXP_ASSIGNMENT:
+            printf("%sassignment {\n", indent);
+            exp_print_recurse(exp->assignment.left, tab + 2, locs);
+            printf("%s}, {\n", indent);
+            exp_print_recurse(exp->assignment.right, tab + 2, locs);
+            printf("%s}\n", indent);
+            break;
+
     }
 
     safe_free(indent);
@@ -248,6 +352,16 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
     }
 
     switch (stmt->tag) {
+        case STMT_DECLARATION:
+            printf("%sdeclare(%s)", indent, stmt->decl.name);
+            if (stmt->decl.init) {
+                printf(" = {\n");
+                exp_print_recurse(stmt->decl.init, tab + 2, locs);
+                printf("}");
+            }
+            printf(";\n");
+            break;
+
         case STMT_NULL:
             printf("%snull-statement;\n", indent);
             break;
@@ -255,6 +369,12 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
         case STMT_RETURN:
             printf("%sreturn {\n", indent);
             exp_print_recurse(stmt->ret.exp, tab + 2, locs);
+            printf("%s}\n", indent);
+            break;
+
+        case STMT_EXPRESSION:
+            printf("%sexp {\n", indent);
+            exp_print_recurse(stmt->exp.exp, tab + 2, locs);
             printf("%s}\n", indent);
             break;
     }
@@ -285,7 +405,10 @@ static void ast_print_recurse(AstNode *ast, int tab, bool locs)
 
         case AST_FUNCTION:
             printf("%sfunction(int, %s) {\n", indent, ast->func.name);
-            stmt_print_recurse(ast->func.stmt, tab + 2, locs);
+
+            for (ListNode *curr = ast->func.stmts.head; curr; curr = curr->next) {
+                stmt_print_recurse(CONTAINER_OF(curr, Statement, list), tab + 2, locs);
+            }
             printf("%s}\n", indent);
             break;
     }
