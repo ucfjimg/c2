@@ -1,8 +1,13 @@
 #include "ast.h"
 
+#include "ice.h"
 #include "safemem.h"
 
 #include <stdio.h>
+
+static void ast_print_recurse(AstNode *ast, int tab, bool locs);
+static void exp_print_recurse(Expression *exp, int tab, bool locs);
+
 
 //
 // Allocator for all expression objects.
@@ -289,6 +294,56 @@ void ast_free(AstNode *ast)
 }
 
 //
+// Print an integer constant expression.
+//
+static void print_exp_const_int(unsigned long val, int tab)
+{
+    printf("%*sconst-int(%lu);\n", tab, "", val);
+}
+
+//
+// Print an variable reference expression.
+//
+static void print_exp_var(char *name, int tab)
+{
+    printf("%*svar(%s);\n", tab, "", name);
+}
+
+//
+// Print a unary expression.
+//
+static void print_exp_unary(ExpUnary *unary, int tab, bool locs)
+{
+    printf("%*sunary(%s) {\n", tab, "", uop_describe(unary->op));
+    exp_print_recurse(unary->exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a binary expression.
+//
+static void print_exp_binary(ExpBinary *binary, int tab, bool locs)
+{
+    printf("%*sbinary(%s) {\n", tab, "", bop_describe(binary->op));
+    exp_print_recurse(binary->left, tab + 2, locs);
+    printf("%*s  ,\n", tab, "");
+    exp_print_recurse(binary->right, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print an assignment expression.
+//
+static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
+{
+    printf("%*sassignment {\n", tab, "");
+    exp_print_recurse(assign->left, tab + 2, locs);
+    printf("%*s}, {\n", tab, "");
+    exp_print_recurse(assign->right, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -300,37 +355,54 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
     }
 
     switch (exp->tag) {
-        case EXP_INT:
-            printf("%*sconst-int(%lu);\n", tab, "", exp->intval);
-            break;
-
-        case EXP_VAR:
-            printf("%*svar(%s);\n", tab, "", exp->var.name);
-            break;
-
-        case EXP_UNARY:
-            printf("%*sunary(%s) {\n", tab, "", uop_describe(exp->unary.op));
-            exp_print_recurse(exp->unary.exp, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
-
-        case EXP_BINARY:
-            printf("%*sbinary(%s) {\n", tab, "", bop_describe(exp->binary.op));
-            exp_print_recurse(exp->binary.left, tab + 2, locs);
-            printf("%*s  ,\n", tab, "");
-            exp_print_recurse(exp->binary.right, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
-
-        case EXP_ASSIGNMENT:
-            printf("%*sassignment {\n", tab, "");
-            exp_print_recurse(exp->assignment.left, tab + 2, locs);
-            printf("%*s}, {\n", tab, "");
-            exp_print_recurse(exp->assignment.right, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
-
+        case EXP_INT:           print_exp_const_int(exp->intval, tab); break;
+        case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
+        case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
+        case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;
+        case EXP_ASSIGNMENT:    print_exp_assignment(&exp->assignment, tab, locs); break;
     }
+}
+
+//
+// Print a variable declaration.
+//
+static void stmt_print_declaration(StmtDeclaration *decl, int tab, bool locs)
+{
+    printf("%*sdeclare(%s)", tab, "", decl->name);
+    if (decl->init) {
+        printf(" = {\n");
+        exp_print_recurse(decl->init, tab + 2, locs);
+        printf("}");
+    }
+    printf(";\n");
+}
+
+//
+// Print a null statement.
+//
+static void stmt_print_null(int tab)
+{
+    printf("%*snull-statement;\n", tab, "");
+}
+
+//
+// Print a return statement.
+//
+static void stmt_print_return(StmtReturn *ret, int tab, bool locs)
+{
+    printf("%*sreturn {\n", tab, "");
+    exp_print_recurse(ret->exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a statement expression.
+//
+static void stmt_print_expression(StmtExpression *exp, int tab, bool locs)
+{
+    printf("%*sexp {\n", tab, "");
+    exp_print_recurse(exp->exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
 }
 
 //
@@ -345,34 +417,35 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
     }
 
     switch (stmt->tag) {
-        case STMT_DECLARATION:
-            printf("%*sdeclare(%s)", tab, "", stmt->decl.name);
-            if (stmt->decl.init) {
-                printf(" = {\n");
-                exp_print_recurse(stmt->decl.init, tab + 2, locs);
-                printf("}");
-            }
-            printf(";\n");
-            break;
-
-        case STMT_NULL:
-            printf("%*snull-statement;\n", tab, "");
-            break;
-
-        case STMT_RETURN:
-            printf("%*sreturn {\n", tab, "");
-            exp_print_recurse(stmt->ret.exp, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
-
-        case STMT_EXPRESSION:
-            printf("%*sexp {\n", tab, "");
-            exp_print_recurse(stmt->exp.exp, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
+        case STMT_DECLARATION:  stmt_print_declaration(&stmt->decl, tab, locs); break;
+        case STMT_NULL:         stmt_print_null(tab); break;
+        case STMT_RETURN:       stmt_print_return(&stmt->ret, tab, locs); break;
+        case STMT_EXPRESSION:   stmt_print_expression(&stmt->exp, tab, locs); break;
     }
 }
 
+//
+// Print an entire AST program.
+//
+static void ast_print_program(AstProgram *prog, int tab, bool locs)
+{
+    printf("%*sprogram() {\n", tab, "");
+    ast_print_recurse(prog->func, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print an AST function.
+//
+static void ast_print_function(AstFunction *func, int tab, bool locs)
+{
+    printf("%*sfunction(int, %s) {\n", tab, "", func->name);
+
+    for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
+        stmt_print_recurse(CONTAINER_OF(curr, Statement, list), tab + 2, locs);
+    }
+    printf("%*s}\n", tab, "");
+}
 
 //
 // Recursively print an AST, starting at indent `tab`.
@@ -386,20 +459,8 @@ static void ast_print_recurse(AstNode *ast, int tab, bool locs)
     }
 
     switch (ast->tag) {
-        case AST_PROGRAM:
-            printf("%*sprogram() {\n", tab, "");
-            ast_print_recurse(ast->prog.func, tab + 2, locs);
-            printf("%*s}\n", tab, "");
-            break;
-
-        case AST_FUNCTION:
-            printf("%*sfunction(int, %s) {\n", tab, "", ast->func.name);
-
-            for (ListNode *curr = ast->func.stmts.head; curr; curr = curr->next) {
-                stmt_print_recurse(CONTAINER_OF(curr, Statement, list), tab + 2, locs);
-            }
-            printf("%*s}\n", tab, "");
-            break;
+        case AST_PROGRAM:   ast_print_program(&ast->prog, tab, locs); break;
+        case AST_FUNCTION:  ast_print_function(&ast->func, tab, locs); break;
     }
 }
 
