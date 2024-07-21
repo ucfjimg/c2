@@ -1,7 +1,6 @@
 #include "ast.h"
 
 #include "safemem.h"
-#include "strutil.h"
 
 #include <stdio.h>
 
@@ -294,48 +293,44 @@ void ast_free(AstNode *ast)
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
 {
-    char *indent = str_repeat(tab, ' ');
-
     if (locs) {
         char *loc = fileline_describe(&exp->loc);
-        printf("%s/* %s */\n", indent, loc);
+        printf("%*s/* %s */\n", tab, "", loc);
         safe_free(loc);
     }
 
     switch (exp->tag) {
         case EXP_INT:
-            printf("%sconst-int(%lu);\n", indent, exp->intval);
+            printf("%*sconst-int(%lu);\n", tab, "", exp->intval);
             break;
 
         case EXP_VAR:
-            printf("%svar(%s);\n", indent, exp->var.name);
+            printf("%*svar(%s);\n", tab, "", exp->var.name);
             break;
 
         case EXP_UNARY:
-            printf("%sunary(%s) {\n", indent, uop_describe(exp->unary.op));
+            printf("%*sunary(%s) {\n", tab, "", uop_describe(exp->unary.op));
             exp_print_recurse(exp->unary.exp, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
 
         case EXP_BINARY:
-            printf("%sbinary(%s) {\n", indent, bop_describe(exp->binary.op));
+            printf("%*sbinary(%s) {\n", tab, "", bop_describe(exp->binary.op));
             exp_print_recurse(exp->binary.left, tab + 2, locs);
-            printf("%s  ,\n", indent);
+            printf("%*s  ,\n", tab, "");
             exp_print_recurse(exp->binary.right, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
 
         case EXP_ASSIGNMENT:
-            printf("%sassignment {\n", indent);
+            printf("%*sassignment {\n", tab, "");
             exp_print_recurse(exp->assignment.left, tab + 2, locs);
-            printf("%s}, {\n", indent);
+            printf("%*s}, {\n", tab, "");
             exp_print_recurse(exp->assignment.right, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
 
     }
-
-    safe_free(indent);
 }
 
 //
@@ -343,17 +338,15 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
 //
 static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
 {
-    char *indent = str_repeat(tab, ' ');
-
     if (locs) {
         char *loc = fileline_describe(&stmt->loc);
-        printf("%s/* %s */\n", indent, loc);
+        printf("%*s/* %s */\n", tab, "", loc);
         safe_free(loc);
     }
 
     switch (stmt->tag) {
         case STMT_DECLARATION:
-            printf("%sdeclare(%s)", indent, stmt->decl.name);
+            printf("%*sdeclare(%s)", tab, "", stmt->decl.name);
             if (stmt->decl.init) {
                 printf(" = {\n");
                 exp_print_recurse(stmt->decl.init, tab + 2, locs);
@@ -363,23 +356,21 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
             break;
 
         case STMT_NULL:
-            printf("%snull-statement;\n", indent);
+            printf("%*snull-statement;\n", tab, "");
             break;
 
         case STMT_RETURN:
-            printf("%sreturn {\n", indent);
+            printf("%*sreturn {\n", tab, "");
             exp_print_recurse(stmt->ret.exp, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
 
         case STMT_EXPRESSION:
-            printf("%sexp {\n", indent);
+            printf("%*sexp {\n", tab, "");
             exp_print_recurse(stmt->exp.exp, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
     }
-
-    safe_free(indent);
 }
 
 
@@ -388,33 +379,28 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
 //
 static void ast_print_recurse(AstNode *ast, int tab, bool locs)
 {
-    char *indent = str_repeat(tab, ' ');
-
     if (locs) {
         char *loc = fileline_describe(&ast->loc);
-        printf("%s/* %s */\n", indent, loc);
+        printf("%*s/* %s */\n", tab, "", loc);
         safe_free(loc);
     }
 
     switch (ast->tag) {
         case AST_PROGRAM:
-            printf("%sprogram() {\n", indent);
+            printf("%*sprogram() {\n", tab, "");
             ast_print_recurse(ast->prog.func, tab + 2, locs);
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
 
         case AST_FUNCTION:
-            printf("%sfunction(int, %s) {\n", indent, ast->func.name);
+            printf("%*sfunction(int, %s) {\n", tab, "", ast->func.name);
 
             for (ListNode *curr = ast->func.stmts.head; curr; curr = curr->next) {
                 stmt_print_recurse(CONTAINER_OF(curr, Statement, list), tab + 2, locs);
             }
-            printf("%s}\n", indent);
+            printf("%*s}\n", tab, "");
             break;
     }
-
-
-    safe_free(indent);
 }
 
 //

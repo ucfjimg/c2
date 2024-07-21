@@ -20,7 +20,6 @@ add_executable(cc
     parser.c
     safemem.c
     strbuilder.c
-    strutil.c
     tacgen.c
     tacnode.c
     token.c
