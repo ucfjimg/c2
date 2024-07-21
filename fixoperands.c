@@ -124,6 +124,41 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     list_push_back(code, &binopnode->list);
 }
 
+//
+// Fix up a compare intruction.
+//
+static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
+{
+    ICE_ASSERT(cmpnode->tag == ASM_CMP);
+    AsmCmp *cmp = &cmpnode->cmp;
+    FileLine loc = cmpnode->loc;
+
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(cmp->left->tag != AOP_PSEUDOREG);
+    ICE_ASSERT(cmp->right->tag != AOP_PSEUDOREG);
+
+    if (cmp->left->tag == AOP_STACK && cmp->right->tag == AOP_STACK) {
+        list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), loc)->list);
+        list_push_back(code, &asm_cmp(aoper_reg(REG_R10), aoper_clone(cmp->right), loc)->list);
+  
+        asm_free(cmpnode);
+
+        return;
+    }
+
+    if (cmp->right->tag == AOP_IMM) {
+        list_push_back(code, &asm_mov(aoper_clone(cmp->right), aoper_reg(REG_R11), loc)->list);
+        list_push_back(code, &asm_cmp(aoper_clone(cmp->left), aoper_reg(REG_R11), loc)->list);
+  
+        asm_free(cmpnode);
+
+        return;
+    }
+
+    list_push_back(code, &cmpnode->list);
+}
 
 //
 // Fix instructions in a function.
@@ -156,6 +191,7 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_MOV:       asm_fixop_mov(&newcode, node); break;
             case ASM_IDIV:      asm_fixop_idiv(&newcode, node); break;
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
+            case ASM_CMP:       asm_fixop_cmp(&newcode, node); break;
 
             default:
                 //

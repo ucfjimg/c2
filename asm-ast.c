@@ -25,6 +25,24 @@ char *reg_name(Register reg)
 }
 
 //
+// Return a condition code description as a static string.
+//
+const char *acc_describe(AsmConditionCode cc)
+{
+    switch (cc) {
+        case ACC_E:     return "E";
+        case ACC_NE:    return "NE";
+        case ACC_G:     return "G";
+        case ACC_GE:    return "GE";
+        case ACC_L:     return "L";
+        case ACC_LE:    return "LE";
+    }
+
+    return "<invalid-condition-code>";
+}
+
+
+//
 // Clone an assembly operand.
 //
 AsmOperand *aoper_clone(AsmOperand *oper)
@@ -201,6 +219,79 @@ AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc)
 }
 
 //
+// Construct an assembly compare instruction.
+//
+AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_CMP;
+    node->loc = loc;
+    node->cmp.left = left;
+    node->cmp.right = right;
+
+    return node;
+}
+
+//
+// Construct an assembly unconditional jump instruction.
+//
+AsmNode *asm_jump(char *target, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_JUMP;
+    node->loc = loc;
+    node->jump.target = safe_strdup(target);
+
+    return node;
+}
+
+//
+// Construct an assembly conditional jump instruction.
+//
+AsmNode *asm_jumpcc(char *target, AsmConditionCode cc, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_JUMPCC;
+    node->loc = loc;
+    node->jumpcc.target = safe_strdup(target);
+    node->jumpcc.cc = cc;
+
+    return node;
+}
+
+//
+// Construct an assembly label.
+//
+AsmNode *asm_label(char *label, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_LABEL;
+    node->loc = loc;
+    node->label.label = safe_strdup(label);
+
+    return node;
+}
+
+//
+// Construct an assembly set on condition instruction.
+//
+AsmNode *asm_setcc(AsmOperand *dst, AsmConditionCode cc, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_SETCC;
+    node->loc = loc;
+    node->setcc.dst = dst;
+    node->setcc.cc = cc;
+
+    return node;
+}
+
+//
 // Construct an assembly idiv (signed division) instruction.
 //
 AsmNode *asm_idiv(AsmOperand *arg, FileLine loc)
@@ -257,7 +348,7 @@ AsmNode *asm_stack_reserve(int bytes, FileLine loc)
 //
 // Free an assembly program
 //
-void asm_prog_free(AsmProgram *prog)
+static void asm_prog_free(AsmProgram *prog)
 {
     asm_free(prog->func);
 }
@@ -265,7 +356,7 @@ void asm_prog_free(AsmProgram *prog)
 //
 // Free an assembly mov instruction.
 //
-void asm_mov_free(AsmMov *mov)
+static void asm_mov_free(AsmMov *mov)
 {
     aoper_free(mov->src);
     aoper_free(mov->dst);
@@ -274,7 +365,7 @@ void asm_mov_free(AsmMov *mov)
 //
 // Free an assembly unary instruction.
 //
-void asm_unary_free(AsmUnary *unary)
+static void asm_unary_free(AsmUnary *unary)
 {
     aoper_free(unary->arg);
 }
@@ -282,16 +373,57 @@ void asm_unary_free(AsmUnary *unary)
 //
 // Free an assembly binary instruction.
 //
-void asm_binary_free(AsmBinary *binary)
+static void asm_binary_free(AsmBinary *binary)
 {
     aoper_free(binary->src);
     aoper_free(binary->dst);
 }
 
 //
+// Free an assembly compare instruction.
+//
+static void asm_cmp_free(AsmCmp *cmp)
+{
+    aoper_free(cmp->left);
+    aoper_free(cmp->right);
+}
+
+//
+// Free an assembly jump instruction.
+//
+static void asm_jump_free(AsmJump *jump)
+{
+    safe_free(jump->target);
+}
+
+//
+// Free an assembly conditional jump instruction.
+//
+static void asm_jumpcc_free(AsmJumpCc *jumpcc)
+{
+    safe_free(jumpcc->target);
+}
+
+//
+// Free an assembly label.
+//
+static void asm_label_free(AsmLabel *label)
+{
+    safe_free(label->label);
+}
+
+//
+// Free an assembly set on condition instruction.
+//
+static void asm_setcc_free(AsmSetCc *setcc)
+{
+    aoper_free(setcc->dst);
+}
+
+//
 // Free an assembly idiv instruction.
 //
-void asm_idiv_free(AsmIdiv *idiv)
+static void asm_idiv_free(AsmIdiv *idiv)
 {
     aoper_free(idiv->arg);
 }
@@ -299,7 +431,7 @@ void asm_idiv_free(AsmIdiv *idiv)
 //
 // Free an assembly function.
 //
-void asm_func_free(AsmFunction *func)
+static void asm_func_free(AsmFunction *func)
 {
     safe_free(func->name);
 
@@ -323,6 +455,11 @@ void asm_free(AsmNode *node)
             case ASM_MOV:       asm_mov_free(&node->mov); break;
             case ASM_UNARY:     asm_unary_free(&node->unary); break;
             case ASM_BINARY:    asm_binary_free(&node->binary); break;
+            case ASM_CMP:       asm_cmp_free(&node->cmp); break;
+            case ASM_JUMP:      asm_jump_free(&node->jump); break;
+            case ASM_JUMPCC:    asm_jumpcc_free(&node->jumpcc); break;
+            case ASM_LABEL:     asm_label_free(&node->label); break;
+            case ASM_SETCC:     asm_setcc_free(&node->setcc); break;
             case ASM_IDIV:      asm_idiv_free(&node->idiv); break;
             case ASM_FUNC:      asm_func_free(&node->func); break; 
 
@@ -391,6 +528,52 @@ static void asm_binary_print(AsmBinary *binary)
 }
 
 //
+// Print a compare instruction.
+//
+static void asm_cmp_print(AsmCmp *cmp)
+{
+    printf("        cmp ");
+    aoper_print(cmp->left);
+    printf(", ");
+    aoper_print(cmp->right);
+    printf("\n");
+}
+
+//
+// Print a jump instruction.
+//
+static void asm_jump_print(AsmJump *jump)
+{
+    printf("        jump %s\n", jump->target);
+}
+
+//
+// Print a conditional set instruction.
+//
+static void asm_setcc_print(AsmSetCc *setcc)
+{
+    printf("        set%s ", acc_describe(setcc->cc));
+    aoper_print(setcc->dst);
+    printf("\n");
+}
+
+//
+// Print a conditional jump instruction.
+//
+static void asm_jumpcc_print(AsmJumpCc *jumpcc)
+{
+    printf("        jump%s %s\n", acc_describe(jumpcc->cc), jumpcc->target);
+}
+
+//
+// Print a label.
+//
+static void asm_label_print(AsmLabel *label)
+{
+    printf("%s:\n", label->label);
+}
+
+//
 // Print an idiv instruction.
 //
 static void asm_idiv_print(AsmIdiv *idiv)
@@ -444,6 +627,11 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
         case ASM_BINARY:        asm_binary_print(&node->binary); break;
+        case ASM_CMP:           asm_cmp_print(&node->cmp); break;
+        case ASM_JUMP:          asm_jump_print(&node->jump); break;
+        case ASM_JUMPCC:        asm_jumpcc_print(&node->jumpcc); break;
+        case ASM_LABEL:         asm_label_print(&node->label); break;
+        case ASM_SETCC:         asm_setcc_print(&node->setcc); break;
         case ASM_IDIV:          asm_idiv_print(&node->idiv); break;
         case ASM_CDQ:           asm_cdq_print(); break;
         case ASM_RET:           asm_ret_print(); break;

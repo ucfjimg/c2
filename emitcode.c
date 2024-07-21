@@ -6,17 +6,24 @@
 
 static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc);
 
+typedef enum {
+    OS_BYTE = 1,
+    OS_DWORD = 4,
+} OperandSize;
+
 //
 // Emit a register value.
 //
-static void emit_reg(FILE *out, Register reg)
+static void emit_reg(FILE *out, Register reg, OperandSize os)
 {
-    switch (reg) {
-        case REG_RAX: fprintf(out, "%%eax"); break;
-        case REG_RCX: fprintf(out, "%%ecx"); break;
-        case REG_RDX: fprintf(out, "%%edx"); break;
-        case REG_R10: fprintf(out, "%%r10d"); break;
-        case REG_R11: fprintf(out, "%%r11d"); break;
+    if (os == OS_DWORD) {
+        switch (reg) {
+            case REG_RAX: fprintf(out, "%%eax"); break;
+            case REG_RCX: fprintf(out, "%%ecx"); break;
+            case REG_RDX: fprintf(out, "%%edx"); break;
+            case REG_R10: fprintf(out, "%%r10d"); break;
+            case REG_R11: fprintf(out, "%%r11d"); break;
+        }
     }
 }
 
@@ -39,16 +46,29 @@ static void emit_stack(FILE *out, int offset)
 //
 // Emit an assembly operand.
 //
-static void emit_asmoper(FILE *out, AsmOperand *oper)
+static void emit_asmoper(FILE *out, AsmOperand *oper, OperandSize os)
 {
     switch (oper->tag) {
         case AOP_IMM:   emit_imm(out, oper->imm); break;
-        case AOP_REG:   emit_reg(out, oper->reg); break;
+        case AOP_REG:   emit_reg(out, oper->reg, os); break;
         case AOP_STACK: emit_stack(out, oper->stack_offset); break;
         
         case AOP_PSEUDOREG:
             ICE_ASSERT(((void)"pseuedoreg operand found at code emission time.", false));
     }
+}
+
+//
+// Emit a label.
+// 
+static void emit_label(FILE *out, const char *label)
+{
+#ifndef __APPLE__
+    fprintf(out, ".L%s", label);
+#else
+    fprintf(out, "L%s", label);
+#endif
+
 }
 
 //
@@ -75,9 +95,9 @@ static void emit_cdq(FILE *out)
 static void emit_mov(FILE *out, AsmMov *mov)
 {
     fprintf(out, "        movl ");
-    emit_asmoper(out, mov->src);
+    emit_asmoper(out, mov->src, OS_DWORD);
     fprintf(out, ", ");
-    emit_asmoper(out, mov->dst);
+    emit_asmoper(out, mov->dst, OS_DWORD);
     fprintf(out, "\n");
 }
 
@@ -98,7 +118,7 @@ static void emit_unary(FILE *out, AsmUnary *unary)
     }
 
     fprintf(out, "        %sl ", opcode);
-    emit_asmoper(out, unary->arg);
+    emit_asmoper(out, unary->arg, OS_DWORD);
     fprintf(out, "\n");
 }
 
@@ -127,9 +147,9 @@ static void emit_binary(FILE *out, AsmBinary *binary)
     }
 
     fprintf(out, "        %sl ", opcode);
-    emit_asmoper(out, binary->src);
+    emit_asmoper(out, binary->src, OS_DWORD);
     fprintf(out, ", ");
-    emit_asmoper(out, binary->dst);
+    emit_asmoper(out, binary->dst, OS_DWORD);
     fprintf(out, "\n");
 }
 
@@ -139,8 +159,59 @@ static void emit_binary(FILE *out, AsmBinary *binary)
 static void emit_idiv(FILE *out, AsmIdiv *idiv)
 {
     fprintf(out, "        idivl ");
-    emit_asmoper(out, idiv->arg);
+    emit_asmoper(out, idiv->arg, OS_DWORD);
     fprintf(out, "\n");
+}
+
+//
+// Emit a CMP instruction.
+//
+static void emit_cmp(FILE *out, AsmCmp *cmp)
+{
+    fprintf(out, "        cmpl ");
+    emit_asmoper(out, cmp->left, OS_DWORD);
+    fprintf(out, ", ");
+    emit_asmoper(out, cmp->right, OS_DWORD);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a JMP instruction.
+//
+static void emit_jump(FILE *out, AsmJump *jump)
+{
+    fprintf(out, "        jmp ");
+    emit_label(out, jump->target);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a JMPCC instruction.
+//
+static void emit_jumpcc(FILE *out, AsmJumpCc *jumpcc)
+{
+    fprintf(out, "        j%s ", acc_describe(jumpcc->cc));
+    emit_label(out, jumpcc->target);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a SETCC instruction.
+//
+static void emit_setcc(FILE *out, AsmSetCc *setcc)
+{
+    fprintf(out, "        set%s ", acc_describe(setcc->cc));
+    emit_asmoper(out, setcc->dst, OS_BYTE);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a label.
+//
+static void emit_label_instr(FILE *out, AsmLabel *label)
+{
+    emit_label(out, label->label);
+    fprintf(out, ":\n");
 }
 
 //
@@ -203,6 +274,11 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         case ASM_MOV:           emit_mov(out, &node->mov); break;
         case ASM_UNARY:         emit_unary(out, &node->unary); break;
         case ASM_BINARY:        emit_binary(out, &node->binary); break;
+        case ASM_CMP:           emit_cmp(out, &node->cmp); break;
+        case ASM_JUMP:          emit_jump(out, &node->jump); break;
+        case ASM_JUMPCC:        emit_jumpcc(out, &node->jumpcc); break;
+        case ASM_SETCC:         emit_setcc(out, &node->setcc); break;
+        case ASM_LABEL:         emit_label_instr(out, &node->label); break;
         case ASM_RET:           emit_ret(out); break;
         case ASM_CDQ:           emit_cdq(out); break;
         case ASM_IDIV:          emit_idiv(out, &node->idiv); break;

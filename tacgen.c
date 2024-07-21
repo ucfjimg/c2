@@ -41,6 +41,20 @@ static TacNode *tcg_temporary(FileLine loc)
 }
 
 //
+// Return a globally unique label.
+//
+static TacNode *tcg_make_label(FileLine loc)
+{
+    static int suffix = 0;
+
+    char *name = saprintf("label.%d", suffix++);
+    TacNode *var = tac_label(name, loc);
+    safe_free(name);
+
+    return var;
+}
+
+//
 // Return TAC for a unary operation.
 //
 static TacNode *tcg_unary_op(TacState *state, Expression *unary)
@@ -54,10 +68,51 @@ static TacNode *tcg_unary_op(TacState *state, Expression *unary)
 }
 
 //
+// Return TAC for a short-circuit logical operator; i.e. && or ||
+//
+static TacNode *tcg_short_circuit_op(TacState *state, Expression *binary)
+{
+    ICE_ASSERT(binary->tag == EXP_BINARY);
+    ICE_ASSERT(binary->binary.op == BOP_LOGAND || binary->binary.op == BOP_LOGOR);
+
+    FileLine loc = binary->loc;
+    bool is_and = binary->binary.op == BOP_LOGAND;
+    int success_val = is_and ? 1 : 0;
+    int fail_val = is_and ? 0 : 1;
+
+    TacNode *(*tac_sc_jump)(TacNode *, char *, FileLine) = is_and ? tac_jump_zero : tac_jump_not_zero;
+
+    TacNode *tf_label = tcg_make_label(loc);
+    TacNode *end_label = tcg_make_label(loc);
+    TacNode *result = tcg_temporary(loc);
+    
+    TacNode *left = tcg_expression(state, binary->binary.left);
+    tcg_append(state, tac_sc_jump(left, tf_label->label.name, loc));
+    TacNode *right = tcg_expression(state, binary->binary.right);
+    tcg_append(state, tac_sc_jump(right, tf_label->label.name, loc));
+    tcg_append(state, tac_copy(tac_const_int(success_val, loc), tac_var(result->var.name, loc), loc));
+    tcg_append(state, tac_jump(end_label->label.name, loc));
+    tcg_append(state, tf_label);
+    tcg_append(state, tac_copy(tac_const_int(fail_val, loc), tac_var(result->var.name, loc), loc));
+    tcg_append(state, end_label);
+
+    return result;
+}
+
+//
 // Return TAC for a binary expression.
 // 
 static TacNode *tcg_binary_op(TacState *state, Expression *binary)
 {
+    ICE_ASSERT(binary->tag == EXP_BINARY);
+
+    //
+    // Special handling for operators which require short-circuit evaluation
+    //
+    if (binary->binary.op == BOP_LOGAND || binary->binary.op == BOP_LOGOR) {
+        return tcg_short_circuit_op(state, binary);
+    }
+
     TacNode *left = tcg_expression(state, binary->binary.left);
     TacNode *right = tcg_expression(state, binary->binary.right);
     TacNode *dst = tcg_temporary(binary->loc);

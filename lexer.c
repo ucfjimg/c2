@@ -304,7 +304,6 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
         return true;
     }
 
-
     if (lex_twochar(lex, tok, '=', TOK_ASSIGN, TOK_EQUALITY)) {
         return true;
     }

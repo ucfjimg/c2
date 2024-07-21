@@ -121,6 +121,17 @@ static void asm_alloc_binary(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a compare instruction.
+//
+static void asm_alloc_cmp(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_CMP);
+
+    asm_alloc_operand(vartab, &instr->cmp.left);
+    asm_alloc_operand(vartab, &instr->cmp.right);
+}
+
+//
 // Apply pseudoregister replacement to an idiv instruction.
 //
 static void asm_alloc_idiv(VarTable *vartab, AsmNode *instr)
@@ -131,17 +142,33 @@ static void asm_alloc_idiv(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a setcc instruction.
+//
+static void asm_alloc_setcc(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_SETCC);
+
+    asm_alloc_operand(vartab, &instr->setcc.dst);
+}
+
+//
 // Apply pseudoregister replacement to an instruction.
 //
 static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
 {
     switch (instr->tag) {
-        case ASM_MOV:       asm_alloc_mov(vartab, instr); break;
-        case ASM_RET:       break;
-        case ASM_CDQ:       break;
-        case ASM_UNARY:     asm_alloc_unary(vartab, instr); break;
-        case ASM_BINARY:    asm_alloc_binary(vartab, instr); break;
-        case ASM_IDIV:      asm_alloc_idiv(vartab, instr); break;
+        case ASM_MOV:           asm_alloc_mov(vartab, instr); break;
+        case ASM_UNARY:         asm_alloc_unary(vartab, instr); break;
+        case ASM_BINARY:        asm_alloc_binary(vartab, instr); break;
+        case ASM_CMP:           asm_alloc_cmp(vartab, instr); break;
+        case ASM_IDIV:          asm_alloc_idiv(vartab, instr); break;
+        case ASM_CDQ:           break;
+        case ASM_JUMP:          break;
+        case ASM_JUMPCC:        break;
+        case ASM_LABEL:         break;
+        case ASM_SETCC:         asm_alloc_setcc(vartab, instr); break;
+        case ASM_RET:           break;
+        case ASM_STACK_RESERVE: break;
 
         default:
             ICE_ASSERT(((void)"invalid asm-ast node in asm_alloc_instr", false));

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 typedef enum {
     UOP_PLUS,
     UOP_MINUS,
@@ -20,13 +22,18 @@ typedef enum {
     BOP_BITXOR,
     BOP_LOGAND,
     BOP_LOGOR,
-    BOP_EQUALITY,
+
+    BOP_FIRST_RELATIONAL,
+    BOP_EQUALITY = BOP_FIRST_RELATIONAL,
     BOP_NOTEQUAL,
     BOP_LESSTHAN,
     BOP_GREATERTHAN,
     BOP_LESSEQUAL,
     BOP_GREATEREQUAL,
+    BOP_LAST_RELATIONAL = BOP_GREATEREQUAL,
+
 } BinaryOp;
 
+extern bool bop_is_relational(BinaryOp bop);
 extern const char *uop_describe(UnaryOp uop);
 extern const char *bop_describe(BinaryOp bop);

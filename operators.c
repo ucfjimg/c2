@@ -44,3 +44,10 @@ const char *bop_describe(BinaryOp bop)
     return "<invalid-binary-op>";
 }
  
+//
+// Return true if the binary operator is relational.
+//
+extern bool bop_is_relational(BinaryOp bop)
+{
+    return bop >= BOP_FIRST_RELATIONAL && bop <= BOP_LAST_RELATIONAL;
+}
