@@ -4,7 +4,7 @@ int main(void)
 	int b;
 	int c = 1;
 
-	a = (b = c);
+	a = b = c;
 
 	return a;
 }

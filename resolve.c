@@ -87,6 +87,10 @@ static void ast_resolve_declaration(ResolveState *state, Statement *stmtdecl)
 
     safe_free(decl->name);
     decl->name = safe_strdup(mapnode->new_name);
+
+    if (decl->init) {
+        ast_resolve_expression(state, decl->init);
+    }
 }
 
 //
@@ -172,7 +176,7 @@ static void ast_resolve_function(ResolveState *state, AstFunction *func)
             case STMT_DECLARATION:  ast_resolve_declaration(state, stmt); break;
             case STMT_EXPRESSION:   ast_resolve_expression(state, stmt->exp.exp); break;
             case STMT_RETURN:       ast_resolve_return_stmt(state, &stmt->ret); break;
-            case STMT_NULL: break;
+            case STMT_NULL:         break;
         }
     }
 }

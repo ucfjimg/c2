@@ -318,7 +318,7 @@ static void tac_print_program(TacProgram *prog, int tab, bool locs)
 {
     printf("%*sprogram() {\n", tab, "");
     tac_print_recurse(prog->func, tab + 2, locs);
-    printf("%*s{\n", tab, "");
+    printf("%*s}\n", tab, "");
 }
 
 //

@@ -123,16 +123,33 @@ static TacNode *tcg_binary_op(TacState *state, Expression *binary)
 }
 
 //
+// Generate TAC for an assignment.
+//
+struct TacNode *tcg_assignment(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_ASSIGNMENT);
+    ExpAssignment *assign = &exp->assignment;
+
+    TacNode *left = tcg_expression(state, assign->left);
+    TacNode *right = tcg_expression(state, assign->right);
+
+    tcg_append(state, tac_copy(right, left, exp->loc));
+
+    ICE_ASSERT(left->tag == TAC_VAR);
+    return tac_var(left->var.name, exp->loc);
+}
+
+//
 // Generate TAC for an expression
 //
 static TacNode *tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
         case EXP_INT:       return tac_const_int(exp->intval, exp->loc);
-        case EXP_VAR:       /* TODO */ break;
+        case EXP_VAR:       return tac_var(exp->var.name, exp->loc);
         case EXP_UNARY:     return tcg_unary_op(state, exp);
         case EXP_BINARY:    return tcg_binary_op(state, exp);
-        case EXP_ASSIGNMENT:/* TODO */ break;
+        case EXP_ASSIGNMENT:return tcg_assignment(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -141,6 +158,26 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
     // never reached
     //
     return NULL;
+}
+
+//
+// Generate TAC for a declaration.
+//
+// The declaration itself was taken care of in the previous pass.
+// However, if there is an initializer, we need to generate code for
+// that here.
+//
+static void tcg_declaration(TacState *state, Statement *declstmt)
+{
+    ICE_ASSERT(declstmt->tag == STMT_DECLARATION);
+    StmtDeclaration *decl = &declstmt->decl;
+
+    if (decl->init) {
+        TacNode *initval = tcg_expression(state, decl->init);
+
+        TacNode *declvar = tac_var(decl->name, declstmt->loc);
+        tcg_append(state, tac_copy(initval, declvar, declstmt->loc));
+    }
 }
 
 //
@@ -163,6 +200,19 @@ static void tcg_return(TacState *state, Statement *ret)
 }
 
 //
+// Generate TAC for a statement.
+//
+void tcg_statement(TacState *state, Statement *stmt)
+{
+    switch (stmt->tag) {
+        case STMT_DECLARATION:  tcg_declaration(state, stmt); break;
+        case STMT_EXPRESSION:   tcg_expression(state, stmt->exp.exp); break;
+        case STMT_RETURN:       tcg_return(state, stmt); break;
+        case STMT_NULL:         break;
+    }
+}
+
+//
 // Generate TAC for a function definition.
 //
 static TacNode *tcg_funcdef(TacState *state, AstNode *func)
@@ -175,10 +225,22 @@ static TacNode *tcg_funcdef(TacState *state, AstNode *func)
     TacState funcstate;
     list_clear(&funcstate.code);
 
-    /* TODO properly generate functionb bodu
-        tcg_return(&funcstate, func->func.stmt);
-    */
-    tcg_return(state, NULL);
+    for (ListNode *curr = func->func.stmts.head; curr; curr = curr->next) {
+        Statement *stmt = CONTAINER_OF(curr, Statement, list);
+        tcg_statement(&funcstate, stmt);
+    }
+
+    //
+    // Put a `return 0;` at the end of all functions. This gives the 
+    // correct behavior for main().
+    //
+    tcg_append(
+        &funcstate, 
+        tac_return(
+            tac_const_int(0, loc),
+            loc
+        )
+    );
 
     return tac_function_def(func->func.name, funcstate.code, loc);
 }

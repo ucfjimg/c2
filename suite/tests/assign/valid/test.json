@@ -1,0 +1,8 @@
+{
+    "assign-rassoc.c": "gcc-retval:success",
+    "simple.c": "gcc-retval:success",
+    "unary-var.c": "gcc-retval:success",
+    "binary-var.c": "gcc-retval:success",
+    "assign-then-init.c": "gcc-retval:success",
+    "use-var-in-its-own-init.c": "gcc-retval:success"
+}
