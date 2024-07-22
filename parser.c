@@ -49,7 +49,7 @@ static BinOpPrecedence bin_op_prec[] = {
     { TOK_LOGOR,        BOP_LOGOR,           5 },       // 4    left assoc
     // ?: ternary right assoc                           // 3    right assoc
     
-    // = (assignment) and all compound assignments      // 2    right assoc
+    { TOK_ASSIGN,       BOP_ASSIGN,          2 },       // 2    right assoc
     
     // ,                                                // 1    left assoc
 };
@@ -99,7 +99,7 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 
 //
 // Parse a factor.
-// <factor> := <int> | <unop> <exp> | "(" <exp> ")"
+// <factor> := <int> | <identifier> | <unop> <exp> | "(" <exp> ")"
 //
 static Expression *parse_factor(Parser *parser)
 {
@@ -110,6 +110,15 @@ static Expression *parse_factor(Parser *parser)
     //
     if (parser->tok.type == TOK_INT_CONST) {
         Expression *exp = exp_int(parser->tok.intval, loc);
+        parse_next_token(parser);
+        return exp;
+    }
+
+    //
+    // <factor> := <identifier>
+    //
+    if (parser->tok.type == TOK_ID) {
+        Expression *exp = exp_var(parser->tok.id, loc);
         parse_next_token(parser);
         return exp;
     }
@@ -142,6 +151,7 @@ static Expression *parse_factor(Parser *parser)
     // Otherwise, parser error.
     //
     report_expected_err(&parser->tok, "constant, unary operator, or (");
+    parse_next_token(parser);
 
     Expression *exp = exp_int(0, loc);
     return exp;
@@ -183,42 +193,142 @@ static Expression *parse_expression(Parser *parser, int min_prec)
         }
 
         FileLine loc = parser->tok.loc;
-
         parse_next_token(parser);
-        Expression *right = parse_expression(parser, binop->prec_level + 1);
 
-        left = exp_binary(binop->op, left, right, loc);
+        if (binop->op == BOP_ASSIGN) {
+            //
+            // right associative
+            //
+            Expression *right = parse_expression(parser, binop->prec_level);
+            left = exp_assignment(left, right, loc);
+        } else {
+            Expression *right = parse_expression(parser, binop->prec_level + 1);
+            left = exp_binary(binop->op, left, right, loc);
+        }
     }
     return left;
 }
 
 //
+// Parse a declaration.
+// <declaration> := "int" <identifier> [ "=" <exp> ] ";" 
+// The type has already been parsed.
+//
+static Statement *parse_stmt_declaration(Parser *parser)
+{
+    Statement *decl = NULL;
+    char *name = NULL;
+    Expression *init = NULL;
+    FileLine loc = parser->tok.loc;
+
+    if (parser->tok.type != TOK_ID) {
+        report_expected_err(&parser->tok, "identifier");
+        goto done;
+    }
+    name = safe_strdup(parser->tok.id);
+    parse_next_token(parser);
+
+    if (parser->tok.type == TOK_ASSIGN) {
+        parse_next_token(parser);
+        init = parse_expression(parser, 0);
+    }
+
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    decl = stmt_declaration(name, init, loc);
+    init = NULL;
+
+done:
+    if (decl == NULL) {
+        if (name == NULL) {
+            //
+            // If there's no name, just add a null statement
+            //
+            decl = stmt_null(loc);
+        } else {
+            decl = stmt_declaration(name, NULL, loc);
+        }
+    }
+    exp_free(init);
+    safe_free(name);
+    return decl;
+}
+
+//
+// Parse a return statement. 
+// The `return` keyword token has already been consumed.
+//
+static Statement *parse_stmt_return(Parser *parser)
+{
+    FileLine loc = parser->tok.loc;
+    Expression *retval = NULL;
+
+    Expression *exp = parse_expression(parser, 0);
+    
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Statement *stmt = stmt_return(exp, loc);
+    exp = NULL;
+
+    exp_free(retval);
+    return stmt;
+}
+
+//
 // Parse a statement.
-// <statement> := "return" <exp> ";"
+// <statement> := ";" <declaration> | "return" <exp> ";" | <exp> ";"
 //
 static Statement *parse_statement(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
 
     //
-    // <statement> := "return" <exp> ";"
+    // <statement> := ";"
     //
-    if (parser->tok.type != TOK_RETURN) {
-        report_expected_err(&parser->tok, "`return`");
-        Statement *null = stmt_null(loc);
-        return null;
+    if (parser->tok.type == ';') {
+        parse_next_token(parser);
+        return stmt_null(loc);
     }
 
-    parse_next_token(parser);
-    Expression *exp = parse_expression(parser, 0);
+    //
+    // <statement> := <declaration> 
+    //  
+    if (parser->tok.type == TOK_INT) {
+        parse_next_token(parser);
+
+        //
+        // TODO when we support types, parse the type and pass it in.
+        // For now it's always `int`.
+        //
+        return parse_stmt_declaration(parser);
+    }
     
+    //
+    // <statement> := "return" <exp> ";" 
+    //
+    if (parser->tok.type == TOK_RETURN) {
+        parse_next_token(parser);
+        return parse_stmt_return(parser);
+    }
+
+    //
+    // <statement> = <exp> ";" 
+    //
+    Expression *exp = parse_expression(parser, 0);
     if (parser->tok.type != ';') {
         report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
     }
-    parse_next_token(parser);
-
-    Statement *stmt = stmt_return(exp, loc);
-    return stmt;
+    return stmt_expression(exp, loc);
 }
 
 //

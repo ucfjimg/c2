@@ -33,6 +33,7 @@ const char *bop_describe(BinaryOp bop)
         case BOP_BITXOR:        return "^";
         case BOP_LOGAND:        return "&&";
         case BOP_LOGOR:         return "||";
+        case BOP_ASSIGN:        return "=";
         case BOP_EQUALITY:      return "==";
         case BOP_NOTEQUAL:      return "!=";
         case BOP_LESSTHAN:      return "<";

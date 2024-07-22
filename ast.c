@@ -374,7 +374,7 @@ static void stmt_print_declaration(StmtDeclaration *decl, int tab, bool locs)
     if (decl->init) {
         printf(" = {\n");
         exp_print_recurse(decl->init, tab + 2, locs);
-        printf("}");
+        printf("%*s}", tab, "");
     }
     printf(";\n");
 }
