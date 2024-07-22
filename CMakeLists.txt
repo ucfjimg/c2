@@ -1,5 +1,5 @@
+cmake_minimum_required(VERSION 3.5)
 project(compiler)
-cmake_minimum_required(VERSION 3.2)
 
 add_executable(cc
     cc.c
@@ -18,6 +18,7 @@ add_executable(cc
     list.c
     operators.c
     parser.c
+    resolve.c
     safemem.c
     strbuilder.c
     tacgen.c

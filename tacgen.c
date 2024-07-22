@@ -33,7 +33,7 @@ static TacNode *tcg_temporary(FileLine loc)
 {
     static int suffix = 0;
 
-    char *name = saprintf("tmp.%d", suffix++);
+    char *name = saprintf("tmp..%d", suffix++);
     TacNode *var = tac_var(name, loc);
     safe_free(name);
 
@@ -47,7 +47,7 @@ static TacNode *tcg_make_label(FileLine loc)
 {
     static int suffix = 0;
 
-    char *name = saprintf("label.%d", suffix++);
+    char *name = saprintf("label..%d", suffix++);
     TacNode *var = tac_label(name, loc);
     safe_free(name);
 

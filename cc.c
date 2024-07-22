@@ -12,6 +12,7 @@
 #include "fixoperands.h"
 #include "lexer.h"
 #include "parser.h"
+#include "resolve.h"
 #include "safemem.h"
 #include "tacgen.h"
 #include "token.h"
@@ -19,6 +20,7 @@
 typedef enum {
     STAGE_LEX = 256,
     STAGE_PARSE,
+    STAGE_VALIDATE,
     STAGE_CODEGEN,
     STAGE_TACKY,
     STAGE_ALL,
@@ -43,6 +45,7 @@ typedef struct {
 static struct option long_opts[] = {
     { "lex",        no_argument, 0, STAGE_LEX },
     { "parse",      no_argument, 0, STAGE_PARSE },
+    { "validate",   no_argument, 0, STAGE_VALIDATE },
     { "codegen",    no_argument, 0, STAGE_CODEGEN },
     { "tacky",      no_argument, 0, STAGE_TACKY },
     { "keep",       no_argument, 0, OPT_KEEP },
@@ -55,7 +58,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [--lex | --parse | --codegen | --tacky] [--keep] [--line-no] srcfile\n");
+    fprintf(stderr, "cc: [-c] [--lex | --parse | --validate | --codegen | --tacky] [--keep] [--line-no] srcfile\n");
     exit(1);
 }
 
@@ -139,6 +142,7 @@ static void parse_args(int argc, char *argv[], Args *args)
 
             case STAGE_LEX:
             case STAGE_PARSE:
+            case STAGE_VALIDATE:
             case STAGE_CODEGEN:
             case STAGE_TACKY:
                 if (args->stage != STAGE_ALL) {
@@ -224,14 +228,33 @@ static int compile(Args *args)
     }
 
     //
-    // Parse and AST transformation passes.
+    // Parse.
     //
     ast = parser_parse(lex);
+
     if (err_has_errors()) {
         status = 1;
     }
 
     if (args->stage == STAGE_PARSE) {
+        ast_print(ast, args->line_nos);
+        goto done;
+    }
+
+    if (status) {
+        goto done;
+    }
+
+    //
+    // Semantic passes.
+    //
+    ast_resolve(ast);
+
+    if (err_has_errors()) {
+        status = 1;
+    }
+
+    if (args->stage == STAGE_VALIDATE) {
         ast_print(ast, args->line_nos);
         goto done;
     }

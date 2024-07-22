@@ -1,0 +1,5 @@
+{
+    "multi-decl.c": "validate:fail",
+    "undeclared.c": "validate:fail",
+    "assign-to-const.c": "validate:fail"
+}
