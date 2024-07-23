@@ -54,6 +54,20 @@ typedef enum {
     TOK_GREATEREQUAL,       // >=
 
     //
+    // compound assignment
+    //
+    TOK_COMPOUND_ADD,       // +=
+    TOK_COMPOUND_SUBTRACT,  // -=
+    TOK_COMPOUND_MULTIPLY,  // *=
+    TOK_COMPOUND_DIVIDE,    // /=
+    TOK_COMPOUND_MODULO,    // %=
+    TOK_COMPOUND_BITAND,    // &=
+    TOK_COMPOUND_BITOR,     // |=
+    TOK_COMPOUND_BITXOR,    // ^=
+    TOK_COMPOUND_LSHIFT,    // <<=
+    TOK_COMPOUND_RSHIFT,    // >>=
+
+    //
     // keywords
     //
     TOK_INT,

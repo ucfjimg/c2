@@ -37,6 +37,7 @@ typedef struct {
 } ExpBinary;
 
 typedef struct {
+    BinaryOp op;
     Expression *left;
     Expression *right;
 } ExpAssignment;
@@ -58,7 +59,7 @@ extern Expression *exp_int(unsigned long intval, FileLine loc);
 extern Expression *exp_var(char *name, FileLine loc);
 extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
-extern Expression *exp_assignment(Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern void exp_free(Expression *exp);
 
 //

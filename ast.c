@@ -91,10 +91,12 @@ static void exp_binary_free(ExpBinary *binary)
 //
 // Construct an assignment expression.
 //
-Expression *exp_assignment(Expression *left, Expression *right, FileLine loc)
+Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc)
 {
+    ICE_ASSERT(op == BOP_ASSIGN || bop_is_compound_assign(op));
     Expression *assign = exp_alloc(EXP_ASSIGNMENT, loc);
 
+    assign->assignment.op = op;
     assign->assignment.left = left;
     assign->assignment.right = right;
 
@@ -338,7 +340,7 @@ static void print_exp_binary(ExpBinary *binary, int tab, bool locs)
 //
 static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
 {
-    printf("%*sassignment {\n", tab, "");
+    printf("%*sassignment(%s) {\n", tab, "", bop_describe(assign->op));
     exp_print_recurse(assign->left, tab + 2, locs);
     printf("%*s}, {\n", tab, "");
     exp_print_recurse(assign->right, tab + 2, locs);

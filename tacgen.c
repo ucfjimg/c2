@@ -133,10 +133,19 @@ struct TacNode *tcg_assignment(TacState *state, Expression *exp)
     TacNode *left = tcg_expression(state, assign->left);
     TacNode *right = tcg_expression(state, assign->right);
 
-    tcg_append(state, tac_copy(right, left, exp->loc));
+    if (assign->op == BOP_ASSIGN) {
+       tcg_append(state, tac_copy(right, left, exp->loc));
+    } else {
+        ICE_ASSERT(bop_is_compound_assign(assign->op));
+        BinaryOp bop = bop_compound_to_binop(assign->op);
+        TacNode *tmp = tcg_temporary(exp->loc);
+        
+        tcg_append(state, tac_binary(bop, left, right, tmp, exp->loc));
+        tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(left), exp->loc));
+    }
 
     ICE_ASSERT(left->tag == TAC_VAR);
-    return tac_var(left->var.name, exp->loc);
+    return tac_clone_operand(left);
 }
 
 //

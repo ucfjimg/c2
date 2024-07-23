@@ -155,6 +155,8 @@ extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *
 extern TacNode *tac_const_int(unsigned long val, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
 
+extern TacNode *tac_clone_operand(TacNode *tac);
+
 extern void tac_free(TacNode *tac);
 extern void tac_print(TacNode *tac, bool locs);
 

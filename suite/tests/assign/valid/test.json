@@ -4,5 +4,15 @@
     "unary-var.c": "gcc-retval:success",
     "binary-var.c": "gcc-retval:success",
     "assign-then-init.c": "gcc-retval:success",
-    "use-var-in-its-own-init.c": "gcc-retval:success"
+    "use-var-in-its-own-init.c": "gcc-retval:success",
+    "cassign_add.c": "gcc-retval:success",
+    "cassign_and.c": "gcc-retval:success",
+    "cassign_divide.c": "gcc-retval:success",
+    "cassign_lshift.c": "gcc-retval:success",
+    "cassign_modulo.c": "gcc-retval:success",
+    "cassign_multiply.c": "gcc-retval:success",
+    "cassign_or.c": "gcc-retval:success",
+    "cassign_rshift.c": "gcc-retval:success",
+    "cassign_subtract.c": "gcc-retval:success",
+    "cassign_xor.c": "gcc-retval:success"
 }

@@ -267,6 +267,24 @@ TacNode *tac_var(char *name, FileLine loc)
 }
 
 //
+// Clone and operand node. The operand must be of type
+// TAC_VAR or TAC_CONST_INT.
+//
+TacNode *tac_clone_operand(TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_VAR || tac->tag == TAC_CONST_INT);
+
+    switch (tac->tag) {
+        case TAC_VAR:       return tac_var(tac->var.name, tac->loc);
+        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->loc);
+    
+        default:
+            return tac_const_int(0, tac->loc);
+    }
+}
+
+
+//
 // Free a TAC variable.
 //
 static void tac_var_free(TacVar *var)

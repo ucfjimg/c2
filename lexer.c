@@ -21,6 +21,24 @@ static Keyword keywords[] = {
     { NULL,     TOK_EOF }
 };
 
+typedef struct {
+    TokenType single;       // original token
+    TokenType compound;     // token, if followed by '='
+} CompoundAssign;
+
+static CompoundAssign compounds[] = {
+    { TOK_PLUS,     TOK_COMPOUND_ADD },       // +=
+    { TOK_MINUS,    TOK_COMPOUND_SUBTRACT },  // -=
+    { TOK_MULTIPLY, TOK_COMPOUND_MULTIPLY },  // *=
+    { TOK_DIVIDE,   TOK_COMPOUND_DIVIDE },    // /=
+    { TOK_MODULO,   TOK_COMPOUND_MODULO },    // %=
+    { TOK_BITAND,   TOK_COMPOUND_BITAND },    // &=
+    { TOK_BITOR,    TOK_COMPOUND_BITOR },     // |=
+    { TOK_BITXOR,   TOK_COMPOUND_BITXOR },    // ^=
+    { TOK_LSHIFT,   TOK_COMPOUND_LSHIFT },    // <<=
+    { TOK_RSHIFT,   TOK_COMPOUND_RSHIFT },    // >>=
+};
+
 //
 // Push a new filename on the end of the filename list. Filenames are
 // allocated and kept in scope for the entire lifetime of the lexer as
@@ -374,6 +392,27 @@ void lexer_close(Lexer *lex)
 }
 
 //
+// Given a token, if it is followed by `=`, convert it to a 
+// compound assignment if possible.
+//
+void lexer_convert_to_compound_assign(Lexer *lex, Token *tok)
+{
+    if (lex->ch != '=') {
+        return;
+    }
+
+    size_t n = sizeof(compounds) / sizeof(compounds[0]);
+
+    for (size_t i = 0; i < n; i++) {
+        if (tok->type == compounds[i].single) {
+            lexer_next_char(lex);
+            tok->type = compounds[i].compound;
+            break;
+        }
+    }
+}
+
+//
 // Scan the next token and store it in `tok`.
 //
 void lexer_token(Lexer *lex, Token *tok)
@@ -406,10 +445,12 @@ void lexer_token(Lexer *lex, Token *tok)
 
     if (tok->type != TOK_ERROR) {
         lexer_next_char(lex);
+        lexer_convert_to_compound_assign(lex, tok);
         return;
     }
 
     if (lexer_scan_multichar_op(lex, tok)) {
+        lexer_convert_to_compound_assign(lex, tok);
         return;
     }
 

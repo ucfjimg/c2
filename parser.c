@@ -8,50 +8,67 @@ typedef struct {
     Token tok;
 } Parser;
 
+typedef enum {
+    AS_LEFT,
+    AS_RIGHT
+} Assoc;
+
 typedef struct {
     TokenType tok;          // token type
     BinaryOp op;            // matching operator
     int prec_level;         // precedence level
+    Assoc assoc;            // associativity
 } BinOpPrecedence;
 
 //
 // C precedence table 
 //
 static BinOpPrecedence bin_op_prec[] = {
-    // () call, [] subscript, ->, ., ++/-- postfix      // 15   left assoc
+    // () call, [] subscript, ->, ., ++/-- postfix                           // 15   left assoc
 
     // ++/-- prefix, +/-/!/~ unary, (type) cast, 
-    //    * deref, & addrof, sizeof                     // 14   right assoc
+    //    * deref, & addrof, sizeof                                          // 14   right assoc
 
-    { TOK_MULTIPLY,     BOP_MULTIPLY,       50 },       // 13   left assoc
-    { TOK_DIVIDE,       BOP_DIVIDE,         50 },
-    { TOK_MODULO,       BOP_MODULO,         50 },
+    { TOK_MULTIPLY,             BOP_MULTIPLY,           50, AS_LEFT },       // 13   left assoc
+    { TOK_DIVIDE,               BOP_DIVIDE,             50, AS_LEFT },
+    { TOK_MODULO,               BOP_MODULO,             50, AS_LEFT },
 
-    { TOK_PLUS,         BOP_ADD,            45 },       // 12   left assoc
-    { TOK_MINUS,        BOP_SUBTRACT,       45 },
+    { TOK_PLUS,                 BOP_ADD,                45, AS_LEFT },       // 12   left assoc
+    { TOK_MINUS,                BOP_SUBTRACT,           45, AS_LEFT },
 
-    { TOK_LSHIFT,       BOP_LSHIFT,         40 },       // 11   left assoc
-    { TOK_RSHIFT,       BOP_RSHIFT,         40 },
+    { TOK_LSHIFT,               BOP_LSHIFT,             40, AS_LEFT },       // 11   left assoc
+    { TOK_RSHIFT,               BOP_RSHIFT,             40, AS_LEFT },
 
-    { TOK_LESSTHAN,     BOP_LESSTHAN,       35 },       // 10   left assoc
-    { TOK_GREATERTHAN,  BOP_GREATERTHAN,    35 },
-    { TOK_LESSEQUAL,    BOP_LESSEQUAL,      35 },
-    { TOK_GREATEREQUAL, BOP_GREATEREQUAL,   35 },
+    { TOK_LESSTHAN,             BOP_LESSTHAN,           35, AS_LEFT },       // 10   left assoc
+    { TOK_GREATERTHAN,          BOP_GREATERTHAN,        35, AS_LEFT },
+    { TOK_LESSEQUAL,            BOP_LESSEQUAL,          35, AS_LEFT },
+    { TOK_GREATEREQUAL,         BOP_GREATEREQUAL,       35, AS_LEFT },
 
-    { TOK_EQUALITY,     BOP_EQUALITY,       30 },       // 9    left assoc
-    { TOK_NOTEQUAL,     BOP_NOTEQUAL,       30 },
+    { TOK_EQUALITY,             BOP_EQUALITY,           30, AS_LEFT },       // 9    left assoc
+    { TOK_NOTEQUAL,             BOP_NOTEQUAL,           30, AS_LEFT },
 
-    { TOK_BITAND,       BOP_BITAND,         25 },       // 8    left assoc
-    { TOK_BITXOR,       BOP_BITXOR,         24 },       // 7    left assoc
-    { TOK_BITOR,        BOP_BITOR,          23 },       // 6    left assoc
+    { TOK_BITAND,               BOP_BITAND,             25, AS_LEFT },       // 8    left assoc
+    { TOK_BITXOR,               BOP_BITXOR,             24, AS_LEFT },       // 7    left assoc
+    { TOK_BITOR,                BOP_BITOR,              23, AS_LEFT },       // 6    left assoc
 
-    { TOK_LOGAND,       BOP_LOGAND,         10 },       // 5    left assoc
-    { TOK_LOGOR,        BOP_LOGOR,           5 },       // 4    left assoc
-    // ?: ternary right assoc                           // 3    right assoc
+    { TOK_LOGAND,               BOP_LOGAND,             10, AS_LEFT },       // 5    left assoc
+    { TOK_LOGOR,                BOP_LOGOR,              5,  AS_LEFT },       // 4    left assoc
     
-    { TOK_ASSIGN,       BOP_ASSIGN,          2 },       // 2    right assoc
+    // ?: ternary right assoc                                                // 3    right assoc
     
-    // ,                                                // 1    left assoc
+    { TOK_ASSIGN,               BOP_ASSIGN,             2, AS_RIGHT },       // 2    right assoc
+    { TOK_COMPOUND_ADD,         BOP_COMPOUND_ADD,       2, AS_RIGHT },
+    { TOK_COMPOUND_SUBTRACT,    BOP_COMPOUND_SUBTRACT,  2, AS_RIGHT },
+    { TOK_COMPOUND_MULTIPLY,    BOP_COMPOUND_MULTIPLY,  2, AS_RIGHT },
+    { TOK_COMPOUND_DIVIDE,      BOP_COMPOUND_DIVIDE,    2, AS_RIGHT },
+    { TOK_COMPOUND_MODULO,      BOP_COMPOUND_MODULO,    2, AS_RIGHT },
+    { TOK_COMPOUND_BITAND,      BOP_COMPOUND_BITAND,    2, AS_RIGHT },
+    { TOK_COMPOUND_BITOR,       BOP_COMPOUND_BITOR,     2, AS_RIGHT },
+    { TOK_COMPOUND_BITXOR,      BOP_COMPOUND_BITXOR,    2, AS_RIGHT },
+    { TOK_COMPOUND_LSHIFT,      BOP_COMPOUND_LSHIFT,    2, AS_RIGHT },
+    { TOK_COMPOUND_RSHIFT,      BOP_COMPOUND_RSHIFT,    2, AS_RIGHT },
+
+    // ,                                                                     // 1    left assoc
 };
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
@@ -195,12 +212,12 @@ static Expression *parse_expression(Parser *parser, int min_prec)
         FileLine loc = parser->tok.loc;
         parse_next_token(parser);
 
-        if (binop->op == BOP_ASSIGN) {
+        if (binop->assoc == AS_RIGHT) {
             //
             // right associative
             //
             Expression *right = parse_expression(parser, binop->prec_level);
-            left = exp_assignment(left, right, loc);
+            left = exp_assignment(binop->op, left, right, loc);
         } else {
             Expression *right = parse_expression(parser, binop->prec_level + 1);
             left = exp_binary(binop->op, left, right, loc);

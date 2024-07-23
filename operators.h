@@ -22,7 +22,20 @@ typedef enum {
     BOP_BITXOR,
     BOP_LOGAND,
     BOP_LOGOR,
+
     BOP_ASSIGN,
+    BOP_FIRST_COMPOUND_ASSIGN,
+    BOP_COMPOUND_ADD = BOP_FIRST_COMPOUND_ASSIGN,
+    BOP_COMPOUND_SUBTRACT,
+    BOP_COMPOUND_MULTIPLY,
+    BOP_COMPOUND_DIVIDE,
+    BOP_COMPOUND_MODULO,
+    BOP_COMPOUND_BITAND,
+    BOP_COMPOUND_BITOR,
+    BOP_COMPOUND_BITXOR,
+    BOP_COMPOUND_LSHIFT,
+    BOP_COMPOUND_RSHIFT,
+    BOP_LAST_COMPOUND_ASSIGN = BOP_COMPOUND_RSHIFT,
 
     BOP_FIRST_RELATIONAL,
     BOP_EQUALITY = BOP_FIRST_RELATIONAL,
@@ -36,5 +49,7 @@ typedef enum {
 } BinaryOp;
 
 extern bool bop_is_relational(BinaryOp bop);
+extern bool bop_is_compound_assign(BinaryOp bop);
+extern BinaryOp bop_compound_to_binop(BinaryOp bop);
 extern const char *uop_describe(UnaryOp uop);
 extern const char *bop_describe(BinaryOp bop);
