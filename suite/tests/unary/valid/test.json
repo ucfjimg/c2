@@ -12,5 +12,9 @@
     "single-unary-minus.c": "gcc-retval:success",
     "single-unary-not.c": "gcc-retval:success",
     "single-unary-plus.c": "gcc-retval:success",
-    "minus-not.c": "gcc-retval:success"
+    "minus-not.c": "gcc-retval:success",
+    "preincrement.c": "gcc-retval:success",
+    "predecrement.c": "gcc-retval:success",
+    "postincrement.c": "gcc-retval:success",
+    "postdecrement.c": "gcc-retval:success"
 }

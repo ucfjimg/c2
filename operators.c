@@ -12,6 +12,10 @@ const char *uop_describe(UnaryOp uop)
         case UOP_PLUS:          return "+";
         case UOP_COMPLEMENT:    return "~";
         case UOP_LOGNOT:        return "!";
+        case UOP_PREINCREMENT:  return "(pre)++";
+        case UOP_PREDECREMENT:  return "(pre)--";
+        case UOP_POSTINCREMENT: return "(post)++";
+        case UOP_POSTDECREMENT: return "(post)--";
     }
 
     return "<invalid-unary-op>";

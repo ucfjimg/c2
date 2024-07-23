@@ -27,8 +27,10 @@ def failtest(dir, name, msg, stage):
     failures += [(dir, name, msg, stage)]
     pass
 
-def stage_test(stage, dir, name):
+def stage_test(stage, dir, name, verbose):
     cmd = [cc,  f'--{stage}', os.path.join(dir, name)]
+    if verbose:
+        print(f'CMD: {cmd}')
     out = subprocess.run(cmd, capture_output = True, cwd='.')
 
     return (out.returncode == 0, out.stderr.decode('ascii'))
@@ -94,7 +96,7 @@ def runtest(dir, name, test, run_stage, verbose):
         sys.exit(1)
 
     if stage in ['lex', 'parse', 'validate', 'tacky']:
-        passed, out = stage_test(stage, dir, name)
+        passed, out = stage_test(stage, dir, name, verbose)
     elif stage == 'gcc-retval':
         passed, out = gcc_retval_test(dir, name)
 

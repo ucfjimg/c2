@@ -96,7 +96,7 @@ static void report_expected_err(Token *tok, char *expected)
 }
 
 //
-// Parse a unary operator.
+// Parse a unary operator, for prefix operators.
 //
 static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 {
@@ -105,6 +105,8 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
         case TOK_MINUS:         *uop = UOP_MINUS; break;
         case TOK_COMPLEMENT:    *uop = UOP_COMPLEMENT; break;
         case TOK_LOGNOT:        *uop = UOP_LOGNOT; break;
+        case TOK_INCREMENT:     *uop = UOP_PREINCREMENT; break;
+        case TOK_DECREMENT:     *uop = UOP_PREDECREMENT; break;
 
         default:
             return false;
@@ -115,15 +117,15 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 }
 
 //
-// Parse a factor.
-// <factor> := <int> | <identifier> | <unop> <exp> | "(" <exp> ")"
+// Parse a primary expression.
+// <primary> := <int> | <identifier> | "(" <exp> ")"
 //
-static Expression *parse_factor(Parser *parser)
+static Expression *parse_primary(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
 
     //
-    // <factor> := <int>
+    // <primary> := <int>
     //
     if (parser->tok.type == TOK_INT_CONST) {
         Expression *exp = exp_int(parser->tok.intval, loc);
@@ -132,7 +134,7 @@ static Expression *parse_factor(Parser *parser)
     }
 
     //
-    // <factor> := <identifier>
+    // <primary> := <identifier>
     //
     if (parser->tok.type == TOK_ID) {
         Expression *exp = exp_var(parser->tok.id, loc);
@@ -141,17 +143,7 @@ static Expression *parse_factor(Parser *parser)
     }
 
     //
-    // <factor> := <unop> <exp> 
-    //
-    UnaryOp uop;
-    if (parse_unary_op(parser, &uop)) {
-        Expression *rhs = parse_factor(parser);
-        Expression *exp = exp_unary(uop, rhs, loc);
-        return exp;
-    }
-
-    //
-    // <factor> := "(" <exp> ")"
+    // <primary> := "(" <exp> ")"
     //
     if (parser->tok.type == '(') {
         parse_next_token(parser);
@@ -172,6 +164,48 @@ static Expression *parse_factor(Parser *parser)
 
     Expression *exp = exp_int(0, loc);
     return exp;
+}
+
+//
+// Parse a postfix operator.
+// <postfix> := <primary> | <postfix> <oper>  
+//
+static Expression *parse_postfix(Parser *parser)
+{
+    Expression *exp = parse_primary(parser);
+
+    while (parser->tok.type == TOK_INCREMENT || parser->tok.type == TOK_DECREMENT) {
+        if (parser->tok.type == TOK_INCREMENT) {
+            exp = exp_unary(UOP_POSTINCREMENT, exp, parser->tok.loc);
+        } else {
+            exp = exp_unary(UOP_POSTDECREMENT, exp, parser->tok.loc);
+        }
+
+        parse_next_token(parser);
+    }
+
+    return exp;
+}
+
+//
+// Parse a factor.
+// <factor> := <unop> <factor> | <postfix>
+//
+static Expression *parse_factor(Parser *parser)
+{
+    FileLine loc = parser->tok.loc;
+
+    //
+    // <factor> := <unop> <factor> 
+    //
+    UnaryOp uop;
+    if (parse_unary_op(parser, &uop)) {
+        Expression *rhs = parse_factor(parser);
+        Expression *exp = exp_unary(uop, rhs, loc);
+        return exp;
+    }
+
+    return parse_postfix(parser);
 }
 
 //

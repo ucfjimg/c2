@@ -7,6 +7,10 @@ typedef enum {
     UOP_MINUS,
     UOP_COMPLEMENT,
     UOP_LOGNOT,
+    UOP_PREINCREMENT,
+    UOP_PREDECREMENT,
+    UOP_POSTINCREMENT,
+    UOP_POSTDECREMENT,
 } UnaryOp;
 
 typedef enum {

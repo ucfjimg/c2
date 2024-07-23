@@ -125,6 +125,12 @@ static void ast_resolve_binary_exp(ResolveState *state, ExpBinary *bin)
 //
 static void ast_resolve_unary_exp(ResolveState *state, ExpUnary *unary)
 {
+    if (
+        (unary->op == UOP_PREINCREMENT || 
+         unary->op == UOP_PREDECREMENT) && 
+        unary->exp->tag != EXP_VAR) {
+        err_report(EC_ERROR, &unary->exp->loc, "target of increment/decrement must be an l-value.");
+    }
     ast_resolve_expression(state, unary->exp);
 }
 
