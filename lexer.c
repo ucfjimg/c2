@@ -19,6 +19,7 @@ static Keyword keywords[] = {
     { "void",   TOK_VOID },
     { "if",     TOK_IF },
     { "else",   TOK_ELSE },
+    { "goto",   TOK_GOTO },
 
     { NULL,     TOK_EOF }
 };
@@ -478,4 +479,46 @@ void lexer_token(Lexer *lex, Token *tok)
     err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
 
     lexer_next_char(lex);
+}
+
+//
+// Allocate a bookmark with the current lexer state.
+// The lexer can be rewound to this point later with
+// `lexer_goto_bookmark`.
+//
+LexerBookmark *lexer_bookmark(Lexer *lex)
+{
+    LexerBookmark *bmrk = safe_zalloc(sizeof(LexerBookmark));
+
+    bmrk->lexer = lex;
+    bmrk->fpos = ftell(lex->src);
+    bmrk->line_start = lex->line_start;
+    bmrk->end_of_file = lex->end_of_file;
+    bmrk->ch = lex->ch;
+    bmrk->line = lex->line;
+
+    return bmrk;
+}
+
+//
+// Reposition the lexer stream at the given bookmark. Note
+// that this does NOT free the bookmark.
+//
+void lexer_goto_bookmark(LexerBookmark *bmrk)
+{
+    Lexer *lex = bmrk->lexer;
+
+    fseek(lex->src, bmrk->fpos, SEEK_SET);
+    lex->line_start = bmrk->line_start;
+    lex->end_of_file = bmrk->end_of_file;
+    lex->ch = bmrk->ch;
+    lex->line = bmrk->line;
+}
+
+//
+// Free a lexer bookmark.
+//
+void lexer_free_bookmark(LexerBookmark *bmrk)
+{
+    safe_free(bmrk);
 }

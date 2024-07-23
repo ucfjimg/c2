@@ -4,9 +4,15 @@
 #include "safemem.h"
 
 typedef struct {
-    Lexer *lex;
-    Token tok;
+    Lexer *lex;                 // the lexer
+    Token tok;                  // the current token
 } Parser;
+
+typedef struct {
+    Parser *parser;             // the owning parser
+    LexerBookmark *lexer_bmrk;  // the corresponding lexer state
+    Token tok;                  // the current token
+} ParserBookmark;
 
 typedef enum {
     AS_LEFT,
@@ -14,10 +20,10 @@ typedef enum {
 } Assoc;
 
 typedef struct {
-    TokenType tok;          // token type
-    BinaryOp op;            // matching operator
-    int prec_level;         // precedence level
-    Assoc assoc;            // associativity
+    TokenType tok;              // token type
+    BinaryOp op;                // matching operator
+    int prec_level;             // precedence level
+    Assoc assoc;                // associativity
 } BinOpPrecedence;
 
 //
@@ -74,6 +80,42 @@ static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
 static Expression *parse_expression(Parser *parser, int min_prec);
 static Statement *parse_statement(Parser *parser);
+
+//
+// Create a parser bookmark at the current state.
+//
+static ParserBookmark *parse_bookmark(Parser *parser)
+{
+    ParserBookmark *bmrk = safe_zalloc(sizeof(ParserBookmark));
+
+    bmrk->parser = parser;
+    bmrk->lexer_bmrk = lexer_bookmark(parser->lex);
+    token_clone(&parser->tok, &bmrk->tok);
+
+    return bmrk;
+}
+
+//
+// Jump to the given parser bookmark.
+//
+static void parse_goto_bookmark(ParserBookmark *bmrk)
+{
+    lexer_goto_bookmark(bmrk->lexer_bmrk);
+    token_free(&bmrk->parser->tok);
+    token_clone(&bmrk->tok, &bmrk->parser->tok);
+}
+
+//
+// Free a parser bookmark.
+//
+static void parse_free_bookmark(ParserBookmark *bmrk)
+{
+    if (bmrk) {
+        lexer_free_bookmark(bmrk->lexer_bmrk);
+        token_free(&bmrk->tok);
+        safe_free(bmrk);
+    }
+}
 
 //
 // Free the current token and parse the next one.
@@ -400,8 +442,65 @@ static Statement *parse_stmt_if(Parser *parser)
 }
 
 //
+// Parse a label statement.
+// <statement> := <identifier> ":" <statement>
+//
+// The identifier and colon have already been consumed.
+//
+static Statement *parse_label(Parser *parser, char *label, FileLine loc)
+{
+    //
+    // A label must be followed by another statement.
+    //
+    Statement *labeled_stmt = parse_statement(parser);
+
+    return stmt_label(label, labeled_stmt, loc);
+}
+
+//
+// Parse a goto statement.
+// <statement> := "goto" <identifier> ";"
+//
+// The goto keyword has already been consumed.
+//
+static Statement *parse_goto(Parser *parser)
+{
+    char *label = NULL;
+    FileLine loc = parser->tok.loc;
+
+    if (parser->tok.type != TOK_ID) {
+        report_expected_err(&parser->tok, "label");
+    } else {
+        label = safe_strdup(parser->tok.id);
+        parse_next_token(parser);
+    }
+
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Statement *stmt = NULL;
+    if (label) {
+        stmt = stmt_goto(label, loc);
+        safe_free(label);
+    } else {
+        stmt = stmt_null(loc);
+    }
+
+    return stmt;
+}
+
+//
 // Parse a statement.
-// <statement> := ";" | "return" <exp> ";" | "if" "(" <exp> ")" <statement> [ "else" <statement> ] | <exp> ";"
+// <statement> := 
+//      ";" | 
+//      "return" <exp> ";" | 
+//      "if" "(" <exp> ")" <statement> [ "else" <statement> ] | 
+//      <identifier> ":" <statement> |
+//      "goto" <identifier> ";" |
+//      <exp> ";"
 //
 static Statement *parse_statement(Parser *parser)
 {
@@ -424,13 +523,40 @@ static Statement *parse_statement(Parser *parser)
     }
 
     //
-    // <statement> :=  "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+    // <statement> := "if" "(" <exp> ")" <statement> [ "else" <statement> ]
     //
     if (parser->tok.type == TOK_IF) {
         parse_next_token(parser);
         return parse_stmt_if(parser);
     }
 
+    //
+    // <statement> := <identifier> ":" <statement>
+    //
+    // We have to look ahead a bit here -- <identifier>, if followed by ":", is a
+    // label; but otherwise it's the start of an expression.
+    //
+    if (parser->tok.type == TOK_ID) {
+        ParserBookmark *bmrk = parse_bookmark(parser);
+        parse_next_token(parser);
+        if (parser->tok.type == ':') {            
+            parse_next_token(parser);
+            Statement *label = parse_label(parser, bmrk->tok.id, bmrk->tok.loc);
+            parse_free_bookmark(bmrk);
+            return label;
+        } 
+
+        parse_goto_bookmark(bmrk);
+        parse_free_bookmark(bmrk);
+    }
+
+    //
+    // <statement> := "goto" <identifier> ";"
+    //
+    if (parser->tok.type == TOK_GOTO) {
+        parse_next_token(parser);
+        return parse_goto(parser);
+    }
 
     //
     // <statement> = <exp> ";" 

@@ -193,6 +193,14 @@ static void ast_resolve_if_stmt(ResolveState *state, StmtIf *ifelse)
 }
 
 //
+// Resolve variables in a labelled statement.
+//
+static void ast_resolve_label(ResolveState *state, StmtLabel *label)
+{
+    ast_resolve_statement(state, label->stmt);
+}
+
+//
 // Resolve variables for a statement.
 //
 static void ast_resolve_statement(ResolveState *state, Statement *stmt)
@@ -202,6 +210,8 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
         case STMT_RETURN:       ast_resolve_return_stmt(state, &stmt->ret); break;
         case STMT_IF:           ast_resolve_if_stmt(state, &stmt->ifelse); break;
         case STMT_NULL:         break;
+        case STMT_LABEL:        ast_resolve_label(state, &stmt->label); break;
+        case STMT_GOTO:         break;
     }
 }
 

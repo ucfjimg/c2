@@ -1,0 +1,4 @@
+{
+    "goto-loop.c": "gcc-retval:success",
+    "simple.c": "gcc-retval:success"
+}

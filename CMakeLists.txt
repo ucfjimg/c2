@@ -12,6 +12,7 @@ add_executable(cc
     errors.c
     fileline.c
     fixoperands.c
+    goto.c
     hashtab.c
     ice.c
     lexer.c

@@ -260,11 +260,49 @@ Statement *stmt_expression(Expression *exp, FileLine loc)
 }
 
 //
-// Free an expression statement
+// Free an expression statement.
 //
 static void stmt_expression_free(StmtExpression *exp)
 {
     exp_free(exp->exp);
+}
+
+//
+// Constructor for a label statment (e.g. `label:`).
+//
+Statement *stmt_label(char *name, Statement *labeled_stmt, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_LABEL, loc);
+    stmt->label.name = safe_strdup(name);
+    stmt->label.stmt = labeled_stmt;
+    return stmt;
+}
+
+//
+// Free a label statement.
+//
+static void stmt_label_free(StmtLabel *label)
+{
+    safe_free(label->name);
+    stmt_free(label->stmt);
+}
+
+//
+// Constructor for a goto statement.
+//
+Statement *stmt_goto(char *target, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_GOTO, loc);
+    stmt->goto_.target = safe_strdup(target);
+    return stmt;
+}
+
+//
+// Free a goto statement.
+//
+static void stmt_goto_free(StmtGoto *goto_)
+{
+    safe_free(goto_->target);
 }
 
 //
@@ -278,7 +316,8 @@ void stmt_free(Statement *stmt)
             case STMT_IF:           stmt_if_free(&stmt->ifelse); break;
             case STMT_EXPRESSION:   stmt_expression_free(&stmt->exp); break;
             case STMT_NULL:         break;
-
+            case STMT_LABEL:        stmt_label_free(&stmt->label); break;
+            case STMT_GOTO:         stmt_goto_free(&stmt->goto_); break;
         }
 
         safe_free(stmt);
@@ -542,6 +581,24 @@ static void stmt_print_expression(StmtExpression *exp, int tab, bool locs)
 }
 
 //
+// Print a label statement.
+//
+static void stmt_print_label(StmtLabel *label, int tab, bool locs)
+{
+    printf("%*slabel(%s) {\n", tab, "", label->name);
+    stmt_print_recurse(label->stmt, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a goto statement.
+//
+static void stmt_print_goto(StmtGoto *goto_, int tab)
+{
+    printf("%*sgoto(%s);\n", tab, "", goto_->target);
+}
+
+//
 // Recusively print a statement, starting at indent `tab`
 //
 static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
@@ -557,6 +614,8 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
         case STMT_RETURN:       stmt_print_return(&stmt->ret, tab, locs); break;
         case STMT_IF:           stmt_print_if(&stmt->ifelse, tab, locs); break;
         case STMT_EXPRESSION:   stmt_print_expression(&stmt->exp, tab, locs); break;
+        case STMT_LABEL:        stmt_print_label(&stmt->label, tab, locs); break;
+        case STMT_GOTO:         stmt_print_goto(&stmt->goto_, tab); break;
     }
 }
 

@@ -92,6 +92,8 @@ typedef enum {
     STMT_RETURN,
     STMT_IF,
     STMT_EXPRESSION,
+    STMT_LABEL,
+    STMT_GOTO,
 } StatementTag;
 
 typedef struct {
@@ -108,6 +110,15 @@ typedef struct {
     Expression *exp;            // expression used as statement
 } StmtExpression;
 
+typedef struct {
+    char *name;                 // label name
+    Statement *stmt;            // labeled statement
+} StmtLabel;
+
+typedef struct {
+    char *target;               // target location
+} StmtGoto;
+
 struct Statement {
     ListNode list;
     StatementTag tag;
@@ -117,6 +128,8 @@ struct Statement {
         StmtReturn ret;         // STMT_RETURN
         StmtIf ifelse;          // STMT_IF
         StmtExpression exp;     // STMT_EXPRESSION
+        StmtLabel label;        // STMT_LABEL
+        StmtGoto goto_;         // STMT_GOTO
     };
 };
 
@@ -124,6 +137,8 @@ extern Statement *stmt_null(FileLine loc);
 extern Statement *stmt_return(Expression *exp, FileLine loc);
 extern Statement *stmt_if(Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc);
 extern Statement *stmt_expression(Expression *exp, FileLine loc);
+extern Statement *stmt_label(char *name, Statement *stmt, FileLine loc);
+extern Statement *stmt_goto(char *target, FileLine loc);
 extern void stmt_free(Statement *stmt);
 
 //

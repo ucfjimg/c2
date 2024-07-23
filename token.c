@@ -71,10 +71,33 @@ char *token_describe(Token *tok)
         case TOK_VOID:              return saprintf("void");
         case TOK_IF:                return saprintf("if");
         case TOK_ELSE:              return saprintf("else");
+        case TOK_GOTO:              return saprintf("goto");
 
         default:
             break;
     }
 
     return saprintf("<unknown-token-type-%d>", tok->type);
+}
+
+//
+// Create a copy of the token in `src` into `dst`, including all 
+// allocated memory.
+//
+void token_clone(Token *src, Token *dst)
+{
+    *dst = *src;
+
+    switch (dst->type) {
+        case TOK_ID:
+            dst->id = safe_strdup(src->id);
+            break;
+
+        case TOK_ERROR:
+            dst->err = safe_strdup(src->id);
+            break;
+
+        default:
+            break;
+    }
 }

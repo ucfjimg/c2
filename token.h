@@ -77,6 +77,7 @@ typedef enum {
     TOK_VOID,
     TOK_IF,
     TOK_ELSE,
+    TOK_GOTO,
 } TokenType;
 
 typedef struct {
@@ -92,3 +93,4 @@ typedef struct {
 
 extern void token_free(Token *tok);
 extern char *token_describe(Token *tok);
+extern void token_clone(Token *src, Token *dst);

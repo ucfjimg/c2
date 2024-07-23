@@ -300,6 +300,23 @@ static void tcg_if(TacState *state, Statement *ifstmt)
 }
 
 //
+// Generate TAC for a program-defined label.
+//
+static void tcg_label(TacState *state, Statement *label)
+{
+    tcg_append(state, tac_label(label->label.name, label->loc));
+    tcg_statement(state, label->label.stmt);
+}
+
+//
+// Generate TAC for a goto statement
+//
+static void tcg_goto(TacState *state, Statement *goto_)
+{
+    tcg_append(state, tac_jump(goto_->goto_.target, goto_->loc));
+}
+
+//
 // Generate TAC for a statement.
 //
 static void tcg_statement(TacState *state, Statement *stmt)
@@ -309,6 +326,8 @@ static void tcg_statement(TacState *state, Statement *stmt)
         case STMT_RETURN:       tcg_return(state, stmt); break;
         case STMT_IF:           tcg_if(state, stmt); break;
         case STMT_NULL:         break;
+        case STMT_LABEL:        tcg_label(state, stmt); break;
+        case STMT_GOTO:         tcg_goto(state, stmt); break;
     }
 }
 

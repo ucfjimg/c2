@@ -10,6 +10,7 @@
 #include "emitcode.h"
 #include "errors.h"
 #include "fixoperands.h"
+#include "goto.h"
 #include "lexer.h"
 #include "parser.h"
 #include "resolve.h"
@@ -249,6 +250,7 @@ static int compile(Args *args)
     // Semantic passes.
     //
     ast_resolve(ast);
+    ast_validate_goto(ast);
 
     if (err_has_errors()) {
         status = 1;

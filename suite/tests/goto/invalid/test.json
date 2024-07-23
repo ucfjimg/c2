@@ -1,0 +1,6 @@
+{
+    "dup-label.c": "validate:fail",
+    "dup-nested-label.c": "validate:fail",
+    "label-needs-statement.c": "validate:fail",
+    "missing-label.c": "validate:fail"
+}
