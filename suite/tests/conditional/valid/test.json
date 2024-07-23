@@ -1,0 +1,4 @@
+{
+    "ifelse.c": "lex:success",
+    "ternary.c": "lex:success"
+}

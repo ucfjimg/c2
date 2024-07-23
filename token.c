@@ -69,6 +69,8 @@ char *token_describe(Token *tok)
         case TOK_INT:               return saprintf("int");
         case TOK_RETURN:            return saprintf("return");
         case TOK_VOID:              return saprintf("void");
+        case TOK_IF:                return saprintf("if");
+        case TOK_ELSE:              return saprintf("else");
 
         default:
             break;

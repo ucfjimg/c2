@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 static void ast_print_recurse(AstNode *ast, int tab, bool locs);
+static void stmt_print_recurse(Statement *ast, int tab, bool locs);
 static void exp_print_recurse(Expression *exp, int tab, bool locs);
 
 //
@@ -89,6 +90,30 @@ static void exp_binary_free(ExpBinary *binary)
 }
 
 //
+// Construct a conditional operator (i.e. a ? b : c).
+//
+Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc)
+{
+    Expression *cexp = exp_alloc(EXP_CONDITIONAL, loc);
+
+    cexp->conditional.cond = conditional;
+    cexp->conditional.trueval = trueval;
+    cexp->conditional.falseval = falseval;
+
+    return cexp;
+}
+
+//
+// Free a conditional expression.
+//
+static void exp_conditional_free(ExpConditional *cond)
+{
+    exp_free(cond->cond);
+    exp_free(cond->trueval);
+    exp_free(cond->falseval);
+}
+
+//
 // Construct an assignment expression.
 //
 Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc)
@@ -122,6 +147,7 @@ void exp_free(Expression *exp)
             case EXP_VAR:           exp_var_free(&exp->var); break;
             case EXP_UNARY:         exp_unary_free(&exp->unary); break;
             case EXP_BINARY:        exp_binary_free(&exp->binary); break;
+            case EXP_CONDITIONAL:   exp_conditional_free(&exp->conditional); break;
             case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
             default:
                 break;
@@ -130,6 +156,36 @@ void exp_free(Expression *exp)
         safe_free(exp);
     }
 }
+
+//
+// Constructor for a declaration.
+//
+// Note that `init` is optional and will be NULL if the declaration
+// has no initializer.
+// 
+Declaration *declaration(char *name, Expression *init, FileLine loc)
+{
+    Declaration *decl = safe_zalloc(sizeof(Declaration));
+
+    decl->loc = loc;
+    decl->name = safe_strdup(name);
+    decl->init = init;
+
+    return decl;
+}
+
+//
+// Free a declaration.
+//
+void declaration_free(Declaration *decl)
+{
+    if (decl) {
+        safe_free(decl->name);
+        exp_free(decl->init);
+    
+        safe_free(decl);
+    }
+}   
 
 //
 // Allocatorfor all statement objects.
@@ -152,28 +208,6 @@ Statement *stmt_null(FileLine loc)
 }
 
 //
-// Construct a declaration statement.
-//
-Statement *stmt_declaration(char *name, Expression *init, FileLine loc)
-{
-    Statement *stmt = stmt_alloc(STMT_DECLARATION, loc);
-
-    stmt->decl.name = safe_strdup(name);
-    stmt->decl.init = init;
-
-    return stmt;
-}
-
-//
-// Free a declaration statement.
-//
-static void stmt_declaration_free(StmtDeclaration *decl)
-{
-    safe_free(decl->name);
-    exp_free(decl->init);
-}
-
-//
 // Construct a return statement around an expression (which may be NULL).
 //
 Statement *stmt_return(Expression *exp, FileLine loc)
@@ -184,11 +218,35 @@ Statement *stmt_return(Expression *exp, FileLine loc)
 }
 
 //
-// Free a return statement
+// Free a return statement.
 //
 static void stmt_return_free(StmtReturn *ret)
 {
     exp_free(ret->exp);
+}
+
+//
+// Construct an if statement.
+//
+Statement *stmt_if(Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_IF, loc);
+    stmt->ifelse.condition = condition;
+    stmt->ifelse.thenpart = thenpart;
+    stmt->ifelse.elsepart = elsepart;
+
+    return stmt;
+
+}
+
+//
+// Free an if statement.
+// 
+static void stmt_if_free(StmtIf *ifelse)
+{
+    exp_free(ifelse->condition);
+    stmt_free(ifelse->thenpart);
+    stmt_free(ifelse->elsepart);
 }
 
 //
@@ -216,17 +274,61 @@ void stmt_free(Statement *stmt)
 {
     if (stmt) {
         switch (stmt->tag) {
-            case STMT_DECLARATION:  stmt_declaration_free(&stmt->decl); break;
             case STMT_RETURN:       stmt_return_free(&stmt->ret); break;
+            case STMT_IF:           stmt_if_free(&stmt->ifelse); break;
             case STMT_EXPRESSION:   stmt_expression_free(&stmt->exp); break;
+            case STMT_NULL:         break;
 
-            default:
-                break;
         }
 
         safe_free(stmt);
     }
 }
+
+//
+// Allocator for all BlockItem nodes.
+//
+static BlockItem *blki_alloc(BlockItemTag tag)
+{
+    BlockItem *blki = safe_zalloc(sizeof(BlockItem));
+    blki->tag = tag;
+    return blki;
+}
+
+//
+// Constructor for a declaration block item.
+//
+BlockItem *blki_declaration(Declaration *decl)
+{
+    BlockItem *blki = blki_alloc(BI_DECLARATION);
+    blki->decl = decl;
+    return blki;
+}
+
+//
+// Constructor for a statement block item.
+//
+BlockItem *blki_statement(Statement *stmt)
+{
+    BlockItem *blki = blki_alloc(BI_STATEMENT);
+    blki->stmt = stmt;
+    return blki;
+}
+
+//
+// Free a block item.
+//
+void blki_free(BlockItem *blki)
+{
+    if (blki) {
+        switch (blki->tag) {
+            case BI_DECLARATION:    declaration_free(blki->decl); break;
+            case BI_STATEMENT:      stmt_free(blki->stmt); break;
+        }
+        safe_free(blki);
+    }
+}
+
 
 //
 // Allocator for all AST nodes.
@@ -258,7 +360,7 @@ AstNode *ast_function(FileLine loc)
 }
 
 //
-// Free a program
+// Free a program.
 //
 static void ast_free_program(AstProgram *prog)
 {
@@ -275,11 +377,10 @@ static void ast_free_function(AstFunction *func)
     for (ListNode *curr = func->stmts.head; curr; ) {
         ListNode *next = curr->next;
 
-        stmt_free(CONTAINER_OF(curr, Statement, list));
+        blki_free(CONTAINER_OF(curr, BlockItem, list));
 
         curr = next;
     }
-
 }
 
 //
@@ -336,6 +437,20 @@ static void print_exp_binary(ExpBinary *binary, int tab, bool locs)
 }
 
 //
+// Print a conditional expression.
+//
+static void print_exp_conditional(ExpConditional *cond, int tab, bool locs)
+{
+    printf("%*sconditional {\n", tab, "");
+    exp_print_recurse(cond->cond, tab + 2, locs);
+    printf("%*s} ? {\n", tab, "");
+    exp_print_recurse(cond->trueval, tab + 2, locs);
+    printf("%*s} : {\n", tab, "");
+    exp_print_recurse(cond->falseval, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Print an assignment expression.
 //
 static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
@@ -363,6 +478,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
         case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;
+        case EXP_CONDITIONAL:   print_exp_conditional(&exp->conditional, tab, locs); break;
         case EXP_ASSIGNMENT:    print_exp_assignment(&exp->assignment, tab, locs); break;
     }
 }
@@ -370,7 +486,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
 //
 // Print a variable declaration.
 //
-static void stmt_print_declaration(StmtDeclaration *decl, int tab, bool locs)
+static void decl_print_declaration(Declaration *decl, int tab, bool locs)
 {
     printf("%*sdeclare(%s)", tab, "", decl->name);
     if (decl->init) {
@@ -400,6 +516,22 @@ static void stmt_print_return(StmtReturn *ret, int tab, bool locs)
 }
 
 //
+// Print an if statement.
+//
+static void stmt_print_if(StmtIf *ifelse, int tab, bool locs)
+{
+    printf("%*sif (\n", tab, "");
+    exp_print_recurse(ifelse->condition, tab + 2, locs);
+    printf("%*s) {\n", tab, "");
+    stmt_print_recurse(ifelse->thenpart, tab + 2, locs);
+    if (ifelse->elsepart) {
+        printf("%*s} else {\n", tab, "");
+        stmt_print_recurse(ifelse->elsepart, tab + 2, locs);
+    }
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Print a statement expression.
 //
 static void stmt_print_expression(StmtExpression *exp, int tab, bool locs)
@@ -421,9 +553,9 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
     }
 
     switch (stmt->tag) {
-        case STMT_DECLARATION:  stmt_print_declaration(&stmt->decl, tab, locs); break;
         case STMT_NULL:         stmt_print_null(tab); break;
         case STMT_RETURN:       stmt_print_return(&stmt->ret, tab, locs); break;
+        case STMT_IF:           stmt_print_if(&stmt->ifelse, tab, locs); break;
         case STMT_EXPRESSION:   stmt_print_expression(&stmt->exp, tab, locs); break;
     }
 }
@@ -446,7 +578,11 @@ static void ast_print_function(AstFunction *func, int tab, bool locs)
     printf("%*sfunction(int, %s) {\n", tab, "", func->name);
 
     for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
-        stmt_print_recurse(CONTAINER_OF(curr, Statement, list), tab + 2, locs);
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        switch (blki->tag) {
+            case BI_DECLARATION:    decl_print_declaration(blki->decl, tab + 2, locs); break;
+            case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs);
+        }
     }
     printf("%*s}\n", tab, "");
 }

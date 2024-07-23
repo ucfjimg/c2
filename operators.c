@@ -39,6 +39,7 @@ const char *bop_describe(BinaryOp bop)
         case BOP_BITXOR:            return "^";
         case BOP_LOGAND:            return "&&";
         case BOP_LOGOR:             return "||";
+        case BOP_CONDITIONAL:       return "?:";
         case BOP_ASSIGN:            return "=";
         case BOP_COMPOUND_ADD:      return "+=";
         case BOP_COMPOUND_SUBTRACT: return "-=";

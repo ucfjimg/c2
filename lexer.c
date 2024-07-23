@@ -17,6 +17,8 @@ static Keyword keywords[] = {
     { "int",    TOK_INT },
     { "return", TOK_RETURN },
     { "void",   TOK_VOID },
+    { "if",     TOK_IF },
+    { "else",   TOK_ELSE },
 
     { NULL,     TOK_EOF }
 };
@@ -441,6 +443,8 @@ void lexer_token(Lexer *lex, Token *tok)
         case '/': tok->type = TOK_DIVIDE; break;
         case '%': tok->type = TOK_MODULO; break;
         case '^': tok->type = TOK_BITXOR; break;
+        case '?': tok->type = TOK_QUESTION; break;
+        case ':': tok->type = TOK_COLON; break;
     }
 
     if (tok->type != TOK_ERROR) {

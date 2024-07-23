@@ -188,11 +188,12 @@ struct TacNode *tcg_assignment(TacState *state, Expression *exp)
 static TacNode *tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
-        case EXP_INT:       return tac_const_int(exp->intval, exp->loc);
-        case EXP_VAR:       return tac_var(exp->var.name, exp->loc);
-        case EXP_UNARY:     return tcg_unary_op(state, exp);
-        case EXP_BINARY:    return tcg_binary_op(state, exp);
-        case EXP_ASSIGNMENT:return tcg_assignment(state, exp);
+        case EXP_INT:           return tac_const_int(exp->intval, exp->loc);
+        case EXP_VAR:           return tac_var(exp->var.name, exp->loc);
+        case EXP_UNARY:         return tcg_unary_op(state, exp);
+        case EXP_BINARY:        return tcg_binary_op(state, exp);
+        case EXP_CONDITIONAL:   break;
+        case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -210,16 +211,13 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
 // However, if there is an initializer, we need to generate code for
 // that here.
 //
-static void tcg_declaration(TacState *state, Statement *declstmt)
+static void tcg_declaration(TacState *state, Declaration *decl)
 {
-    ICE_ASSERT(declstmt->tag == STMT_DECLARATION);
-    StmtDeclaration *decl = &declstmt->decl;
-
     if (decl->init) {
         TacNode *initval = tcg_expression(state, decl->init);
 
-        TacNode *declvar = tac_var(decl->name, declstmt->loc);
-        tcg_append(state, tac_copy(initval, declvar, declstmt->loc));
+        TacNode *declvar = tac_var(decl->name, decl->loc);
+        tcg_append(state, tac_copy(initval, declvar, decl->loc));
     }
 }
 
@@ -248,9 +246,9 @@ static void tcg_return(TacState *state, Statement *ret)
 void tcg_statement(TacState *state, Statement *stmt)
 {
     switch (stmt->tag) {
-        case STMT_DECLARATION:  tcg_declaration(state, stmt); break;
         case STMT_EXPRESSION:   tcg_expression(state, stmt->exp.exp); break;
         case STMT_RETURN:       tcg_return(state, stmt); break;
+        case STMT_IF:           break;
         case STMT_NULL:         break;
     }
 }
@@ -269,8 +267,12 @@ static TacNode *tcg_funcdef(TacState *state, AstNode *func)
     list_clear(&funcstate.code);
 
     for (ListNode *curr = func->func.stmts.head; curr; curr = curr->next) {
-        Statement *stmt = CONTAINER_OF(curr, Statement, list);
-        tcg_statement(&funcstate, stmt);
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        
+        switch (blki->tag) {
+            case BI_DECLARATION:    tcg_declaration(&funcstate, blki->decl); break;
+            case BI_STATEMENT:      tcg_statement(&funcstate, blki->stmt); break;
+        }
     }
 
     //

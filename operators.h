@@ -27,6 +27,8 @@ typedef enum {
     BOP_LOGAND,
     BOP_LOGOR,
 
+    BOP_CONDITIONAL,            // really, ternary, but parsed as binary
+
     BOP_ASSIGN,
     BOP_FIRST_COMPOUND_ASSIGN,
     BOP_COMPOUND_ADD = BOP_FIRST_COMPOUND_ASSIGN,

@@ -7,6 +7,7 @@
 #include <stdbool.h>
 
 typedef struct Expression Expression;
+typedef struct Declaration Declaration;
 typedef struct Statement Statement;
 typedef struct AstNode AstNode;
 
@@ -18,6 +19,7 @@ typedef enum {
     EXP_VAR,
     EXP_UNARY,
     EXP_BINARY,
+    EXP_CONDITIONAL,
     EXP_ASSIGNMENT,
 } ExpressionTag;
 
@@ -37,6 +39,12 @@ typedef struct {
 } ExpBinary;
 
 typedef struct {
+    Expression *cond;
+    Expression *trueval;
+    Expression *falseval;
+} ExpConditional;
+
+typedef struct {
     BinaryOp op;
     Expression *left;
     Expression *right;
@@ -51,6 +59,7 @@ struct Expression {
         ExpVar var;
         ExpUnary unary;
         ExpBinary binary;
+        ExpConditional conditional;
         ExpAssignment assignment;
     };
 };
@@ -59,27 +68,41 @@ extern Expression *exp_int(unsigned long intval, FileLine loc);
 extern Expression *exp_var(char *name, FileLine loc);
 extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc);
 extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern void exp_free(Expression *exp);
+
+//
+// declarations
+//
+struct Declaration {
+    FileLine loc;
+    char *name;                 // name of variable being declared
+    Expression *init;           // initializatiom (may be NULL)
+};
+
+extern Declaration *declaration(char *name, Expression *init, FileLine loc);
+extern void declaration_free(Declaration *decl);
 
 //
 // statemements
 //
 typedef enum {
-    STMT_DECLARATION,
     STMT_NULL,
     STMT_RETURN,
+    STMT_IF,
     STMT_EXPRESSION,
 } StatementTag;
 
 typedef struct {
-    char *name;                 // name of variable being declared
-    Expression *init;           // initializatiom (may be NULL)
-} StmtDeclaration;
-
-typedef struct {
     Expression *exp;            // return value (may be NULL) 
 } StmtReturn;
+
+typedef struct {
+    Expression *condition;      // condition to check
+    Statement *thenpart;        // `then` part statement (must exist)
+    Statement *elsepart;        // `else` part statement (optional)
+} StmtIf;
 
 typedef struct {
     Expression *exp;            // expression used as statement
@@ -91,17 +114,40 @@ struct Statement {
     FileLine loc;               
 
     union {
-        StmtDeclaration decl;   // STMT_DECLARATION
         StmtReturn ret;         // STMT_RETURN
+        StmtIf ifelse;          // STMT_IF
         StmtExpression exp;     // STMT_EXPRESSION
     };
 };
 
-extern Statement *stmt_declaration(char *name, Expression *init, FileLine loc);
 extern Statement *stmt_null(FileLine loc);
 extern Statement *stmt_return(Expression *exp, FileLine loc);
+extern Statement *stmt_if(Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc);
 extern Statement *stmt_expression(Expression *exp, FileLine loc);
 extern void stmt_free(Statement *stmt);
+
+//
+// A block item is either a declaration or a statement.
+//
+typedef enum {
+    BI_DECLARATION,
+    BI_STATEMENT,
+} BlockItemTag;
+
+typedef struct
+{
+    ListNode list;
+    BlockItemTag tag;
+
+    union {
+        Declaration *decl;
+        Statement *stmt;
+    };
+} BlockItem;
+
+extern BlockItem *blki_declaration(Declaration *decl);
+extern BlockItem *blki_statement(Statement *stmt);
+extern void blki_free(BlockItem *blki);
 
 //
 // AST
@@ -117,7 +163,7 @@ typedef struct {
 
 typedef struct {
     char *name;                 // name of function
-    List stmts;                 // of <Statement>
+    List stmts;                 // of <BlockItem>
 } AstFunction;
 
 struct AstNode {

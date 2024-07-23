@@ -24,6 +24,8 @@ typedef enum {
     TOK_BITXOR = '^',
     TOK_LOGNOT = '!',
     TOK_ASSIGN = '=',
+    TOK_QUESTION = '?',
+    TOK_COLON = ':',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
@@ -73,7 +75,8 @@ typedef enum {
     TOK_INT,
     TOK_RETURN,
     TOK_VOID,
-
+    TOK_IF,
+    TOK_ELSE,
 } TokenType;
 
 typedef struct {

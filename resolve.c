@@ -16,6 +16,8 @@ typedef struct {
 } ResolveState;
 
 static void ast_resolve_expression(ResolveState *state, Expression *exp);
+static void ast_resolve_statement(ResolveState *state, Statement *stmt);
+
 
 //
 // Allocate a hash node for the resolve table.
@@ -73,14 +75,11 @@ static char *ast_unique_varname(char *name)
 // if so, report an error. Otherwise, generate a new unique name for the 
 // declaration.
 //
-static void ast_resolve_declaration(ResolveState *state, Statement *stmtdecl)
+static void ast_resolve_declaration(ResolveState *state, Declaration *decl)
 {
-    ICE_ASSERT(stmtdecl->tag == STMT_DECLARATION);
-    StmtDeclaration *decl = &stmtdecl->decl;
-
     VarMapNode *mapnode = restab_get(state, decl->name);
     if (mapnode->new_name) {
-        err_report(EC_ERROR, &stmtdecl->loc, "variable `%s` has already been declared.", decl->name);
+        err_report(EC_ERROR, &decl->loc, "variable `%s` has already been declared.", decl->name);
     } else {
         mapnode->new_name = ast_unique_varname(decl->name);
     }
@@ -135,6 +134,16 @@ static void ast_resolve_unary_exp(ResolveState *state, ExpUnary *unary)
 }
 
 //
+// Resolve variables in a conditional expression.
+//
+static void ast_resolve_conditional_exp(ResolveState *state, ExpConditional *cond)
+{
+    ast_resolve_expression(state, cond->cond);
+    ast_resolve_expression(state, cond->trueval);
+    ast_resolve_expression(state, cond->falseval);
+}
+
+//
 // Resolve variables in an assignment expression.
 //
 static void ast_resolve_assign_exp(ResolveState *state, ExpAssignment *assign)
@@ -152,11 +161,12 @@ static void ast_resolve_assign_exp(ResolveState *state, ExpAssignment *assign)
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
 {
     switch (exp->tag) {
-        case EXP_VAR:       ast_resolve_var_reference(state, exp); break;
-        case EXP_BINARY:    ast_resolve_binary_exp(state, &exp->binary); break;
-        case EXP_UNARY:     ast_resolve_unary_exp(state, &exp->unary); break;
-        case EXP_ASSIGNMENT:ast_resolve_assign_exp(state, &exp->assignment); break;
-        case EXP_INT:       break;
+        case EXP_VAR:           ast_resolve_var_reference(state, exp); break;
+        case EXP_BINARY:        ast_resolve_binary_exp(state, &exp->binary); break;
+        case EXP_UNARY:         ast_resolve_unary_exp(state, &exp->unary); break;
+        case EXP_CONDITIONAL:   ast_resolve_conditional_exp(state, &exp->conditional); break;
+        case EXP_ASSIGNMENT:    ast_resolve_assign_exp(state, &exp->assignment); break;
+        case EXP_INT:           break;
     }
 }
 
@@ -171,18 +181,40 @@ static void ast_resolve_return_stmt(ResolveState *state, StmtReturn *ret)
 }
 
 //
+// Resolve variables in an if statement.
+//
+static void ast_resolve_if_stmt(ResolveState *state, StmtIf *ifelse)
+{
+    ast_resolve_expression(state, ifelse->condition);
+    ast_resolve_statement(state, ifelse->thenpart);
+    if (ifelse->elsepart) {
+        ast_resolve_statement(state, ifelse->elsepart);
+    }
+}
+
+//
+// Resolve variables for a statement.
+//
+static void ast_resolve_statement(ResolveState *state, Statement *stmt)
+{
+    switch (stmt->tag) {
+        case STMT_EXPRESSION:   ast_resolve_expression(state, stmt->exp.exp); break;
+        case STMT_RETURN:       ast_resolve_return_stmt(state, &stmt->ret); break;
+        case STMT_IF:           ast_resolve_if_stmt(state, &stmt->ifelse); break;
+        case STMT_NULL:         break;
+    }
+}
+
+//
 // Resolve variables for one function.
 //
 static void ast_resolve_function(ResolveState *state, AstFunction *func)
 {
     for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
-        Statement *stmt = CONTAINER_OF(curr, Statement, list);
-
-        switch (stmt->tag) {
-            case STMT_DECLARATION:  ast_resolve_declaration(state, stmt); break;
-            case STMT_EXPRESSION:   ast_resolve_expression(state, stmt->exp.exp); break;
-            case STMT_RETURN:       ast_resolve_return_stmt(state, &stmt->ret); break;
-            case STMT_NULL:         break;
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        switch (blki->tag) {
+            case BI_DECLARATION:    ast_resolve_declaration(state, blki->decl); break;
+            case BI_STATEMENT:      ast_resolve_statement(state, blki->stmt); break;
         }
     }
 }

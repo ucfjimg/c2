@@ -54,25 +54,26 @@ static BinOpPrecedence bin_op_prec[] = {
     { TOK_LOGAND,               BOP_LOGAND,             10, AS_LEFT },       // 5    left assoc
     { TOK_LOGOR,                BOP_LOGOR,              5,  AS_LEFT },       // 4    left assoc
     
-    // ?: ternary right assoc                                                // 3    right assoc
+    { TOK_QUESTION,             BOP_CONDITIONAL,        3,  AS_RIGHT },      // 3    right assoc
     
-    { TOK_ASSIGN,               BOP_ASSIGN,             2, AS_RIGHT },       // 2    right assoc
-    { TOK_COMPOUND_ADD,         BOP_COMPOUND_ADD,       2, AS_RIGHT },
-    { TOK_COMPOUND_SUBTRACT,    BOP_COMPOUND_SUBTRACT,  2, AS_RIGHT },
-    { TOK_COMPOUND_MULTIPLY,    BOP_COMPOUND_MULTIPLY,  2, AS_RIGHT },
-    { TOK_COMPOUND_DIVIDE,      BOP_COMPOUND_DIVIDE,    2, AS_RIGHT },
-    { TOK_COMPOUND_MODULO,      BOP_COMPOUND_MODULO,    2, AS_RIGHT },
-    { TOK_COMPOUND_BITAND,      BOP_COMPOUND_BITAND,    2, AS_RIGHT },
-    { TOK_COMPOUND_BITOR,       BOP_COMPOUND_BITOR,     2, AS_RIGHT },
-    { TOK_COMPOUND_BITXOR,      BOP_COMPOUND_BITXOR,    2, AS_RIGHT },
-    { TOK_COMPOUND_LSHIFT,      BOP_COMPOUND_LSHIFT,    2, AS_RIGHT },
-    { TOK_COMPOUND_RSHIFT,      BOP_COMPOUND_RSHIFT,    2, AS_RIGHT },
+    { TOK_ASSIGN,               BOP_ASSIGN,             2,  AS_RIGHT },      // 2    right assoc
+    { TOK_COMPOUND_ADD,         BOP_COMPOUND_ADD,       2,  AS_RIGHT },
+    { TOK_COMPOUND_SUBTRACT,    BOP_COMPOUND_SUBTRACT,  2,  AS_RIGHT },
+    { TOK_COMPOUND_MULTIPLY,    BOP_COMPOUND_MULTIPLY,  2,  AS_RIGHT },
+    { TOK_COMPOUND_DIVIDE,      BOP_COMPOUND_DIVIDE,    2,  AS_RIGHT },
+    { TOK_COMPOUND_MODULO,      BOP_COMPOUND_MODULO,    2,  AS_RIGHT },
+    { TOK_COMPOUND_BITAND,      BOP_COMPOUND_BITAND,    2,  AS_RIGHT },
+    { TOK_COMPOUND_BITOR,       BOP_COMPOUND_BITOR,     2,  AS_RIGHT },
+    { TOK_COMPOUND_BITXOR,      BOP_COMPOUND_BITXOR,    2,  AS_RIGHT },
+    { TOK_COMPOUND_LSHIFT,      BOP_COMPOUND_LSHIFT,    2,  AS_RIGHT },
+    { TOK_COMPOUND_RSHIFT,      BOP_COMPOUND_RSHIFT,    2,  AS_RIGHT },
 
     // ,                                                                     // 1    left assoc
 };
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
 static Expression *parse_expression(Parser *parser, int min_prec);
+static Statement *parse_statement(Parser *parser);
 
 //
 // Free the current token and parse the next one.
@@ -209,6 +210,23 @@ static Expression *parse_factor(Parser *parser)
 }
 
 //
+// Parse the trueval part of a conditional operator cond ? trueval : falseval.
+// The condition and '?' token have already been consumed.
+//
+static Expression *parse_conditional_trueval(Parser *parser)
+{
+    Expression *trueval = parse_expression(parser, 0);
+
+    if (parser->tok.type != ':') {
+        report_expected_err(&parser->tok, "`:`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    return trueval;
+}
+
+//
 // Look up the given token in the precendence table. If found,
 // return the precedence table entry, else NULL.
 //
@@ -246,7 +264,14 @@ static Expression *parse_expression(Parser *parser, int min_prec)
         FileLine loc = parser->tok.loc;
         parse_next_token(parser);
 
-        if (binop->assoc == AS_RIGHT) {
+        if (binop->op == BOP_CONDITIONAL) {
+            //
+            // Special handling for the conditional operator a ? b : c
+            //
+            Expression *trueval = parse_conditional_trueval(parser);
+            Expression *falseval = parse_expression(parser, binop->prec_level);
+            left = exp_conditional(left, trueval, falseval, loc);
+        } else if (binop->assoc == AS_RIGHT) {
             //
             // right associative
             //
@@ -265,9 +290,9 @@ static Expression *parse_expression(Parser *parser, int min_prec)
 // <declaration> := "int" <identifier> [ "=" <exp> ] ";" 
 // The type has already been parsed.
 //
-static Statement *parse_stmt_declaration(Parser *parser)
+static Declaration *parse_declaration(Parser *parser)
 {
-    Statement *decl = NULL;
+    Declaration *decl = NULL;
     char *name = NULL;
     Expression *init = NULL;
     FileLine loc = parser->tok.loc;
@@ -290,18 +315,18 @@ static Statement *parse_stmt_declaration(Parser *parser)
         parse_next_token(parser);
     }
 
-    decl = stmt_declaration(name, init, loc);
+    decl = declaration(name, init, loc);
     init = NULL;
 
 done:
     if (decl == NULL) {
         if (name == NULL) {
             //
-            // If there's no name, just add a null statement
+            // If there's no name, just add a dummy declaration.
             //
-            decl = stmt_null(loc);
+            decl = declaration(".error", NULL, loc);
         } else {
-            decl = stmt_declaration(name, NULL, loc);
+            decl = declaration(name, NULL, loc);
         }
     }
     exp_free(init);
@@ -312,6 +337,8 @@ done:
 //
 // Parse a return statement. 
 // The `return` keyword token has already been consumed.
+//
+// <statement> := "return" [ <expression> ] ";"
 //
 static Statement *parse_stmt_return(Parser *parser)
 {
@@ -334,8 +361,47 @@ static Statement *parse_stmt_return(Parser *parser)
 }
 
 //
+// Parse an if statement. 
+// The `if` keyword token has already been consumed.
+//
+// <statement> :=  "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+//
+static Statement *parse_stmt_if(Parser *parser)
+{
+    FileLine loc = parser->tok.loc;
+    Expression *condition = NULL;
+    Statement *thenpart = NULL;
+    Statement *elsepart = NULL;
+
+    if (parser->tok.type == '(') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`(`");
+    }
+
+    condition = parse_expression(parser, 0);
+
+    if (parser->tok.type == ')') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`)`");
+    }
+
+    thenpart = parse_statement(parser);
+
+    if (parser->tok.type == TOK_ELSE) {
+        parse_next_token(parser);
+        elsepart = parse_statement(parser);
+    }    
+
+    Statement *stmt = stmt_if(condition, thenpart, elsepart, loc);
+
+    return stmt;
+}
+
+//
 // Parse a statement.
-// <statement> := ";" <declaration> | "return" <exp> ";" | <exp> ";"
+// <statement> := ";" | "return" <exp> ";" | "if" "(" <exp> ")" <statement> [ "else" <statement> ] | <exp> ";"
 //
 static Statement *parse_statement(Parser *parser)
 {
@@ -350,25 +416,21 @@ static Statement *parse_statement(Parser *parser)
     }
 
     //
-    // <statement> := <declaration> 
-    //  
-    if (parser->tok.type == TOK_INT) {
-        parse_next_token(parser);
-
-        //
-        // TODO when we support types, parse the type and pass it in.
-        // For now it's always `int`.
-        //
-        return parse_stmt_declaration(parser);
-    }
-    
-    //
     // <statement> := "return" <exp> ";" 
     //
     if (parser->tok.type == TOK_RETURN) {
         parse_next_token(parser);
         return parse_stmt_return(parser);
     }
+
+    //
+    // <statement> :=  "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+    //
+    if (parser->tok.type == TOK_IF) {
+        parse_next_token(parser);
+        return parse_stmt_if(parser);
+    }
+
 
     //
     // <statement> = <exp> ";" 
@@ -436,8 +498,20 @@ static AstNode *parse_function(Parser *parser)
         list_push_back(&func->stmts, &stmt->list);
     } else {
         while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
-            Statement *stmt = parse_statement(parser);
-            list_push_back(&func->stmts, &stmt->list);
+            BlockItem *blki = NULL;
+            //
+            // In the future, this will be on any type, not just `int`.
+            //
+            if (parser->tok.type == TOK_INT) {
+                parse_next_token(parser);
+                Declaration *decl = parse_declaration(parser);
+                blki = blki_declaration(decl);
+            } else {
+                Statement *stmt = parse_statement(parser);
+                blki = blki_statement(stmt);
+            }
+
+            list_push_back(&func->stmts, &blki->list);
         }
     }
 

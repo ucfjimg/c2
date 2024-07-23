@@ -1,0 +1,3 @@
+{
+    "decl-is-not-stmt.c": "parse:fail"
+}
