@@ -276,7 +276,13 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
     if (node->loc.fname != loc->fname || node->loc.line != loc->line) {
         *loc = node->loc;
         char *sloc = fileline_describe(loc);
+#ifndef __APPLE__
+        // 
+        // TODO figure out why Mac assembler doesn't like this
+        // line number format.
+        //
         fprintf(out, "# %s\n", sloc);
+#endif
         safe_free(sloc);
     }
 

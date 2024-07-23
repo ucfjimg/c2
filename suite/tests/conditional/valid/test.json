@@ -1,4 +1,7 @@
 {
-    "ifelse.c": "lex:success",
-    "ternary.c": "lex:success"
+    "ifelse.c": "gcc-retval:success",
+    "if-no-else.c": "gcc-retval:success",
+    "if-exp-stmt.c": "gcc-retval:success",
+    "nested-if.c": "gcc-retval:success",
+    "ternary.c": "gcc-retval:success"
 }

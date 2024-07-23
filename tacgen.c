@@ -12,6 +12,7 @@ typedef struct
 } TacState;
 
 static TacNode *tcg_expression(TacState *state, Expression *exp);
+static void tcg_statement(TacState *state, Statement *stmt);
 
 //
 // NOTE TAC generation expects a syntactically correct program from
@@ -134,7 +135,7 @@ static TacNode *tcg_short_circuit_op(TacState *state, Expression *binary)
 }
 
 //
-// Return TAC for a binary expression.
+// Generate TAC for a binary expression.
 // 
 static TacNode *tcg_binary_op(TacState *state, Expression *binary)
 {
@@ -154,6 +155,31 @@ static TacNode *tcg_binary_op(TacState *state, Expression *binary)
     tcg_append(state, tac_binary(binary->binary.op, left, right, dst, binary->loc));
 
     return tac_var(dst->var.name, binary->loc);
+}
+
+//
+// Generate TAC for a conditional expression.
+//
+static TacNode *tcg_conditional(TacState *state, Expression *condexp)
+{
+    ICE_ASSERT(condexp->tag == EXP_CONDITIONAL);
+    ExpConditional *cond = &condexp->conditional;
+
+    TacNode *falsepart = tcg_make_label(cond->falseval->loc);
+    TacNode *end = tcg_make_label(cond->falseval->loc);
+    TacNode *result = tcg_temporary(cond->cond->loc);
+
+    TacNode *condval = tcg_expression(state, cond->cond);
+    tcg_append(state, tac_jump_zero(condval, falsepart->label.name, cond->cond->loc));
+    TacNode *trueval = tcg_expression(state, cond->trueval);
+    tcg_append(state, tac_copy(trueval, tac_clone_operand(result), cond->trueval->loc));
+    tcg_append(state, tac_jump(end->label.name, cond->trueval->loc));
+    tcg_append(state, tac_label(falsepart->label.name, cond->falseval->loc));
+    TacNode *falseval = tcg_expression(state, cond->falseval);
+    tcg_append(state, tac_copy(falseval, tac_clone_operand(result), cond->falseval->loc));
+    tcg_append(state, tac_label(end->label.name, cond->falseval->loc));
+
+    return result;
 }
 
 //
@@ -192,7 +218,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_VAR:           return tac_var(exp->var.name, exp->loc);
         case EXP_UNARY:         return tcg_unary_op(state, exp);
         case EXP_BINARY:        return tcg_binary_op(state, exp);
-        case EXP_CONDITIONAL:   break;
+        case EXP_CONDITIONAL:   return tcg_conditional(state, exp);
         case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
     }
 
@@ -241,14 +267,47 @@ static void tcg_return(TacState *state, Statement *ret)
 }
 
 //
+// Generate code for an if statement
+//
+static void tcg_if(TacState *state, Statement *ifstmt)
+{
+    ICE_ASSERT(ifstmt->tag == STMT_IF);
+
+    bool has_else = ifstmt->ifelse.elsepart != NULL;
+
+    TacNode *falselabel = NULL;
+    TacNode *endlabel = NULL;
+    TacNode *condtarget = NULL;
+
+    if (has_else) {
+        falselabel = tcg_make_label(ifstmt->ifelse.elsepart->loc);
+        endlabel = tcg_make_label(ifstmt->ifelse.elsepart->loc);
+        condtarget = falselabel;
+    } else {
+        endlabel = tcg_make_label(ifstmt->loc);
+        condtarget = endlabel;
+    }
+
+    TacNode *cond = tcg_expression(state, ifstmt->ifelse.condition);
+    tcg_append(state, tac_jump_zero(cond, condtarget->label.name, ifstmt->loc));
+    tcg_statement(state, ifstmt->ifelse.thenpart);
+    if (has_else) {
+        tcg_append(state, tac_jump(endlabel->label.name, ifstmt->loc));
+        tcg_append(state, falselabel);
+        tcg_statement(state, ifstmt->ifelse.elsepart);
+    }
+    tcg_append(state, endlabel);
+}
+
+//
 // Generate TAC for a statement.
 //
-void tcg_statement(TacState *state, Statement *stmt)
+static void tcg_statement(TacState *state, Statement *stmt)
 {
     switch (stmt->tag) {
         case STMT_EXPRESSION:   tcg_expression(state, stmt->exp.exp); break;
         case STMT_RETURN:       tcg_return(state, stmt); break;
-        case STMT_IF:           break;
+        case STMT_IF:           tcg_if(state, stmt); break;
         case STMT_NULL:         break;
     }
 }
