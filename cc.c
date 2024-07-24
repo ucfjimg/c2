@@ -11,6 +11,7 @@
 #include "errors.h"
 #include "fixoperands.h"
 #include "goto.h"
+#include "looplabel.h"
 #include "lexer.h"
 #include "parser.h"
 #include "resolve.h"
@@ -251,6 +252,7 @@ static int compile(Args *args)
     //
     ast_resolve(ast);
     ast_validate_goto(ast);
+    ast_label_loops(ast);
 
     if (err_has_errors()) {
         status = 1;

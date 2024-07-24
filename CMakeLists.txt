@@ -17,6 +17,7 @@ add_executable(cc
     ice.c
     lexer.c
     list.c
+    looplabel.c
     operators.c
     parser.c
     resolve.c

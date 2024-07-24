@@ -249,6 +249,55 @@ static void ast_resolve_compound(ResolveState *state, StmtCompound *compound)
 }
 
 //
+// Resolve variables in a for loop.
+//
+static void ast_resolve_for(ResolveState *state, StmtFor *for_)
+{
+    ResolveState newstate;
+
+    //
+    // Declarations in the init portion of the loop are in a new scope 
+    //
+    restab_new_scope(state, &newstate);
+
+    switch (for_->init->tag) {
+        case FI_DECLARATION:    ast_resolve_declaration(&newstate, for_->init->decl); break;
+        case FI_EXPRESSION:     ast_resolve_expression(&newstate, for_->init->exp); break;
+        case FI_NONE:           break;
+    }
+
+    if (for_->cond) {
+        ast_resolve_expression(&newstate, for_->cond);
+    }
+
+    if (for_->post) {
+        ast_resolve_expression(&newstate, for_->post);
+    }
+
+    ast_resolve_statement(&newstate, for_->body);
+
+    restab_free(&newstate);
+}
+
+//
+// Resolve variables in a while loop.
+//
+static void ast_resolve_while(ResolveState *state, StmtWhile *while_)
+{
+    ast_resolve_expression(state, while_->cond);
+    ast_resolve_statement(state, while_->body);
+}
+
+//
+// Resolve variables in a do while loop.
+//
+static void ast_resolve_do_while(ResolveState *state, StmtDoWhile *dowhile)
+{
+    ast_resolve_expression(state, dowhile->cond);
+    ast_resolve_statement(state, dowhile->body);
+}
+
+//
 // Resolve variables for a statement.
 //
 static void ast_resolve_statement(ResolveState *state, Statement *stmt)
@@ -261,6 +310,11 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
         case STMT_LABEL:        ast_resolve_label(state, &stmt->label); break;
         case STMT_GOTO:         break;
         case STMT_COMPOUND:     ast_resolve_compound(state, &stmt->compound); break;
+        case STMT_FOR:          ast_resolve_for(state, &stmt->for_); break;
+        case STMT_WHILE:        ast_resolve_while(state, &stmt->while_); break;
+        case STMT_DOWHILE:      ast_resolve_do_while(state, &stmt->dowhile); break;
+        case STMT_BREAK:        break;
+        case STMT_CONTINUE:     break;
     }
 }
 

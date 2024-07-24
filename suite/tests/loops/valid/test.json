@@ -1,11 +1,15 @@
 {
-    "do-while-break.c": "lex:success",
-    "do-while-continue.c": "lex:success",
-    "for-break.c": "lex:success",
-    "for-continue.c": "lex:success",
-    "simple-do-while.c": "lex:success",
-    "simple-for.c": "lex:success",
-    "simple-while.c": "lex:success",
-    "while-break.c": "lex:success",
-    "while-continue.c": "lex:success"
+    "do-while-break.c": "gcc-retval:success",
+    "do-while-continue.c": "gcc-retval:success",
+    "for-break.c": "gcc-retval:success",
+    "for-continue.c": "gcc-retval:success",
+    "for-shadow.c": "gcc-retval:success",
+    "simple-do-while.c": "gcc-retval:success",
+    "simple-for.c": "gcc-retval:success",
+    "simple-while.c": "gcc-retval:success",
+    "while-break.c": "gcc-retval:success",
+    "while-continue.c": "gcc-retval:success",
+    "for-goto.c": "gcc-retval:success",
+    "while-goto.c": "gcc-retval:success",
+    "do-while-goto.c": "gcc-retval:success"
 }

@@ -96,6 +96,11 @@ typedef enum {
     STMT_LABEL,
     STMT_GOTO,
     STMT_COMPOUND,
+    STMT_WHILE,
+    STMT_FOR,
+    STMT_DOWHILE,
+    STMT_BREAK,
+    STMT_CONTINUE,
 } StatementTag;
 
 typedef struct {
@@ -125,6 +130,48 @@ typedef struct {
     List items;                 // of <BlockItem>
 } StmtCompound;
 
+typedef enum {
+    FI_NONE,
+    FI_DECLARATION,
+    FI_EXPRESSION,
+} ForInitTag;
+
+typedef struct {
+    ForInitTag tag;
+    union {
+        Expression *exp;        // expression to evaluate at top of loop
+        Declaration *decl;      // declaration at start of loop
+    };
+} ForInit;
+
+typedef struct {
+    ForInit *init;              // loop initializer
+    Expression *cond;           // loop condition (optional)
+    Expression *post;           // end of loop expression (optional)
+    Statement *body;            // loop body
+    int label;                  // loop label 
+} StmtFor;
+
+typedef struct {
+    Expression *cond;           // loop condition
+    Statement *body;            // loop body 
+    int label;                  // loop label
+} StmtWhile;
+
+typedef struct {
+    Expression *cond;           // loop condition
+    Statement *body;            // loop body 
+    int label;                  // loop label
+} StmtDoWhile;
+
+typedef struct {
+    int label;                  // loop label
+} StmtBreak;
+
+typedef struct {
+    int label;                  // loop label
+} StmtContinue;
+
 struct Statement {
     ListNode list;
     StatementTag tag;
@@ -137,6 +184,11 @@ struct Statement {
         StmtLabel label;        // STMT_LABEL
         StmtGoto goto_;         // STMT_GOTO
         StmtCompound compound;  // STMT_COMPOUND
+        StmtFor for_;           // STMT_FOR
+        StmtWhile while_;       // STMT_WHILE
+        StmtDoWhile dowhile;    // STMT_DOWHILE
+        StmtBreak break_;       // STMT_BREAK
+        StmtContinue continue_; // STMT_CONTINUE
     };
 };
 
@@ -147,6 +199,15 @@ extern Statement *stmt_expression(Expression *exp, FileLine loc);
 extern Statement *stmt_label(char *name, Statement *stmt, FileLine loc);
 extern Statement *stmt_goto(char *target, FileLine loc);
 extern Statement *stmt_compound(List items, FileLine loc);
+extern ForInit *forinit(void);
+extern ForInit *forinit_exp(Expression *exp);
+extern ForInit *forinit_decl(Declaration *decl);
+extern void forinit_free(ForInit *fi);
+extern Statement *stmt_for(ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc);
+extern Statement *stmt_while(Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_break(FileLine loc);
+extern Statement *stmt_continue(FileLine loc);
 extern void stmt_free(Statement *stmt);
 
 //

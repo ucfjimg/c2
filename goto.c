@@ -131,6 +131,30 @@ static void ast_validate_compound(GotoState *state, StmtCompound *compound)
 }
 
 //
+// Validate a for loop.
+//
+static void ast_validate_for(GotoState *state, StmtFor *for_)
+{
+    ast_validate_statement(state, for_->body);
+}
+
+//
+// Validate a while loop.
+//
+static void ast_validate_while(GotoState *state, StmtWhile *while_)
+{
+    ast_validate_statement(state, while_->body);
+}
+
+//
+// Validate a do while loop.
+//
+static void ast_validate_do_while(GotoState *state, StmtDoWhile *dowhile)
+{
+    ast_validate_statement(state, dowhile->body);
+}
+
+//
 // Validate one statement.
 //
 static void ast_validate_statement(GotoState *state, Statement *stmt)
@@ -141,10 +165,15 @@ static void ast_validate_statement(GotoState *state, Statement *stmt)
 
         case STMT_IF:       ast_validate_if(state, stmt); break;
         case STMT_COMPOUND: ast_validate_compound(state, &stmt->compound); break;
+        case STMT_FOR:      ast_validate_for(state, &stmt->for_); break;
+        case STMT_WHILE:    ast_validate_while(state, &stmt->while_); break;
+        case STMT_DOWHILE:  ast_validate_do_while(state, &stmt->dowhile); break;
 
         case STMT_NULL:
         case STMT_RETURN:
         case STMT_EXPRESSION:
+        case STMT_BREAK:
+        case STMT_CONTINUE:
             break;
     } 
 }

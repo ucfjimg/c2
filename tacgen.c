@@ -20,6 +20,43 @@ static void tcg_statement(TacState *state, Statement *stmt);
 //
 
 //
+// Generated names. Note that for user-defined names, a suffix of
+// .# is added where # is a globally unique id. For generated names,
+// the suffix always has two .'s (i.e. ..#) so the two spaces can
+// never collide. 
+//
+// . is a valid label character for the assembler but not for a 
+// C identifier.
+//
+
+//
+// Format a loop labvel with a unique tag. Returns an 
+// allocated string.
+//
+static char *tcg_loop_tag_label(char *tag, int label)
+{
+    ICE_ASSERT(label >= 0);
+
+    return saprintf("loop_%s..%d", tag, label);
+}
+
+//
+// Format a continue loop label. Returns an allocated string.
+//
+static char *tcg_continue_label(int label)
+{
+    return tcg_loop_tag_label("continue", label);
+}
+
+//
+// Format a break loop label. Returns an allocated string.
+//
+static char *tcg_break_label(int label)
+{
+    return tcg_loop_tag_label("break", label);
+}
+
+//
 // Append a TAC instruction to the code list.
 //
 static void tcg_append(TacState *state, TacNode *tac)
@@ -340,6 +377,130 @@ static void tcg_compound(TacState *state, Statement *compound)
 }
 
 //
+// Generate TAC for a while loop.
+//
+static void tcg_while(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_WHILE);
+    StmtWhile *while_ = &stmt->while_;
+
+    char *cont = tcg_continue_label(while_->label);
+    char *brk = tcg_break_label(while_->label);
+
+    tcg_append(state, tac_label(cont, stmt->loc));
+    TacNode *cond = tcg_expression(state, while_->cond);
+    tcg_append(state, tac_jump_zero(cond, brk, stmt->loc));
+    tcg_statement(state, while_->body);
+    tcg_append(state, tac_jump(cont, stmt->loc));
+    tcg_append(state, tac_label(brk, stmt->loc));
+
+    safe_free(cont);
+    safe_free(brk);
+}
+
+//
+// Generate TAC for a do while loop.
+//
+static void tcg_do_while(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_DOWHILE);
+    StmtDoWhile *dowhile = &stmt->dowhile;
+
+    char *start = tcg_loop_tag_label("start", dowhile->label);
+    char *cont = tcg_continue_label(dowhile->label);
+    char *brk = tcg_break_label(dowhile->label);
+
+    tcg_append(state, tac_label(start, stmt->loc));
+    tcg_statement(state, dowhile->body);
+    tcg_append(state, tac_label(cont, stmt->loc));
+    TacNode *cond = tcg_expression(state, dowhile->cond);
+    tcg_append(state, tac_jump_not_zero(cond, start, stmt->loc));
+    tcg_append(state, tac_label(brk, stmt->loc));
+
+    safe_free(start);
+    safe_free(cont);
+    safe_free(brk);
+}
+
+//
+// Generate TAC for a for loop
+//
+static void tcg_for(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_FOR);
+    StmtFor *for_ = &stmt->for_;
+
+    char *start = tcg_loop_tag_label("start", for_->label);
+    char *cont = tcg_continue_label(for_->label);
+    char *brk = tcg_break_label(for_->label);
+
+    TacNode *init_result = NULL;
+    switch (for_->init->tag) {
+        case FI_EXPRESSION:     init_result = tcg_expression(state, for_->init->exp); break;
+        case FI_DECLARATION:    tcg_declaration(state, for_->init->decl); break;
+        case FI_NONE:           break;
+    }
+    //
+    // Init result is unused, it is purely for side effects.
+    //
+    tac_free(init_result);
+
+    tcg_append(state, tac_label(start, stmt->loc));
+
+    //
+    // Handle the condition if there is one. If there is none, then the 
+    // loop must be exited by some other means.
+    //
+    if (for_->cond) {
+        TacNode *cond = tcg_expression(state, for_->cond);
+        tcg_append(state, tac_jump_zero(cond, brk, stmt->loc));
+    }
+
+    tcg_statement(state, for_->body);
+  
+    tcg_append(state, tac_label(cont, stmt->loc));
+
+    if (for_->post) {
+       TacNode *post_result = tcg_expression(state, for_->post);
+        //
+        // As with init the result is unused.
+        //
+        tac_free(post_result);
+    }
+
+    tcg_append(state, tac_jump(start, stmt->loc));
+    tcg_append(state, tac_label(brk, stmt->loc));
+
+    safe_free(start);
+    safe_free(cont);
+    safe_free(brk);
+}
+
+//
+// Generate TAC for a break statement.
+//
+static void tcg_break(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_BREAK);
+
+    char *brk = tcg_break_label(stmt->break_.label);
+    tcg_append(state, tac_jump(brk, stmt->loc));
+    safe_free(brk);
+}
+
+//
+// Generate TAC for a continue statement.
+//
+static void tcg_continue(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_CONTINUE);
+
+    char *cont = tcg_continue_label(stmt->continue_.label);
+    tcg_append(state, tac_jump(cont, stmt->loc));
+    safe_free(cont);
+}
+
+//
 // Generate TAC for a statement.
 //
 static void tcg_statement(TacState *state, Statement *stmt)
@@ -352,6 +513,11 @@ static void tcg_statement(TacState *state, Statement *stmt)
         case STMT_LABEL:        tcg_label(state, stmt); break;
         case STMT_GOTO:         tcg_goto(state, stmt); break;
         case STMT_COMPOUND:     tcg_compound(state, stmt); break;
+        case STMT_WHILE:        tcg_while(state, stmt); break;
+        case STMT_FOR:          tcg_for(state, stmt); break;
+        case STMT_DOWHILE:      tcg_do_while(state, stmt); break;
+        case STMT_BREAK:        tcg_break(state, stmt); break;
+        case STMT_CONTINUE:     tcg_continue(state, stmt); break;
     }
 }
 

@@ -328,6 +328,149 @@ static void stmt_compound_free(StmtCompound *compound)
 }
 
 //
+// Constructor for an empty for initializer.
+//
+ForInit *forinit(void)
+{
+    ForInit *fi = safe_zalloc(sizeof(ForInit));
+    fi->tag = FI_NONE;
+    return fi;
+}
+
+//
+// Constructor for a for initializer with a expression.
+//
+ForInit *forinit_exp(Expression *exp)
+{
+    ForInit *fi = forinit();
+
+    fi->tag = FI_EXPRESSION;
+    fi->exp = exp;
+
+    return fi;
+}
+
+//
+// Constructor for a for initializer with a declaration.
+//
+ForInit *forinit_decl(Declaration *decl)
+{
+    ForInit *fi = forinit();
+
+    fi->tag = FI_DECLARATION;
+    fi->decl = decl;
+
+    return fi;
+}
+
+//
+// Free a for loop initializer.
+//
+void forinit_free(ForInit *fi)
+{
+    if (fi) {
+        switch (fi->tag) {
+            case FI_EXPRESSION:     exp_free(fi->exp); break;
+            case FI_DECLARATION:    declaration_free(fi->decl); break;
+            case FI_NONE:           break;
+        }
+    }
+}
+
+//
+// Constuctor for a for loop.
+//
+Statement *stmt_for(ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_FOR, loc);
+
+    stmt->for_.init = init;
+    stmt->for_.cond = cond;
+    stmt->for_.post = post;
+    stmt->for_.body = body;
+    stmt->for_.label = -1;
+
+    return stmt;
+}
+
+//
+// Free a for loop.
+//
+static void stmt_for_free(StmtFor *for_) 
+{
+    forinit_free(for_->init);
+    exp_free(for_->cond);
+    exp_free(for_->post);
+    stmt_free(for_->body);
+}
+
+//
+// Constructor for a while loop.
+//
+Statement *stmt_while(Expression *cond, Statement *body, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_WHILE, loc);
+
+    stmt->while_.cond = cond;
+    stmt->while_.body = body;
+    stmt->while_.label = -1;
+
+    return stmt;
+}
+
+//
+// Free a while loop.
+//
+void stmt_while_free(StmtWhile *while_)
+{
+    exp_free(while_->cond);
+    stmt_free(while_->body);
+}
+
+//
+// Constructor for a do-while loop.
+//
+Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_DOWHILE, loc);
+
+    stmt->dowhile.cond = cond;
+    stmt->dowhile.body = body;
+    stmt->dowhile.label = -1;
+
+    return stmt;
+}
+
+//
+// Free a do-while loop.
+//
+void stmt_do_while_free(StmtDoWhile *dowhile)
+{
+    exp_free(dowhile->cond);
+    stmt_free(dowhile->body);
+}
+
+//
+// Constructor for a break statement.
+//
+Statement *stmt_break(FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_BREAK, loc);
+    stmt->break_.label = -1;
+    return stmt;
+}
+
+//
+// Constructor for a continue statement.
+//
+Statement *stmt_continue(FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_CONTINUE, loc);
+    stmt->continue_.label = -1;
+    return stmt;
+}
+
+//
 // Free a statement.
 //
 void stmt_free(Statement *stmt)
@@ -341,6 +484,11 @@ void stmt_free(Statement *stmt)
             case STMT_LABEL:        stmt_label_free(&stmt->label); break;
             case STMT_GOTO:         stmt_goto_free(&stmt->goto_); break;
             case STMT_COMPOUND:     stmt_compound_free(&stmt->compound); break;
+            case STMT_FOR:          stmt_for_free(&stmt->for_); break;
+            case STMT_WHILE:        stmt_while_free(&stmt->while_); break;
+            case STMT_DOWHILE:      stmt_do_while_free(&stmt->dowhile); break;
+            case STMT_BREAK:        break;
+            case STMT_CONTINUE:     break;
         }
 
         safe_free(stmt);
@@ -390,7 +538,6 @@ void blki_free(BlockItem *blki)
         safe_free(blki);
     }
 }
-
 
 //
 // Allocator for all AST nodes.
@@ -644,6 +791,78 @@ static void stmt_print_compound(StmtCompound *compound, int tab, bool locs)
 }
 
 //
+// Print a for initializer.
+//
+static void stmt_print_forinit(ForInit *fi, int tab, bool locs)
+{
+    switch (fi->tag) {
+        case FI_EXPRESSION:     exp_print_recurse(fi->exp, tab, locs); break;
+        case FI_DECLARATION:    decl_print_declaration(fi->decl, tab, locs); break;
+        case FI_NONE:           break;
+    }
+}
+
+//
+// Print a for loop.
+//
+static void stmt_print_for(StmtFor *for_, int tab, bool locs)
+{
+    printf("%*sfor(%d) {\n", tab, "", for_->label);
+    stmt_print_forinit(for_->init, tab + 2, locs);
+    printf("%*s} ; {\n", tab, "");
+    if (for_->cond) {
+        exp_print_recurse(for_->cond, tab + 2, locs);
+    }
+    printf("%*s} ; {\n", tab, "");
+    if (for_->post) {
+        exp_print_recurse(for_->post, tab + 2, locs);
+    }
+    printf("%*s} {\n", tab, "");
+    stmt_print_recurse(for_->body, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a while loop.
+//
+static void stmt_print_while(StmtWhile *while_, int tab, bool locs)
+{
+    printf("%*swhile(%d) {\n", tab, "", while_->label);
+    exp_print_recurse(while_->cond, tab + 2, locs);
+    printf("%*s} {\n", tab, "");
+    stmt_print_recurse(while_->body, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a do-while loop.
+//
+static void stmt_print_do_while(StmtDoWhile *dowhile, int tab, bool locs)
+{
+    printf("%*sdo(%d) {\n", tab, "", dowhile->label);
+    stmt_print_recurse(dowhile->body, tab + 2, locs);
+    printf("%*s} while {\n", tab, "");
+    exp_print_recurse(dowhile->cond, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a break statement.
+//
+static void stmt_print_break(StmtBreak *break_, int tab)
+{
+    printf("%*sbreak(%d);\n", tab, "", break_->label);
+}
+
+//
+// Print a continue statement.
+//
+static void stmt_print_continue(StmtContinue *continue_, int tab)
+{
+    printf("%*scontinue(%d);\n", tab, "", continue_->label);
+}
+
+//
 // Recusively print a statement, starting at indent `tab`
 //
 static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
@@ -662,6 +881,11 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
         case STMT_LABEL:        stmt_print_label(&stmt->label, tab, locs); break;
         case STMT_GOTO:         stmt_print_goto(&stmt->goto_, tab); break;
         case STMT_COMPOUND:     stmt_print_compound(&stmt->compound, tab, locs); break;
+        case STMT_FOR:          stmt_print_for(&stmt->for_, tab, locs); break;
+        case STMT_WHILE:        stmt_print_while(&stmt->while_, tab, locs); break;
+        case STMT_DOWHILE:      stmt_print_do_while(&stmt->dowhile, tab, locs); break;
+        case STMT_BREAK:        stmt_print_break(&stmt->break_, tab); break;
+        case STMT_CONTINUE:     stmt_print_continue(&stmt->continue_, tab); break;
     }
 }
 

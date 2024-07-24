@@ -1,0 +1,4 @@
+{
+    "break-outside-loop.c": "validate:fail",
+    "continue-outside-loop.c": "validate:fail"
+}

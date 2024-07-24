@@ -549,6 +549,201 @@ static Statement *parse_goto(Parser *parser)
 }
 
 //
+// Parse a break statement.
+// <statement> := "break" ";"
+// the break keyword has already been consumed.
+// 
+static Statement *parse_break(Parser *parser, FileLine loc)
+{
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    return stmt_break(loc);
+}
+
+//
+// Parse a continue statement.
+// <statement> := "continue" ";"
+// the continue keyword has already been consumed.
+// 
+static Statement *parse_continue(Parser *parser, FileLine loc)
+{
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    return stmt_continue(loc);
+}
+
+//
+// Parse a while loop.
+// <statment> := "while" "(" <exp> ")" <statement>
+// the while keyword has already been consumed.
+//
+static Statement *parse_while(Parser *parser, FileLine loc)
+{
+    Expression *cond = NULL;
+    Statement *body = NULL;
+
+    if (parser->tok.type != '(') {
+        report_expected_err(&parser->tok, "`(`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    cond = parse_expression(parser, 0);
+
+    if (parser->tok.type != ')') {
+        report_expected_err(&parser->tok, "`)`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    body = parse_statement(parser);
+
+    return stmt_while(cond, body, loc);
+}
+
+//
+// Parse a do while loop.
+// <statment> := "do" <statement> "while" "(" <exp> ")" ";"
+// the do keyword has already been consumed.
+//
+static Statement *parse_do_while(Parser *parser, FileLine loc)
+{
+    Expression *cond = NULL;
+    Statement *body = NULL;
+
+    body = parse_statement(parser);
+
+    if (parser->tok.type != TOK_WHILE) {
+        report_expected_err(&parser->tok, "`while`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    if (parser->tok.type != '(') {
+        report_expected_err(&parser->tok, "`(`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    cond = parse_expression(parser, 0);
+
+    if (parser->tok.type != ')') {
+        report_expected_err(&parser->tok, "`)`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    return stmt_do_while(cond, body, loc);
+}
+
+//
+// Parse a for initializer.
+// <forinit> := ';' | <declaration> ';' | <exp> ';'
+//
+static ForInit *parse_forinit(Parser *parser)
+{
+    if (parser->tok.type == ';') {
+        parse_next_token(parser);
+        return forinit();
+    }
+
+    //
+    // TODO when there are real types, this will check for a type,
+    // not just int.
+    //
+    if (parser->tok.type == TOK_INT) {
+        parse_next_token(parser);
+        Declaration *decl = parse_declaration(parser);
+        
+        //
+        // Note that the definition for declaration includes the ';'.
+        //
+        
+        return forinit_decl(decl);
+    }
+
+    Expression *exp = parse_expression(parser, 0);
+
+    if (parser->tok.type == ';') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`;`");
+    }
+
+    return forinit_exp(exp);
+}
+
+//
+// Parse a for statement.
+// <statement> := "for" "(" <for-init> ";" <exp> ";" <exp> ")" <statement>
+// The for keyword has already been consumed.
+//
+static Statement *parse_for(Parser *parser, FileLine loc)
+{
+    if (parser->tok.type != '(') {
+        report_expected_err(&parser->tok, "`(`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    //
+    // for initializer
+    // <forinit> := ';' | <declaration> ';' | <exp> ';'
+    // Note that this includings the trailing ';'
+    //
+    ForInit *fi = parse_forinit(parser);
+
+    //
+    // optional condition
+    //
+    Expression *cond = NULL;
+    if (parser->tok.type != ';') {
+        cond = parse_expression(parser, 0);
+    }
+
+    if (parser->tok.type == ';') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`;`");
+    }
+
+    //
+    // optional post expression
+    //
+    Expression *post = NULL;
+    if (parser->tok.type != ')') {
+        post = parse_expression(parser, 0);
+    }
+
+    if (parser->tok.type == ')') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`)`");
+    }
+
+    //
+    // Statement
+    //
+    Statement *body = parse_statement(parser);
+
+    return stmt_for(fi, cond, post, body, loc);
+}
+
+//
 // Parse a statement.
 // <statement> := 
 //      "{" { <block-item> } "}"
@@ -557,7 +752,12 @@ static Statement *parse_goto(Parser *parser)
 //      "if" "(" <exp> ")" <statement> [ "else" <statement> ] | 
 //      <identifier> ":" <statement> |
 //      "goto" <identifier> ";" |
-//      <exp> ";"
+//      <exp> ";" |
+//      "break" ";" |
+//      "continue ";" |
+//      "while" "(" <exp> ")" <statement> |
+//      "do" <statment> "while" "(" <exp> ")" ";" |
+//      "for" "(" <for-init> ";" <exp> ";" <exp> ")" <statement>
 //
 static Statement *parse_statement(Parser *parser)
 {
@@ -621,6 +821,46 @@ static Statement *parse_statement(Parser *parser)
     if (parser->tok.type == TOK_GOTO) {
         parse_next_token(parser);
         return parse_goto(parser);
+    }
+
+    //
+    // <statement> := "break" ";"
+    //
+    if (parser->tok.type == TOK_BREAK) {
+        parse_next_token(parser);
+        return parse_break(parser, loc);
+    }
+
+    //
+    // <statement> := "continue" ";"
+    //
+    if (parser->tok.type == TOK_CONTINUE) {
+        parse_next_token(parser);
+        return parse_continue(parser, loc);
+    }
+
+    //
+    // <statement> := "while" "(" <exp> ")" <statement>
+    //
+    if (parser->tok.type == TOK_WHILE) {
+        parse_next_token(parser);
+        return parse_while(parser, loc);
+    }
+
+    //
+    // <statement> := "do" <statment> "while" "(" <exp> ")" ";"
+    //
+    if (parser->tok.type == TOK_DO) {
+        parse_next_token(parser);
+        return parse_do_while(parser, loc);
+    }
+
+    //
+    // <statement> := "for" "(" <for-init> ";" <exp> ";" <exp> ")" <statement>
+    //
+    if (parser->tok.type == TOK_FOR) {
+        parse_next_token(parser);
+        return parse_for(parser, loc);
     }
 
     //

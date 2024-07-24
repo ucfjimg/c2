@@ -14,14 +14,18 @@ typedef struct {
 } Keyword;
 
 static Keyword keywords[] = {
-    { "int",    TOK_INT },
-    { "return", TOK_RETURN },
-    { "void",   TOK_VOID },
-    { "if",     TOK_IF },
-    { "else",   TOK_ELSE },
-    { "goto",   TOK_GOTO },
-
-    { NULL,     TOK_EOF }
+    { "int",        TOK_INT },
+    { "return",     TOK_RETURN },
+    { "void",       TOK_VOID },
+    { "if",         TOK_IF },
+    { "else",       TOK_ELSE },
+    { "goto",       TOK_GOTO },
+    { "do",         TOK_DO },
+    { "while",      TOK_WHILE },
+    { "for",        TOK_FOR },
+    { "break",      TOK_BREAK },  
+    { "continue",   TOK_CONTINUE },
+    { NULL,         TOK_EOF }
 };
 
 typedef struct {
