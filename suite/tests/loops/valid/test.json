@@ -1,0 +1,11 @@
+{
+    "do-while-break.c": "lex:success",
+    "do-while-continue.c": "lex:success",
+    "for-break.c": "lex:success",
+    "for-continue.c": "lex:success",
+    "simple-do-while.c": "lex:success",
+    "simple-for.c": "lex:success",
+    "simple-while.c": "lex:success",
+    "while-break.c": "lex:success",
+    "while-continue.c": "lex:success"
+}

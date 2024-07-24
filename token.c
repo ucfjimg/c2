@@ -72,6 +72,11 @@ char *token_describe(Token *tok)
         case TOK_IF:                return saprintf("if");
         case TOK_ELSE:              return saprintf("else");
         case TOK_GOTO:              return saprintf("goto");
+        case TOK_DO:                return saprintf("do");
+        case TOK_WHILE:             return saprintf("while");
+        case TOK_FOR:               return saprintf("for");
+        case TOK_BREAK:             return saprintf("break");
+        case TOK_CONTINUE:          return saprintf("continue");
 
         default:
             break;

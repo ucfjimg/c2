@@ -78,6 +78,11 @@ typedef enum {
     TOK_IF,
     TOK_ELSE,
     TOK_GOTO,
+    TOK_DO,
+    TOK_WHILE,
+    TOK_FOR,
+    TOK_BREAK,
+    TOK_CONTINUE,
 } TokenType;
 
 typedef struct {
