@@ -317,6 +317,29 @@ static void tcg_goto(TacState *state, Statement *goto_)
 }
 
 //
+// Generate TAC for a block. 
+//
+static void tcg_block(TacState *state, List items)
+{
+    for (ListNode *curr = items.head; curr; curr = curr->next) {
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        
+        switch (blki->tag) {
+            case BI_DECLARATION:    tcg_declaration(state, blki->decl); break;
+            case BI_STATEMENT:      tcg_statement(state, blki->stmt); break;
+        }
+    }
+}
+
+//
+// Generate TAC for a compound statement.
+//
+static void tcg_compound(TacState *state, Statement *compound)
+{
+    tcg_block(state, compound->compound.items);
+}
+
+//
 // Generate TAC for a statement.
 //
 static void tcg_statement(TacState *state, Statement *stmt)
@@ -328,6 +351,7 @@ static void tcg_statement(TacState *state, Statement *stmt)
         case STMT_NULL:         break;
         case STMT_LABEL:        tcg_label(state, stmt); break;
         case STMT_GOTO:         tcg_goto(state, stmt); break;
+        case STMT_COMPOUND:     tcg_compound(state, stmt); break;
     }
 }
 
@@ -343,15 +367,7 @@ static TacNode *tcg_funcdef(TacState *state, AstNode *func)
 
     TacState funcstate;
     list_clear(&funcstate.code);
-
-    for (ListNode *curr = func->func.stmts.head; curr; curr = curr->next) {
-        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
-        
-        switch (blki->tag) {
-            case BI_DECLARATION:    tcg_declaration(&funcstate, blki->decl); break;
-            case BI_STATEMENT:      tcg_statement(&funcstate, blki->stmt); break;
-        }
-    }
+    tcg_block(&funcstate, func->func.stmts);
 
     //
     // Put a `return 0;` at the end of all functions. This gives the 

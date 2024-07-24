@@ -110,6 +110,27 @@ static void ast_validate_if(GotoState *state, Statement *stmt)
 }
 
 //
+// Validate a block.
+//
+static void ast_validate_block(GotoState *state, List items)
+{
+    for (ListNode *curr = items.head; curr; curr = curr->next) {
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        if (blki->tag == BI_STATEMENT) {
+            ast_validate_statement(state, blki->stmt);
+        }
+    }
+}
+
+//
+// Validate a compound statement.
+//
+static void ast_validate_compound(GotoState *state, StmtCompound *compound)
+{
+    ast_validate_block(state, compound->items);
+}
+
+//
 // Validate one statement.
 //
 static void ast_validate_statement(GotoState *state, Statement *stmt)
@@ -119,6 +140,7 @@ static void ast_validate_statement(GotoState *state, Statement *stmt)
         case STMT_GOTO:     ast_validate_goto_stmt(state, stmt); break;
 
         case STMT_IF:       ast_validate_if(state, stmt); break;
+        case STMT_COMPOUND: ast_validate_compound(state, &stmt->compound); break;
 
         case STMT_NULL:
         case STMT_RETURN:
@@ -134,12 +156,7 @@ static void ast_goto_function(AstFunction *func)
 {
     GotoState *state = goto_state_alloc();
 
-    for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
-        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
-        if (blki->tag == BI_STATEMENT) {
-            ast_validate_statement(state, blki->stmt);
-        }
-    }
+    ast_validate_block(state, func->stmts);
 
     //
     // Check to see if there are any undefined entries in the hash table.

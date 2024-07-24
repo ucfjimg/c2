@@ -306,6 +306,28 @@ static void stmt_goto_free(StmtGoto *goto_)
 }
 
 //
+// Constructor for a compound statement.
+//
+Statement *stmt_compound(List items, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_COMPOUND, loc);
+    stmt->compound.items = items;
+    return stmt;
+}
+
+//
+// Free a compound statement.
+//
+static void stmt_compound_free(StmtCompound *compound)
+{
+    for (ListNode *curr = compound->items.head; curr; ) {
+        ListNode *next = curr->next;
+        blki_free(CONTAINER_OF(curr, BlockItem, list));
+        curr = next;
+    }
+}
+
+//
 // Free a statement.
 //
 void stmt_free(Statement *stmt)
@@ -318,6 +340,7 @@ void stmt_free(Statement *stmt)
             case STMT_NULL:         break;
             case STMT_LABEL:        stmt_label_free(&stmt->label); break;
             case STMT_GOTO:         stmt_goto_free(&stmt->goto_); break;
+            case STMT_COMPOUND:     stmt_compound_free(&stmt->compound); break;
         }
 
         safe_free(stmt);
@@ -390,15 +413,6 @@ AstNode *ast_program(FileLine loc)
 }
 
 //
-// Construct a function with the given name but no body.
-//
-AstNode *ast_function(FileLine loc)
-{
-    AstNode *ast = ast_alloc(AST_FUNCTION, loc); 
-    return ast;
-}
-
-//
 // Free a program.
 //
 static void ast_free_program(AstProgram *prog)
@@ -407,7 +421,18 @@ static void ast_free_program(AstProgram *prog)
 }
 
 //
-// Free a function
+// Construct a function with the given name but no body.
+//
+AstNode *ast_function(char *name, List stmts, FileLine loc)
+{
+    AstNode *ast = ast_alloc(AST_FUNCTION, loc);
+    ast->func.name = safe_strdup(name);
+    ast->func.stmts =  stmts;
+    return ast;
+}
+
+//
+// Free a function.
 //
 static void ast_free_function(AstFunction *func)
 {
@@ -421,6 +446,10 @@ static void ast_free_function(AstFunction *func)
         curr = next;
     }
 }
+
+//
+// Construct compound statement.
+//
 
 //
 // Free an AST node.
@@ -599,6 +628,22 @@ static void stmt_print_goto(StmtGoto *goto_, int tab)
 }
 
 //
+// Print a compound statement.
+//
+static void stmt_print_compound(StmtCompound *compound, int tab, bool locs)
+{
+    printf("%*scompound {\n", tab, "");
+    for (ListNode *curr = compound->items.head; curr; curr = curr->next) {
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        switch (blki->tag) {
+            case BI_DECLARATION:    decl_print_declaration(blki->decl, tab + 2, locs); break;
+            case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs); break;
+        }
+    }
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print a statement, starting at indent `tab`
 //
 static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
@@ -616,6 +661,7 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
         case STMT_EXPRESSION:   stmt_print_expression(&stmt->exp, tab, locs); break;
         case STMT_LABEL:        stmt_print_label(&stmt->label, tab, locs); break;
         case STMT_GOTO:         stmt_print_goto(&stmt->goto_, tab); break;
+        case STMT_COMPOUND:     stmt_print_compound(&stmt->compound, tab, locs); break;
     }
 }
 
@@ -630,19 +676,26 @@ static void ast_print_program(AstProgram *prog, int tab, bool locs)
 }
 
 //
-// Print an AST function.
+// Print a block (list of BlockItem's).
 //
-static void ast_print_function(AstFunction *func, int tab, bool locs)
+static void ast_print_blockitem_list(List block, int tab, bool locs)
 {
-    printf("%*sfunction(int, %s) {\n", tab, "", func->name);
-
-    for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
+    for (ListNode *curr = block.head; curr; curr = curr->next) {
         BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
         switch (blki->tag) {
             case BI_DECLARATION:    decl_print_declaration(blki->decl, tab + 2, locs); break;
             case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs);
         }
     }
+}
+
+//
+// Print an AST function.
+//
+static void ast_print_function(AstFunction *func, int tab, bool locs)
+{
+    printf("%*sfunction(int, %s) {\n", tab, "", func->name);
+    ast_print_blockitem_list(func->stmts, tab, locs);
     printf("%*s}\n", tab, "");
 }
 

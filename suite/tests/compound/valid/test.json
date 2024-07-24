@@ -1,0 +1,6 @@
+{
+    "empty-block.c": "gcc-retval:success",
+    "empty-func.c": "gcc-retval:success",
+    "scope.c": "gcc-retval:success",
+    "simple.c": "gcc-retval:success"
+}

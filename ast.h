@@ -9,6 +9,7 @@
 typedef struct Expression Expression;
 typedef struct Declaration Declaration;
 typedef struct Statement Statement;
+typedef struct BlockItem BlockItem;
 typedef struct AstNode AstNode;
 
 //
@@ -94,6 +95,7 @@ typedef enum {
     STMT_EXPRESSION,
     STMT_LABEL,
     STMT_GOTO,
+    STMT_COMPOUND,
 } StatementTag;
 
 typedef struct {
@@ -119,6 +121,10 @@ typedef struct {
     char *target;               // target location
 } StmtGoto;
 
+typedef struct {
+    List items;                 // of <BlockItem>
+} StmtCompound;
+
 struct Statement {
     ListNode list;
     StatementTag tag;
@@ -130,6 +136,7 @@ struct Statement {
         StmtExpression exp;     // STMT_EXPRESSION
         StmtLabel label;        // STMT_LABEL
         StmtGoto goto_;         // STMT_GOTO
+        StmtCompound compound;  // STMT_COMPOUND
     };
 };
 
@@ -139,6 +146,7 @@ extern Statement *stmt_if(Expression *condition, Statement *thenpart, Statement 
 extern Statement *stmt_expression(Expression *exp, FileLine loc);
 extern Statement *stmt_label(char *name, Statement *stmt, FileLine loc);
 extern Statement *stmt_goto(char *target, FileLine loc);
+extern Statement *stmt_compound(List items, FileLine loc);
 extern void stmt_free(Statement *stmt);
 
 //
@@ -149,8 +157,7 @@ typedef enum {
     BI_STATEMENT,
 } BlockItemTag;
 
-typedef struct
-{
+struct BlockItem {
     ListNode list;
     BlockItemTag tag;
 
@@ -158,7 +165,7 @@ typedef struct
         Declaration *decl;
         Statement *stmt;
     };
-} BlockItem;
+};
 
 extern BlockItem *blki_declaration(Declaration *decl);
 extern BlockItem *blki_statement(Statement *stmt);
@@ -192,7 +199,7 @@ struct AstNode {
 };
 
 extern AstNode *ast_program(FileLine loc);
-extern AstNode *ast_function(FileLine loc);
+extern AstNode *ast_function(char *name, List stmts, FileLine loc);
 extern void ast_free(AstNode *ast);
 
 extern void ast_print(AstNode *ast, bool locs);

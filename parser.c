@@ -377,6 +377,62 @@ done:
 }
 
 //
+// Parse a block until a '}'. Expects a leading '{'; does not consume
+// the trailing '}'. 
+//
+// Returns a list of BlockItem.
+//
+static List parse_block(Parser *parser)
+{
+    List items;
+    list_clear(&items);
+
+    if (parser->tok.type != '}') {
+        while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
+            BlockItem *blki = NULL;
+            //
+            // In the future, this will be on any type, not just `int`.
+            //
+            if (parser->tok.type == TOK_INT) {
+                parse_next_token(parser);
+                Declaration *decl = parse_declaration(parser);
+                blki = blki_declaration(decl);
+            } else {
+                Statement *stmt = parse_statement(parser);
+                blki = blki_statement(stmt);
+            }
+
+            list_push_back(&items, &blki->list);
+        }
+    }
+
+    if (parser->tok.type != '}') {
+        report_expected_err(&parser->tok, "`}`");        
+    } 
+
+    return items;
+}
+
+//
+// Parse a compound statement.
+// <statement> := "{" { <block-item> } "}"
+// The leading "{" has already been consumed.
+//
+static Statement *parse_compound_statement(Parser *parser)
+{
+    List items = parse_block(parser);
+    FileLine loc = parser->tok.loc;
+
+    if (parser->tok.type != '}') {
+        report_expected_err(&parser->tok, "`}`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    return stmt_compound(items, loc);
+}
+
+//
 // Parse a return statement. 
 // The `return` keyword token has already been consumed.
 //
@@ -495,6 +551,7 @@ static Statement *parse_goto(Parser *parser)
 //
 // Parse a statement.
 // <statement> := 
+//      "{" { <block-item> } "}"
 //      ";" | 
 //      "return" <exp> ";" | 
 //      "if" "(" <exp> ")" <statement> [ "else" <statement> ] | 
@@ -505,6 +562,14 @@ static Statement *parse_goto(Parser *parser)
 static Statement *parse_statement(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
+
+    //
+    // <statement> := "{" { <block-item> } "}"
+    //
+    if (parser->tok.type == '{') {
+        parse_next_token(parser);
+        return parse_compound_statement(parser);
+    }
 
     //
     // <statement> := ";"
@@ -579,9 +644,8 @@ static AstNode *parse_function(Parser *parser)
     //
     // <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
     //
-    AstNode *node = ast_function(parser->tok.loc);
-
-    AstFunction *func = &node->func;
+    char *name = NULL;
+    List stmts;
 
     if (parser->tok.type != TOK_INT) {
         report_expected_err(&parser->tok, "`int`");        
@@ -590,9 +654,9 @@ static AstNode *parse_function(Parser *parser)
     parse_next_token(parser);
     if (parser->tok.type != TOK_ID) {
         report_expected_err(&parser->tok, "identifier");        
-        func->name = safe_strdup("<unknown>");
+        name = safe_strdup("<unknown>");
     } else {
-        func->name = safe_strdup(parser->tok.id);
+        name = safe_strdup(parser->tok.id);
     }
 
     parse_next_token(parser);
@@ -616,36 +680,15 @@ static AstNode *parse_function(Parser *parser)
     }
 
     parse_next_token(parser);
-
-    list_clear(&func->stmts);
-
-    if (parser->tok.type == '{') {
-        Statement *stmt = stmt_null(parser->tok.loc);
-        list_push_back(&func->stmts, &stmt->list);
-    } else {
-        while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
-            BlockItem *blki = NULL;
-            //
-            // In the future, this will be on any type, not just `int`.
-            //
-            if (parser->tok.type == TOK_INT) {
-                parse_next_token(parser);
-                Declaration *decl = parse_declaration(parser);
-                blki = blki_declaration(decl);
-            } else {
-                Statement *stmt = parse_statement(parser);
-                blki = blki_statement(stmt);
-            }
-
-            list_push_back(&func->stmts, &blki->list);
-        }
-    }
+    stmts = parse_block(parser);
 
     if (parser->tok.type != '}') {
         report_expected_err(&parser->tok, "`}`");        
     }
 
     parse_next_token(parser);
+
+    AstNode *node = ast_function(name, stmts, parser->tok.loc);
 
     return node;
 }

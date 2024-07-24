@@ -9,6 +9,7 @@
 typedef struct {
     HashNode hash;
     char *new_name;         // mapped, unique name -- NULL if not yet mapped
+    bool from_curr_scope;   // if true, name was declared in the current scope
 } VarMapNode;
 
 typedef struct {
@@ -17,7 +18,6 @@ typedef struct {
 
 static void ast_resolve_expression(ResolveState *state, Expression *exp);
 static void ast_resolve_statement(ResolveState *state, Statement *stmt);
-
 
 //
 // Allocate a hash node for the resolve table.
@@ -42,6 +42,26 @@ static void restab_free_mapnode(HashNode *node)
 static void restab_init(ResolveState *state)
 {
     state->table = hashtab_alloc(restab_alloc_mapnode, restab_free_mapnode);
+}
+
+//
+// Create a new state for a new scope. All of the names declared
+// outside this scope will be marked as such.
+//
+static void restab_new_scope(ResolveState *curr, ResolveState *next)
+{
+    restab_init(next);
+
+    HashIterator iter;
+    for (HashNode *node = hashtab_first(curr->table, &iter); node; node = hashtab_next(&iter)) {
+        HashNode *newnode = hashtab_lookup(next->table, node->key);
+
+        VarMapNode *currmap = CONTAINER_OF(node, VarMapNode, hash);        
+        VarMapNode *nextmap = CONTAINER_OF(newnode, VarMapNode, hash);    
+
+        nextmap->from_curr_scope = false;
+        nextmap->new_name = safe_strdup(currmap->new_name);    
+    }
 }
 
 //
@@ -78,10 +98,12 @@ static char *ast_unique_varname(char *name)
 static void ast_resolve_declaration(ResolveState *state, Declaration *decl)
 {
     VarMapNode *mapnode = restab_get(state, decl->name);
-    if (mapnode->new_name) {
+    if (mapnode->new_name && mapnode->from_curr_scope) {
         err_report(EC_ERROR, &decl->loc, "variable `%s` has already been declared.", decl->name);
     } else {
+        safe_free(mapnode->new_name);
         mapnode->new_name = ast_unique_varname(decl->name);
+        mapnode->from_curr_scope = true;
     }
 
     safe_free(decl->name);
@@ -201,6 +223,32 @@ static void ast_resolve_label(ResolveState *state, StmtLabel *label)
 }
 
 //
+// Resolve variables in a block.
+//
+static void ast_resolve_block(ResolveState *state, List items)
+{
+    for (ListNode *curr = items.head; curr; curr = curr->next) {
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        switch (blki->tag) {
+            case BI_DECLARATION:    ast_resolve_declaration(state, blki->decl); break;
+            case BI_STATEMENT:      ast_resolve_statement(state, blki->stmt); break;
+        }
+    }
+}
+
+//
+// Resolve variables in a compound statement.
+//
+static void ast_resolve_compound(ResolveState *state, StmtCompound *compound)
+{
+    ResolveState newstate;
+
+    restab_new_scope(state, &newstate);
+    ast_resolve_block(&newstate, compound->items);
+    restab_free(&newstate);
+}
+
+//
 // Resolve variables for a statement.
 //
 static void ast_resolve_statement(ResolveState *state, Statement *stmt)
@@ -212,6 +260,7 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
         case STMT_NULL:         break;
         case STMT_LABEL:        ast_resolve_label(state, &stmt->label); break;
         case STMT_GOTO:         break;
+        case STMT_COMPOUND:     ast_resolve_compound(state, &stmt->compound); break;
     }
 }
 
@@ -220,13 +269,7 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
 //
 static void ast_resolve_function(ResolveState *state, AstFunction *func)
 {
-    for (ListNode *curr = func->stmts.head; curr; curr = curr->next) {
-        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
-        switch (blki->tag) {
-            case BI_DECLARATION:    ast_resolve_declaration(state, blki->decl); break;
-            case BI_STATEMENT:      ast_resolve_statement(state, blki->stmt); break;
-        }
-    }
+    ast_resolve_block(state, func->stmts);
 }
 
 //
