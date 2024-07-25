@@ -35,12 +35,13 @@ typedef enum {
 } Options;
 
 typedef struct {
-    bool compile_only;                  // if set, don't link, just produce .s file
+    bool compile_only;                  // if set, don't link, just produce .o file
     bool line_nos;                      // if set, print line number information
     bool keep;                          // if set, don't remove any produced files, even on error
     char *srcfile;                      // name of source file
     char *prefile;                      // computed name of preprocessed file (.i)
     char *asmfile;                      // computed name of asm file (.s)
+    char *objfile;                      // computed name of object file (.o)
     char *binfile;                      // the executable file
     Stage stage;                        // the last pass to run
 } Args;
@@ -174,6 +175,7 @@ static void parse_args(int argc, char *argv[], Args *args)
     
     args->prefile = replace_extension(args->srcfile, ".i");
     args->asmfile = replace_extension(args->srcfile, ".s");
+    args->objfile = replace_extension(args->srcfile, ".o");
     args->binfile = replace_extension(args->srcfile, "");
 }
 
@@ -185,6 +187,7 @@ static void free_args(Args *args)
     safe_free(args->srcfile);
     safe_free(args->prefile);
     safe_free(args->asmfile);
+    safe_free(args->objfile);
     safe_free(args->binfile);
 }
 
@@ -316,6 +319,18 @@ done:
 }
 
 //
+// Use gcc to assemble the file.
+//
+static int assemble(Args *args)
+{
+    char *cmd = saprintf("gcc -c -o %s %s", args->objfile, args->asmfile);
+    int status = system(cmd);
+    safe_free(cmd);
+
+    return status == 0 ? 0 : 1;
+}
+
+//
 // Use gcc to link the final program.
 //
 static int link_program(Args *args)
@@ -391,8 +406,12 @@ int main(int argc, char *argv[])
         goto done;
     }
 
-    if (args.stage == STAGE_ALL && !args.compile_only) {
-        status = link_program(&args);
+    if (args.stage == STAGE_ALL) {
+        if (args.compile_only) {
+            status = assemble(&args);
+        } else {
+            status = link_program(&args);
+        }
     }
 
 done:
