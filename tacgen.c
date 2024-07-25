@@ -57,6 +57,25 @@ static char *tcg_break_label(int label)
 }
 
 //
+// Format a label for a case statement. Returns an allocated string.
+//
+static char *tcg_case_label(int label, int value)
+{
+    char *tag = saprintf("case_%x", value);
+    char *looplabel = tcg_loop_tag_label(tag, label);
+    safe_free(tag);
+    return looplabel;
+}
+
+//
+// Format a label for a default statement. Returns an allocated string.
+//
+static char *tcg_default_label(int label)
+{
+    return tcg_loop_tag_label("default", label);
+}
+
+//
 // Append a TAC instruction to the code list.
 //
 static void tcg_append(TacState *state, TacNode *tac)
@@ -501,6 +520,79 @@ static void tcg_continue(TacState *state, Statement *stmt)
 }
 
 //
+// Generate TAC for a switch statement.
+//
+static void tcg_switch(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_SWITCH);
+    StmtSwitch *switch_ = &stmt->switch_;
+
+    TacNode *cond = tcg_expression(state, switch_->cond);
+
+    for (ListNode *curr = switch_->cases.head; curr; curr = curr->next) {
+        CaseLabel *label = CONTAINER_OF(curr, CaseLabel, list);
+
+        TacNode *cmp = tcg_temporary(stmt->loc);
+        char *case_label = tcg_case_label(switch_->label, label->value);
+
+        tcg_append(state, tac_binary(
+            BOP_SUBTRACT, 
+            tac_clone_operand(cond),
+            tac_const_int(label->value, stmt->loc), 
+            cmp,
+            stmt->loc));
+        tcg_append(state, tac_jump_zero(tac_clone_operand(cmp), case_label, stmt->loc));
+        safe_free(case_label);
+    }
+
+    char *break_label = tcg_break_label(switch_->label);
+
+    if (switch_->has_default) {
+        char *label = tcg_default_label(switch_->label);
+        tcg_append(state, tac_jump(label, stmt->loc));
+        safe_free(label);
+    } else {
+        tcg_append(state, tac_jump(break_label, stmt->loc));
+    }
+    
+    tcg_statement(state, switch_->body);
+
+    tcg_append(state, tac_label(break_label, stmt->loc));
+}
+
+//
+// Generate TAC for a case statement.
+//
+static void tcg_case(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_CASE);
+    StmtCase *case_ = &stmt->case_;
+
+    char *case_label = tcg_case_label(case_->label, case_->value);
+
+    tcg_append(state, tac_label(case_label, stmt->loc));
+    tcg_statement(state, case_->stmt);
+
+    safe_free(case_label);
+}
+
+//
+// Generate TAC for a default statement.
+//
+static void tcg_default(TacState *state, Statement *stmt)
+{
+    ICE_ASSERT(stmt->tag == STMT_DEFAULT);
+    StmtDefault *def = &stmt->default_;
+
+    char *def_label = tcg_default_label(def->label);
+
+    tcg_append(state, tac_label(def_label, stmt->loc));
+    tcg_statement(state, def->stmt);
+
+    safe_free(def_label);
+}
+
+//
 // Generate TAC for a statement.
 //
 static void tcg_statement(TacState *state, Statement *stmt)
@@ -518,6 +610,9 @@ static void tcg_statement(TacState *state, Statement *stmt)
         case STMT_DOWHILE:      tcg_do_while(state, stmt); break;
         case STMT_BREAK:        tcg_break(state, stmt); break;
         case STMT_CONTINUE:     tcg_continue(state, stmt); break;
+        case STMT_SWITCH:       tcg_switch(state, stmt); break;
+        case STMT_CASE:         tcg_case(state, stmt); break;
+        case STMT_DEFAULT:      tcg_default(state, stmt); break;
     }
 }
 

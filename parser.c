@@ -744,6 +744,81 @@ static Statement *parse_for(Parser *parser, FileLine loc)
 }
 
 //
+// Parse a switch statment.
+// <statement> := "switch" "(" cond ")" <statement>
+// The switch keyword has already been consumed.
+//
+static Statement *parse_switch(Parser *parser, FileLine loc)
+{
+    if (parser->tok.type != '(') {
+        report_expected_err(&parser->tok, "`(`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Expression *cond = parse_expression(parser, 0);
+
+    if (parser->tok.type != ')') {
+        report_expected_err(&parser->tok, "`)`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Statement *body = parse_statement(parser);
+
+    return stmt_switch(cond, body, loc);
+}
+
+//
+// Parse a case statment.
+// <statement> := "case" <const-int> ":" <statement>
+// The case keyword has already been consumed.
+//
+static Statement *parse_case(Parser *parser, FileLine loc)
+{
+    int value = 0;
+
+    if (parser->tok.type != TOK_INT_CONST) {
+        report_expected_err(&parser->tok, "integer constant");
+    } else {
+        //
+        // TODO when we have proper typing, this will be converted to
+        // the proper size/signedness value.
+        //
+        value = (int)parser->tok.intval;
+        parse_next_token(parser);
+    }
+
+    if (parser->tok.type != ':') {
+        report_expected_err(&parser->tok, "`:`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Statement *stmt = parse_statement(parser);
+
+    return stmt_case(value, stmt, loc);
+}
+
+//
+// Parse a default statment.
+// <statement> := "default" ":" <statement>
+// The default keyword has already been consumed.
+//
+static Statement *parse_default(Parser *parser, FileLine loc)
+{
+    if (parser->tok.type != ':') {
+        report_expected_err(&parser->tok, "`:`");
+    } else {
+        parse_next_token(parser);
+    }
+
+    Statement *stmt = parse_statement(parser);
+
+    return stmt_default(stmt, loc);
+}
+
+//
 // Parse a statement.
 // <statement> := 
 //      "{" { <block-item> } "}"
@@ -758,7 +833,11 @@ static Statement *parse_for(Parser *parser, FileLine loc)
 //      "while" "(" <exp> ")" <statement> |
 //      "do" <statment> "while" "(" <exp> ")" ";" |
 //      "for" "(" <for-init> ";" <exp> ";" <exp> ")" <statement>
+//      "switch" "(" cond ")" <statement>
+//      "case" <const-int> ":" <statement>
+//      "default" ":" <statement> 
 //
+
 static Statement *parse_statement(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
@@ -861,6 +940,30 @@ static Statement *parse_statement(Parser *parser)
     if (parser->tok.type == TOK_FOR) {
         parse_next_token(parser);
         return parse_for(parser, loc);
+    }
+
+    //
+    // <statement> := "switch" "(" cond ")" <statement>
+    //
+    if (parser->tok.type == TOK_SWITCH) {
+        parse_next_token(parser);
+        return parse_switch(parser, loc);
+    }
+    
+    //
+    // <statement> := "case" <const-int> ":" <statement>
+    //
+    if (parser->tok.type == TOK_CASE) {
+        parse_next_token(parser);
+        return parse_case(parser, loc);
+    }
+
+    //
+    // "default" ":" <statement> 
+    //
+    if (parser->tok.type == TOK_DEFAULT) {
+        parse_next_token(parser);
+        return parse_default(parser, loc);
     }
 
     //

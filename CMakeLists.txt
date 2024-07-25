@@ -23,6 +23,7 @@ add_executable(cc
     resolve.c
     safemem.c
     strbuilder.c
+    switch.c
     tacgen.c
     tacnode.c
     token.c

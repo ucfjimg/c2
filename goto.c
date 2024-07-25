@@ -155,6 +155,30 @@ static void ast_validate_do_while(GotoState *state, StmtDoWhile *dowhile)
 }
 
 //
+// Validate a switch statement.
+//
+static void ast_validate_switch(GotoState *state, StmtSwitch *switch_)
+{
+    ast_validate_statement(state, switch_->body);
+}
+
+//
+// Validate a case statement.
+//
+static void ast_validate_case(GotoState *state, StmtCase *case_)
+{
+    ast_validate_statement(state, case_->stmt);
+}
+
+//
+// Validate a default statement.
+//
+static void ast_validate_default(GotoState *state, StmtDefault *def)
+{
+    ast_validate_statement(state, def->stmt);
+}
+
+//
 // Validate one statement.
 //
 static void ast_validate_statement(GotoState *state, Statement *stmt)
@@ -168,6 +192,9 @@ static void ast_validate_statement(GotoState *state, Statement *stmt)
         case STMT_FOR:      ast_validate_for(state, &stmt->for_); break;
         case STMT_WHILE:    ast_validate_while(state, &stmt->while_); break;
         case STMT_DOWHILE:  ast_validate_do_while(state, &stmt->dowhile); break;
+        case STMT_SWITCH:   ast_validate_switch(state, &stmt->switch_); break;
+        case STMT_CASE:     ast_validate_case(state, &stmt->case_); break;
+        case STMT_DEFAULT:  ast_validate_default(state, &stmt->default_); break;
 
         case STMT_NULL:
         case STMT_RETURN:

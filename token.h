@@ -83,6 +83,9 @@ typedef enum {
     TOK_FOR,
     TOK_BREAK,
     TOK_CONTINUE,
+    TOK_SWITCH,
+    TOK_CASE,
+    TOK_DEFAULT,
 } TokenType;
 
 typedef struct {

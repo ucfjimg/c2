@@ -298,6 +298,31 @@ static void ast_resolve_do_while(ResolveState *state, StmtDoWhile *dowhile)
 }
 
 //
+// Resolve variables in a switch statement.
+//
+static void ast_resolve_switch(ResolveState *state, StmtSwitch *switch_)
+{
+    ast_resolve_expression(state, switch_->cond);
+    ast_resolve_statement(state, switch_->body);
+}
+
+//
+// Resolve variables in a case statement.
+//
+static void ast_resolve_case(ResolveState *state, StmtCase *case_)
+{
+    ast_resolve_statement(state, case_->stmt);
+}
+
+//
+// Resolve variables in a default statement.
+//
+static void ast_resolve_default(ResolveState *state, StmtDefault *def)
+{
+    ast_resolve_statement(state, def->stmt);
+}
+
+//
 // Resolve variables for a statement.
 //
 static void ast_resolve_statement(ResolveState *state, Statement *stmt)
@@ -315,6 +340,9 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
         case STMT_DOWHILE:      ast_resolve_do_while(state, &stmt->dowhile); break;
         case STMT_BREAK:        break;
         case STMT_CONTINUE:     break;
+        case STMT_SWITCH:       ast_resolve_switch(state, &stmt->switch_); break;
+        case STMT_CASE:         ast_resolve_case(state, &stmt->case_); break;
+        case STMT_DEFAULT:      ast_resolve_default(state, &stmt->default_); break;
     }
 }
 

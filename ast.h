@@ -101,6 +101,9 @@ typedef enum {
     STMT_DOWHILE,
     STMT_BREAK,
     STMT_CONTINUE,
+    STMT_SWITCH,
+    STMT_CASE,
+    STMT_DEFAULT,
 } StatementTag;
 
 typedef struct {
@@ -172,6 +175,30 @@ typedef struct {
     int label;                  // loop label
 } StmtContinue;
 
+typedef struct {
+    ListNode list;              // place in list
+    int value;                  // case value
+} CaseLabel;
+
+typedef struct {
+    Expression *cond;           // switch condition
+    Statement *body;            // body containing cases
+    int label;                  // even though not a loop, loop label for enclosed breaks
+    List cases;                 // list of cases inside this switch
+    bool has_default;           // true if there is a default label
+} StmtSwitch;
+
+typedef struct {
+    int value;                  // case value
+    int label;                  // label of enclosing switch
+    Statement *stmt;            // labeled statement
+} StmtCase;
+
+typedef struct {
+    int label;                  // label of enclosing switch
+    Statement *stmt;            // labeled statement
+} StmtDefault;
+
 struct Statement {
     ListNode list;
     StatementTag tag;
@@ -189,6 +216,9 @@ struct Statement {
         StmtDoWhile dowhile;    // STMT_DOWHILE
         StmtBreak break_;       // STMT_BREAK
         StmtContinue continue_; // STMT_CONTINUE
+        StmtSwitch switch_;     // STMT_SWITCH
+        StmtCase case_;         // STMT_CASE
+        StmtDefault default_;   // STMT_DEFAULT
     };
 };
 
@@ -208,6 +238,10 @@ extern Statement *stmt_while(Expression *cond, Statement *body, FileLine loc);
 extern Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc);
 extern Statement *stmt_break(FileLine loc);
 extern Statement *stmt_continue(FileLine loc);
+extern Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_case(int value, Statement *stmt, FileLine loc);
+extern Statement *stmt_default(Statement *stmt, FileLine loc);
+
 extern void stmt_free(Statement *stmt);
 
 //

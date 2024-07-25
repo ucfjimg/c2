@@ -16,6 +16,7 @@
 #include "parser.h"
 #include "resolve.h"
 #include "safemem.h"
+#include "switch.h"
 #include "tacgen.h"
 #include "token.h"
 
@@ -253,6 +254,7 @@ static int compile(Args *args)
     ast_resolve(ast);
     ast_validate_goto(ast);
     ast_label_loops(ast);
+    ast_validate_switch(ast);
 
     if (err_has_errors()) {
         status = 1;

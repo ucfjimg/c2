@@ -1,0 +1,6 @@
+{
+    "case-outside-switch.c": "validate:fail",
+    "default-outside-switch.c": "validate:fail",
+    "dup-case.c": "validate:fail",
+    "dup-default.c": "validate:fail"
+}

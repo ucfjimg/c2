@@ -25,6 +25,9 @@ static Keyword keywords[] = {
     { "for",        TOK_FOR },
     { "break",      TOK_BREAK },  
     { "continue",   TOK_CONTINUE },
+    { "switch",     TOK_SWITCH },
+    { "case",       TOK_CASE },
+    { "default",    TOK_DEFAULT },
     { NULL,         TOK_EOF }
 };
 

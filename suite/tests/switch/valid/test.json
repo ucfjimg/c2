@@ -1,0 +1,6 @@
+{
+    "simple.c": "gcc-retval:success",
+    "goto-into-switch.c": "gcc-retval:success",
+    "nested-case.c": "gcc-retval:success",
+    "switch-in-loop.c": "gcc-retval:success"
+}

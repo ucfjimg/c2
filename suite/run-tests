@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -120,7 +121,7 @@ def runtest(dir, name, test, run_stage, verbose):
 
         print()
 
-def rundir(dir, stage, verbose):
+def rundir(dir, stage, match, verbose):
     try:
         config = json.load(open(os.path.join(dir, 'test.json')))
     except:
@@ -128,9 +129,11 @@ def rundir(dir, stage, verbose):
         sys.exit(1)
 
     for name, test in config.items():
+        if match and not match.search(os.path.join(dir, name)):
+            continue
         runtest(dir, name, test, stage, verbose)
 
-def cleandir(dir, stage, verbose):
+def cleandir(dir, stage, match, verbose):
     try:
         config = json.load(open(os.path.join(dir, 'test.json')))
     except:
@@ -156,6 +159,7 @@ run_stage = None
 
 args = sys.argv[1:]
 
+action = rundir
 while args and args[0][0] == '-':
     arg = args[0]
     stage_found = False
@@ -167,21 +171,29 @@ while args and args[0][0] == '-':
     if not stage_found:
         if arg == '-v':
             verbose = True
+        elif arg == '--clean':
+            action = cleandir
         else:
             print(f'unrecognized flag `{arg}`')
             sys.exit(1)
 
     args = args[1:]
 
-action = rundir
-if args and args[0] == 'clean':
+match = None
+if args:
+    match = re.compile(args[0])
+    print(f'only running tests matching `{args[0]}`')
     args = args[1:]
-    action = cleandir
+
+if args:
+    print('extraneous args: ' + ' '.join(args))
+    sys.exit(1)
+
 
 os.chdir(root)
 for dir, _, files in os.walk('tests'):
     if 'test.json' in files:
-        action(dir, run_stage, verbose)
+        action(dir, run_stage, match, verbose)
 
 if failures:
     print('\n=== failure summary ===')

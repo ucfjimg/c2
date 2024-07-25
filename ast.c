@@ -471,6 +471,70 @@ Statement *stmt_continue(FileLine loc)
 }
 
 //
+// Constructor for a switch statement.
+//
+Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc)
+{
+    Statement *stmt = stmt_alloc(STMT_SWITCH, loc);
+    stmt->switch_.cond = cond;
+    stmt->switch_.body = body;
+    stmt->switch_.label = -1;
+    return stmt;
+}
+
+//
+// Free a switch statement.
+//
+void stmt_switch_free(StmtSwitch *switch_)
+{
+    for (ListNode *curr = switch_->cases.head; curr; ) {
+        ListNode *next = curr->next;
+        CaseLabel *label = CONTAINER_OF(curr, CaseLabel, list);
+        safe_free(label);
+        curr = next;
+    }
+    exp_free(switch_->cond);
+    stmt_free(switch_->body);
+}
+
+//
+// Constructor for a case statement.
+//
+Statement *stmt_case(int value, Statement *stmt, FileLine loc)
+{
+    Statement *casestmt = stmt_alloc(STMT_CASE, loc);
+    casestmt->case_.value = value;
+    casestmt->case_.stmt = stmt;
+    return casestmt;
+}
+
+//
+// Free a case statement.
+//
+void stmt_case_free(StmtCase *case_)
+{
+    stmt_free(case_->stmt);
+}
+
+//
+// Constructor for a default statement.
+//
+Statement *stmt_default(Statement *stmt, FileLine loc)
+{
+    Statement *defstmt = stmt_alloc(STMT_DEFAULT, loc);
+    defstmt->default_.label = -1;
+    defstmt->default_.stmt = stmt;
+    return defstmt;
+}
+//
+// Free a default statement.
+//
+void stmt_default_free(StmtDefault *default_)
+{
+    stmt_free(default_->stmt);
+}
+
+//
 // Free a statement.
 //
 void stmt_free(Statement *stmt)
@@ -489,6 +553,9 @@ void stmt_free(Statement *stmt)
             case STMT_DOWHILE:      stmt_do_while_free(&stmt->dowhile); break;
             case STMT_BREAK:        break;
             case STMT_CONTINUE:     break;
+            case STMT_SWITCH:       stmt_switch_free(&stmt->switch_); break;
+            case STMT_CASE:         stmt_case_free(&stmt->case_); break;
+            case STMT_DEFAULT:      stmt_default_free(&stmt->default_); break;
         }
 
         safe_free(stmt);
@@ -863,6 +930,38 @@ static void stmt_print_continue(StmtContinue *continue_, int tab)
 }
 
 //
+// Print a switch statement.
+//
+static void stmt_print_switch(StmtSwitch *switch_, int tab, bool locs)
+{
+    printf("%*sswitch(%d) {\n", tab, "", switch_->label);
+    exp_print_recurse(switch_->cond, tab + 2, locs);
+    printf("%*s} {\n", tab, "");
+    stmt_print_recurse(switch_->body, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a case statement.
+//
+static void stmt_print_case(StmtCase *case_, int tab, bool locs)
+{
+    printf("%*scase (label=%d,value=%d) {\n", tab, "", case_->label, case_->value);
+    stmt_print_recurse(case_->stmt, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a default statement.
+//
+static void stmt_print_default(StmtDefault *def, int tab, bool locs)
+{
+    printf("%*sdefault {\n", tab, "");
+    stmt_print_recurse(def->stmt, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print a statement, starting at indent `tab`
 //
 static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
@@ -886,6 +985,9 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
         case STMT_DOWHILE:      stmt_print_do_while(&stmt->dowhile, tab, locs); break;
         case STMT_BREAK:        stmt_print_break(&stmt->break_, tab); break;
         case STMT_CONTINUE:     stmt_print_continue(&stmt->continue_, tab); break;
+        case STMT_SWITCH:       stmt_print_switch(&stmt->switch_, tab, locs); break;
+        case STMT_CASE:         stmt_print_case(&stmt->case_, tab, locs); break;
+        case STMT_DEFAULT:      stmt_print_default(&stmt->default_, tab, locs); break;
     }
 }
 
