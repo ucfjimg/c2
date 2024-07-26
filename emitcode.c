@@ -259,9 +259,12 @@ static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
 //
 // emit a top-level program.
 // 
-static void emit_program(FILE *out, AsmProgram *prog, FileLine *loc)
+static void emit_program(FILE *out, AsmProgram *prog)
 {
-    emitcode_recurse(out, prog->func, loc);
+    for (ListNode *curr = prog->funcs.head; curr; curr = curr->next) {
+        AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
+        emitcode_recurse(out, func, &func->loc);        
+    }
 
 #ifndef __APPLE__
     fprintf(out, "        .section .note.GNU-stack,\"\",@progbits\n");
@@ -287,7 +290,7 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
     }
 
     switch (node->tag) {
-        case ASM_PROG:          emit_program(out, &node->prog, loc); break;
+        case ASM_PROG:          emit_program(out, &node->prog); break;
         case ASM_FUNC:          emit_function(out, &node->func, loc); break;
         case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
         case ASM_MOV:           emit_mov(out, &node->mov); break;
@@ -307,9 +310,8 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
 //
 // Top level entry to emit code.
 //
-void emitcode(FILE *out, AsmNode *node)
+void emitcode(FILE *out, AsmNode *prog)
 {
     FileLine loc = { NULL, 0 };
-
-    emitcode_recurse(out, node, &loc);
+    emitcode_recurse(out, prog, &loc);
 }

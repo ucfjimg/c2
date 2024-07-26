@@ -1,7 +1,10 @@
 #include "parser.h"
 
 #include "errors.h"
+#include "ice.h"
 #include "safemem.h"
+
+#include <stdbool.h>
 
 typedef struct {
     Lexer *lex;                 // the lexer
@@ -80,6 +83,7 @@ static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
 static Expression *parse_expression(Parser *parser, int min_prec);
 static Statement *parse_statement(Parser *parser);
+static List parse_block(Parser *parser);
 
 //
 // Create a parser bookmark at the current state.
@@ -210,23 +214,92 @@ static Expression *parse_primary(Parser *parser)
 }
 
 //
+// Parse a function call operator.
+// <postfix> := "(" <arg-list> ")"
+//
+static Expression *parse_function_call(Parser *parser, Expression *func)
+{
+    FileLine loc = parser->tok.loc;
+
+    ICE_ASSERT(parser->tok.type == '(');
+    parse_next_token(parser);
+
+    List args;
+    list_clear(&args);
+    
+    if (parser->tok.type != ')') {
+        while (true) {
+            Expression *parm = parse_expression(parser, 0);
+            list_push_back(&args, &parm->list);
+
+            if (parser->tok.type == ',') {
+                parse_next_token(parser);
+                continue;
+            } 
+
+            if (parser->tok.type != ')') {
+                report_expected_err(&parser->tok, "`)` or `,`");
+            } else {
+                parse_next_token(parser);
+            }
+
+            break;
+        }
+    } else {
+        //
+        // Consume ')' of empty parameter list.
+        //
+        parse_next_token(parser);
+    }
+
+    //
+    // TODO for now, without types, a function must just be an identifier of the
+    // function name.
+    //
+    char *name = NULL;
+    if (func->tag != EXP_VAR) {
+        err_report(EC_ERROR, &loc, "function pointers are not supported.");
+        name = safe_strdup(".error");
+    } else {
+        name = safe_strdup(func->var.name);
+    }
+
+    Expression *exp = exp_function_call(name, args, loc);
+
+    //
+    // We only needed the name from the function expression, free it since
+    // we will not hold a reference to it.
+    //
+    exp_free(func);
+    return exp;
+} 
+
+//
 // Parse a postfix operator.
-// <postfix> := <primary> | <postfix> <oper>  
+// <postfix> := <primary> | <postfix> "++" | <postfix> "--" | <postfix> "(" <arg-list> ")" 
 //
 static Expression *parse_postfix(Parser *parser)
 {
     Expression *exp = parse_primary(parser);
 
-    while (parser->tok.type == TOK_INCREMENT || parser->tok.type == TOK_DECREMENT) {
-        if (parser->tok.type == TOK_INCREMENT) {
-            exp = exp_unary(UOP_POSTINCREMENT, exp, parser->tok.loc);
-        } else {
-            exp = exp_unary(UOP_POSTDECREMENT, exp, parser->tok.loc);
-        }
+    while (true) {
+        switch (parser->tok.type) {
+            case TOK_INCREMENT: 
+                exp = exp_unary(UOP_POSTINCREMENT, exp, parser->tok.loc); 
+                parse_next_token(parser);
+                break;
 
-        parse_next_token(parser);
+            case TOK_DECREMENT: 
+                exp = exp_unary(UOP_POSTDECREMENT, exp, parser->tok.loc); 
+                parse_next_token(parser);
+                break;
+            
+            case '(':           exp = parse_function_call(parser, exp); break;
+            default: goto done;
+        }
     }
 
+done:
     return exp;
 }
 
@@ -328,23 +401,14 @@ static Expression *parse_expression(Parser *parser, int min_prec)
 }
 
 //
-// Parse a declaration.
-// <declaration> := "int" <identifier> [ "=" <exp> ] ";" 
-// The type has already been parsed.
+// Parse a variable declaration.
+// <declaration> := "int" <identifier> [ "=" <exp> ] ";"  |
 //
-static Declaration *parse_declaration(Parser *parser)
+// The type and identifier have already been parsed.
+//
+static Declaration *parse_decl_variable(Parser *parser, char *name, FileLine loc)
 {
-    Declaration *decl = NULL;
-    char *name = NULL;
     Expression *init = NULL;
-    FileLine loc = parser->tok.loc;
-
-    if (parser->tok.type != TOK_ID) {
-        report_expected_err(&parser->tok, "identifier");
-        goto done;
-    }
-    name = safe_strdup(parser->tok.id);
-    parse_next_token(parser);
 
     if (parser->tok.type == TOK_ASSIGN) {
         parse_next_token(parser);
@@ -357,28 +421,145 @@ static Declaration *parse_declaration(Parser *parser)
         parse_next_token(parser);
     }
 
-    decl = declaration(name, init, loc);
-    init = NULL;
+    return decl_variable(name, init, loc);
+}
+
+//
+// Parse a function declaration.
+// <declaration> := "int" <identifier> "(" <param-list> ")" ";"
+//
+// Tokens up to and including the opening '(' have been parsed.
+//
+static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc)
+{
+    List parms;
+    bool parm_list_err = false;
+    bool is_void = false;
+
+    list_clear(&parms);
+
+    //
+    // Special case - "(" "void" ")" means empty parameter list.
+    //
+    if (parser->tok.type == TOK_VOID) {
+        parse_next_token(parser);
+        is_void = true;
+
+        if (parser->tok.type != ')') {
+            parm_list_err = true;
+            report_expected_err(&parser->tok, "`)`");
+        } else {
+            parse_next_token(parser);
+        }
+
+    } else {
+        while (true) {
+            if (parser->tok.type != TOK_INT) {
+                report_expected_err(&parser->tok, "`int`");
+                parm_list_err = true;
+                break;
+            } else {
+                parse_next_token(parser);
+            }
+
+            char *parm_name = NULL;
+            if (parser->tok.type != TOK_ID) {
+                parm_list_err = true;
+                report_expected_err(&parser->tok, "identifier");
+                break;
+            } else {
+                parm_name = safe_strdup(parser->tok.id);
+                parse_next_token(parser);
+            }
+
+            FuncParameter *parm = func_parm(parm_name);
+            list_push_back(&parms, &parm->list);
+
+            safe_free(parm_name);
+
+            if (parser->tok.type == ',') {
+                parse_next_token(parser);
+                continue;
+            }
+
+            break;
+        }
+
+        if (parser->tok.type != ')') {
+            parm_list_err = true;
+            report_expected_err(&parser->tok, "`,` or `)`");
+        } else {
+            parse_next_token(parser);
+        }
+    }
+
+    List body;
+    list_clear(&body);
+
+    if (parser->tok.type == '{') {
+        parse_next_token(parser);
+        body = parse_block(parser);
+
+        if (parser->tok.type != '}') {
+            report_expected_err(&parser->tok, "`}`");
+        } else {
+            parse_next_token(parser);
+        }
+    } else if (parser->tok.type == ';') {
+        parse_next_token(parser);
+    } else {
+        report_expected_err(&parser->tok, "`{` or `;`");
+    }
+
+    if (!parm_list_err && !is_void && parms.head == NULL) {
+        err_report(EC_ERROR, &loc, "`()` is not valid for a function with no parameters; use `(void)`.");
+    }
+
+    return decl_function(name, parms, body, loc);    
+}
+
+//
+// Parse a declaration.
+// <declaration> := 
+//    "int" <identifier> [ "=" <exp> ] ";"  |
+//    "int" <identifier> "(" <param-list> ")" ( <block> | ";" )
+//
+// The type has already been parsed.
+//
+static Declaration *parse_declaration(Parser *parser)
+{
+    Declaration *decl = NULL;
+    char *name = NULL;
+    FileLine loc = parser->tok.loc;
+
+    if (parser->tok.type != TOK_ID) {
+        report_expected_err(&parser->tok, "identifier");
+        goto done;
+    }
+    name = safe_strdup(parser->tok.id);
+    parse_next_token(parser);
+
+    if (parser->tok.type == '(') {
+        parse_next_token(parser);
+        decl = parse_decl_function(parser, name, loc);
+    } else {
+        decl = parse_decl_variable(parser, name, loc);
+    }
 
 done:
     if (decl == NULL) {
-        if (name == NULL) {
-            //
-            // If there's no name, just add a dummy declaration.
-            //
-            decl = declaration(".error", NULL, loc);
-        } else {
-            decl = declaration(name, NULL, loc);
-        }
+        //
+        // If there's no name, just add a dummy declaration.
+        //
+        decl = decl_variable(".error", NULL, loc);
     }
-    exp_free(init);
     safe_free(name);
     return decl;
 }
 
 //
-// Parse a block until a '}'. Expects a leading '{'; does not consume
-// the trailing '}'. 
+// Parse a block until a '}'. Expects a leading '{' to already be consumed; 
+// does not consume the trailing '}'. 
 //
 // Returns a list of BlockItem.
 //
@@ -668,6 +849,10 @@ static ForInit *parse_forinit(Parser *parser)
     if (parser->tok.type == TOK_INT) {
         parse_next_token(parser);
         Declaration *decl = parse_declaration(parser);
+
+        if (decl->tag == DECL_FUNCTION) {
+            err_report(EC_ERROR, &decl->loc, "for loop initializer may not declare a function.\n");
+        }
         
         //
         // Note that the definition for declaration includes the ';'.
@@ -979,68 +1164,10 @@ static Statement *parse_statement(Parser *parser)
 }
 
 //
-// Parse a function definition.
-// <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
-//
-static AstNode *parse_function(Parser *parser)
-{
-    //
-    // <function> := "int" <identifier> "(" "void" ")" "{" <statement> "}"
-    //
-    char *name = NULL;
-    List stmts;
-
-    if (parser->tok.type != TOK_INT) {
-        report_expected_err(&parser->tok, "`int`");        
-    }
-
-    parse_next_token(parser);
-    if (parser->tok.type != TOK_ID) {
-        report_expected_err(&parser->tok, "identifier");        
-        name = safe_strdup("<unknown>");
-    } else {
-        name = safe_strdup(parser->tok.id);
-    }
-
-    parse_next_token(parser);
-    if (parser->tok.type != '(') {
-        report_expected_err(&parser->tok, "`(`");        
-    }
-
-    parse_next_token(parser);
-    if (parser->tok.type != TOK_VOID) {
-        report_expected_err(&parser->tok, "`void`");        
-    }
-
-    parse_next_token(parser);
-    if (parser->tok.type != ')') {
-        report_expected_err(&parser->tok, "`)`");        
-    }
-
-    parse_next_token(parser);
-    if (parser->tok.type != '{') {
-        report_expected_err(&parser->tok, "`{`");        
-    }
-
-    parse_next_token(parser);
-    stmts = parse_block(parser);
-
-    if (parser->tok.type != '}') {
-        report_expected_err(&parser->tok, "`}`");        
-    }
-
-    parse_next_token(parser);
-
-    AstNode *node = ast_function(name, stmts, parser->tok.loc);
-
-    return node;
-}
-
-//
 // Top level entry to the parser. Initialize, parse, and return an
 // AST tree.
 //
-AstNode *parser_parse(Lexer *lex)
+AstProgram *parser_parse(Lexer *lex)
 {
     Parser parser;
 
@@ -1048,16 +1175,26 @@ AstNode *parser_parse(Lexer *lex)
 
     lexer_token(lex, &parser.tok);
 
-    //
-    // <program> := <function>
-    //
-    AstNode *prog = ast_program(parser.tok.loc);
+    FileLine loc = parser.tok.loc;
 
-    prog->prog.func = parse_function(&parser);
+    //
+    // <program> := { <function> }+
+    //
+    List decls;
+    list_clear(&decls);
 
-    if (parser.tok.type != TOK_EOF) {
-        report_expected_err(&parser.tok, "end of file");        
+    while (parser.tok.type != TOK_EOF) {
+        if (parser.tok.type != TOK_INT) {
+            report_expected_err(&parser.tok, "`int`");
+            break;
+        } else {
+            parse_next_token(&parser);
+        }
+
+        Declaration *decl = parse_declaration(&parser);
+        
+        list_push_back(&decls, &decl->list);
     }
 
-    return prog;
+    return ast_program(decls, loc);   
 }

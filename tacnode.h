@@ -28,7 +28,7 @@ typedef struct TacNode TacNode;
 // An entire program.
 //
 typedef struct {
-    TacNode *func;                  // single function
+    List decls;                     // Of <TacNode>
 } TacProgram;
 
 //
@@ -122,7 +122,6 @@ typedef struct {
 //
 typedef struct TacNode {
     ListNode list;
-
     TacTag tag;
     FileLine loc;
 
@@ -142,7 +141,7 @@ typedef struct TacNode {
     };
 } TacNode;
 
-extern TacNode *tac_program(TacNode *func, FileLine loc);
+extern TacNode *tac_program(List decls, FileLine loc);
 extern TacNode *tac_function_def(char *name, List body, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);

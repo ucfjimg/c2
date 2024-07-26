@@ -202,8 +202,11 @@ void asm_allocate_vars(AsmNode *prog)
 {
     ICE_ASSERT(prog->tag == ASM_PROG);
 
-    VarTable vartab;
-    vartab_init(&vartab);
-    asm_alloc_func(&vartab, prog->prog.func);
-    vartab_free(&vartab);
+    for (ListNode *curr = prog->prog.funcs.head; curr; curr = curr->next) {
+        AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
+        VarTable vartab;
+        vartab_init(&vartab);
+        asm_alloc_func(&vartab, func);
+        vartab_free(&vartab);
+    }
 }

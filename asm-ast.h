@@ -73,7 +73,7 @@ typedef enum {
 typedef struct AsmNode AsmNode;
 
 typedef struct {
-    AsmNode *func;          // the function
+    List funcs;             // of <AsmNode>
 } AsmProgram;
 
 typedef struct {
@@ -150,7 +150,7 @@ struct AsmNode {
     };
 };
 
-extern AsmNode *asm_prog(FileLine loc);
+extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc);

@@ -1,0 +1,6 @@
+{
+    "empty-parameter-list.c": "validate:fail",
+    "no-parameter-names.c": "validate:fail",
+    "void-with-other-params.c": "validate:fail",
+    "for-init-not-function.c": "parse:fail"
+}

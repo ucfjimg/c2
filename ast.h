@@ -10,7 +10,6 @@ typedef struct Expression Expression;
 typedef struct Declaration Declaration;
 typedef struct Statement Statement;
 typedef struct BlockItem BlockItem;
-typedef struct AstNode AstNode;
 
 //
 // expressions
@@ -22,6 +21,7 @@ typedef enum {
     EXP_BINARY,
     EXP_CONDITIONAL,
     EXP_ASSIGNMENT,
+    EXP_FUNCTION_CALL,
 } ExpressionTag;
 
 typedef struct {
@@ -51,9 +51,15 @@ typedef struct {
     Expression *right;
 } ExpAssignment;
 
+typedef struct {
+    char *name;
+    List args;                              // of <Expression>
+} ExpFunctionCall;
+
 struct Expression {
     ExpressionTag tag;
-    FileLine loc;               
+    FileLine loc;       
+    ListNode list;        
 
     union {
         unsigned long intval;
@@ -62,6 +68,7 @@ struct Expression {
         ExpBinary binary;
         ExpConditional conditional;
         ExpAssignment assignment;
+        ExpFunctionCall call;
     };
 };
 
@@ -71,18 +78,48 @@ extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc);
 extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_function_call(char *name, List args, FileLine loc);
 extern void exp_free(Expression *exp);
 
 //
 // declarations
 //
+typedef enum {
+    DECL_VARIABLE,
+    DECL_FUNCTION,
+} DeclarationTag;
+
+typedef struct {
+    char *name;                 // variable name
+    Expression *init;           // optional initializer
+} DeclVariable;
+
+typedef struct {
+    ListNode list;
+    char *name;                 // parameter name
+} FuncParameter;
+
+extern FuncParameter *func_parm(char *name);
+
+typedef struct {
+    char *name;                 // function name
+    List parms;                 // list <FuncParameter> of parameters
+    List body;                  // if a definition, List <BlockItem>
+} DeclFunction;
+
 struct Declaration {
+    ListNode list;
+    DeclarationTag tag;
     FileLine loc;
-    char *name;                 // name of variable being declared
-    Expression *init;           // initializatiom (may be NULL)
+
+    union {
+        DeclVariable var;       // DECL_VARIABLE
+        DeclFunction func;      // DECL_FUNCTION
+    };
 };
 
-extern Declaration *declaration(char *name, Expression *init, FileLine loc);
+extern Declaration *decl_variable(char *name, Expression *init, FileLine loc);
+extern Declaration *decl_function(char *name, List parms, List body, FileLine loc);
 extern void declaration_free(Declaration *decl);
 
 //
@@ -269,32 +306,12 @@ extern void blki_free(BlockItem *blki);
 //
 // AST
 //
-typedef enum {
-    AST_PROGRAM,
-    AST_FUNCTION,
-} AstTag;
-
 typedef struct {
-    AstNode *func;              // function body
+    FileLine loc;
+    List decls;                 // A list of <Declaration>
 } AstProgram;
 
-typedef struct {
-    char *name;                 // name of function
-    List stmts;                 // of <BlockItem>
-} AstFunction;
+extern AstProgram *ast_program(List decls, FileLine loc);
+extern void ast_free_program(AstProgram *prog);
 
-struct AstNode {
-    AstTag tag;
-    FileLine loc;               
-
-    union {
-        AstProgram prog;        // AST_PROGRAM
-        AstFunction func;       // AST_FUNCTION
-    };
-};
-
-extern AstNode *ast_program(FileLine loc);
-extern AstNode *ast_function(char *name, List stmts, FileLine loc);
-extern void ast_free(AstNode *ast);
-
-extern void ast_print(AstNode *ast, bool locs);
+extern void ast_print(AstProgram *prog, bool locs);

@@ -202,10 +202,10 @@ static void ast_label_block(LabelState state, List items)
 //
 // Label loops inside a function.
 //
-static void ast_label_function(AstFunction *func)
+static void ast_label_function(DeclFunction *func)
 {
     LabelState state = { -1, -1, -1 };
-    ast_label_block(state, func->stmts);
+    ast_label_block(state, func->body);
 }
 
 //
@@ -213,9 +213,13 @@ static void ast_label_function(AstFunction *func)
 // Assign each break or continue statement the label of the 
 // innermost surrounding loop.
 //
-void ast_label_loops(AstNode *ast)
+void ast_label_loops(AstProgram *prog)
 {
-    ICE_ASSERT(ast->tag == AST_PROGRAM);
-
-    ast_label_function(&ast->prog.func->func);
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
+        switch (decl->tag) {
+            case DECL_FUNCTION: ast_label_function(&decl->func); break;
+            case DECL_VARIABLE: break;
+        }
+    }
 }

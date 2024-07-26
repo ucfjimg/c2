@@ -1,0 +1,5 @@
+{
+    "arglist.c": "validate:success",
+    "two-functions.c": "validate:success",
+    "call-no-args.c": "validate:success"
+}

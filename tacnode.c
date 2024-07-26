@@ -21,10 +21,10 @@ static TacNode *tac_alloc(TacTag tag, FileLine loc)
 //
 // Constructor for a TAC program.
 //
-TacNode *tac_program(TacNode *func, FileLine loc)
+TacNode *tac_program(List decls, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_PROGRAM, loc);
-    tac->prog.func = func;
+    tac->prog.decls = decls;
     return tac;
 }
 
@@ -33,7 +33,12 @@ TacNode *tac_program(TacNode *func, FileLine loc)
 //
 static void tac_program_free(TacProgram *prog)
 {
-    tac_free(prog->func);
+    for (ListNode *curr = prog->decls.head; curr; ) {
+        ListNode *next = curr->next;
+        TacNode *decl = CONTAINER_OF(curr, TacNode, list);
+        tac_free(decl);
+        curr = next;
+    }
 }
 
 //
@@ -335,7 +340,10 @@ static void tac_print_location(FileLine loc, int tab)
 static void tac_print_program(TacProgram *prog, int tab, bool locs)
 {
     printf("%*sprogram() {\n", tab, "");
-    tac_print_recurse(prog->func, tab + 2, locs);
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        TacNode *decl = CONTAINER_OF(curr, TacNode, list);
+        tac_print_recurse(decl, tab + 2, locs);
+    }
     printf("%*s}\n", tab, "");
 }
 

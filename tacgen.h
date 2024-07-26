@@ -4,4 +4,4 @@
 #include "list.h"
 #include "tacnode.h"
 
-extern TacNode *tcg_gen(AstNode *ast);
+extern TacNode *tcg_gen(AstProgram *prog);

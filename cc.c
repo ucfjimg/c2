@@ -223,7 +223,7 @@ static int preprocess(Args *args)
 static int compile(Args *args)
 {
     int status = 0;
-    AstNode *ast = NULL;
+    AstProgram *ast = NULL;
     AsmNode *asmcode = NULL;
     TacNode *taccode = NULL;
     FILE *asmfile;
@@ -285,7 +285,7 @@ static int compile(Args *args)
     // Code generation and assembly transformation passes.
     //
     asmcode = codegen(taccode);
-    ast_free(ast);
+    ast_free_program(ast);
     ast = NULL;
 
     asm_allocate_vars(asmcode);
@@ -313,7 +313,7 @@ static int compile(Args *args)
 done:
     tac_free(taccode);
     asm_free(asmcode);
-    ast_free(ast);
+    ast_free_program(ast);
     lexer_close(lex);
     return status;
 }

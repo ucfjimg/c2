@@ -453,6 +453,7 @@ void lexer_token(Lexer *lex, Token *tok)
         case '^': tok->type = TOK_BITXOR; break;
         case '?': tok->type = TOK_QUESTION; break;
         case ':': tok->type = TOK_COLON; break;
+        case ',': tok->type = TOK_COMMA; break;
     }
 
     if (tok->type != TOK_ERROR) {

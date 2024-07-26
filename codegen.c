@@ -263,23 +263,6 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 }
 
 //
-// Generate code for an entire program.
-//
-static AsmNode *codegen_program(CodegenState *state, TacNode *tac)
-{
-    ICE_ASSERT(tac->tag == TAC_PROGRAM);
-    codegen_funcdef(state, tac->prog.func);
-
-    //
-    // TODO this is hacky but will get fixed when the program is properly a list
-    // of declarations.
-    //
-    AsmNode *prog = asm_prog(tac->loc);
-    prog->prog.func = CONTAINER_OF(state->code.head, AsmNode, list);
-    return prog;
-}
-
-//
 // Generate code from the AST.
 //
 AsmNode *codegen(TacNode *tac)
@@ -289,5 +272,10 @@ AsmNode *codegen(TacNode *tac)
     CodegenState state;
     list_clear(&state.code);
 
-    return codegen_program(&state, tac);
+    for (ListNode *curr = tac->prog.decls.head; curr; curr = curr->next) {
+        TacNode *decl = CONTAINER_OF(curr, TacNode, list);
+        codegen_funcdef(&state, decl);
+    }
+
+    return asm_prog(state.code, tac->loc);
 }

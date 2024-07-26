@@ -3,4 +3,4 @@
 #include "ast.h"
 #include "lexer.h"
 
-extern AstNode *parser_parse(Lexer *lex);
+extern AstProgram *parser_parse(Lexer *lex);

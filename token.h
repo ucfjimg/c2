@@ -26,6 +26,7 @@ typedef enum {
     TOK_ASSIGN = '=',
     TOK_QUESTION = '?',
     TOK_COLON = ':',
+    TOK_COMMA = ',',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 

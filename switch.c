@@ -179,22 +179,26 @@ static void ast_switch_block(SwitchState *state, List items)
 //
 // Validate switches inside a function.
 //
-static void ast_switch_function(AstFunction *func)
+static void ast_switch_function(DeclFunction *func)
 {
     //
     // Start will a NULL state since there is no enclosing switch
     // at the function level.
     //
-    ast_switch_block(NULL, func->stmts);
+    ast_switch_block(NULL, func->body);
 }
 
 //
 // Walk through the AST and resolve case statements inside
 // a switch. 
 //
-void ast_validate_switch(AstNode *ast)
+void ast_validate_switch(AstProgram *prog)
 {
-    ICE_ASSERT(ast->tag == AST_PROGRAM);
-
-    ast_switch_function(&ast->prog.func->func);
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
+        switch (decl->tag) {
+            case DECL_FUNCTION: ast_switch_function(&decl->func); break;
+            case DECL_VARIABLE: break;
+        }
+    }
 }

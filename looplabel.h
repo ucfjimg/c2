@@ -7,4 +7,4 @@
 // Assign each break or continue statement the label of the 
 // innermost surrounding loop.
 //
-extern void ast_label_loops(AstNode *ast);
+extern void ast_label_loops(AstProgram *prog);

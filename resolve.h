@@ -9,4 +9,4 @@
 //   - variables are not declared more than once in the same scope
 // - rename variables to unique names within the entire program
 //
-extern void ast_resolve(AstNode *ast);
+extern void ast_resolve(AstProgram *prog);

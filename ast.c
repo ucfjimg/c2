@@ -5,9 +5,10 @@
 
 #include <stdio.h>
 
-static void ast_print_recurse(AstNode *ast, int tab, bool locs);
 static void stmt_print_recurse(Statement *ast, int tab, bool locs);
 static void exp_print_recurse(Expression *exp, int tab, bool locs);
+static void decl_print_declaration(Declaration *decl, int tab, bool locs);
+static void ast_print_blockitem_list(List block, int tab, bool locs);
 
 //
 // Allocator for all expression objects.
@@ -138,6 +139,32 @@ void exp_assignment_free(ExpAssignment *assign)
 }
 
 //
+// Construct a function call.
+//
+Expression *exp_function_call(char *name, List args, FileLine loc)
+{
+    Expression *call = exp_alloc(EXP_FUNCTION_CALL, loc);
+
+    call->call.name = safe_strdup(name);
+    call->call.args = args;
+
+    return call;
+}
+
+//
+// Free a function call.
+//
+static void exp_function_call_free(ExpFunctionCall *call)
+{
+    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
+        Expression *arg = CONTAINER_OF(curr, Expression, list);
+        exp_free(arg);
+    }
+
+    safe_free(call->name);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
@@ -149,8 +176,8 @@ void exp_free(Expression *exp)
             case EXP_BINARY:        exp_binary_free(&exp->binary); break;
             case EXP_CONDITIONAL:   exp_conditional_free(&exp->conditional); break;
             case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
-            default:
-                break;
+            case EXP_FUNCTION_CALL: exp_function_call_free(&exp->call); break;
+            default:                break;
         }
 
         safe_free(exp);
@@ -158,20 +185,80 @@ void exp_free(Expression *exp)
 }
 
 //
-// Constructor for a declaration.
+// Constructor for a variable declaration.
 //
 // Note that `init` is optional and will be NULL if the declaration
 // has no initializer.
 // 
-Declaration *declaration(char *name, Expression *init, FileLine loc)
+Declaration *decl_variable(char *name, Expression *init, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
+    decl->tag = DECL_VARIABLE;
     decl->loc = loc;
-    decl->name = safe_strdup(name);
-    decl->init = init;
+    decl->var.name = safe_strdup(name);
+    decl->var.init = init;
 
     return decl;
+}
+
+//
+// Free a variable declaration.
+//
+static void decl_variable_free(DeclVariable *var)
+{
+    safe_free(var->name);
+    exp_free(var->init);
+}
+
+//
+// Constructor for a function parameter. 
+//
+FuncParameter *func_parm(char *name)
+{
+    FuncParameter *parm = safe_zalloc(sizeof(FuncParameter));
+    parm->name = safe_strdup(name);
+    return parm;
+}
+
+//
+// Free a function parameter.
+//
+static void func_parm_free(FuncParameter *parm)
+{
+    safe_free(parm->name);
+    safe_free(parm);
+}
+
+//
+// Constructor for a function declaration.
+//
+Declaration *decl_function(char *name, List parms, List body, FileLine loc)
+{
+    Declaration *decl = safe_zalloc(sizeof(Declaration));
+
+    decl->tag = DECL_FUNCTION;
+    decl->loc = loc;
+    decl->func.name = safe_strdup(name);
+    decl->func.parms = parms;
+    decl->func.body = body;
+
+    return decl;
+}
+
+//
+// Free a function declaration.
+//
+static void decl_function_free(DeclFunction *func)
+{
+    safe_free(func->name);
+
+    for (ListNode *curr = func->parms.head; curr; ) {
+        ListNode *next = curr->next;
+        FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
+        func_parm_free(parm);
+        curr = next;
+    }
 }
 
 //
@@ -180,15 +267,17 @@ Declaration *declaration(char *name, Expression *init, FileLine loc)
 void declaration_free(Declaration *decl)
 {
     if (decl) {
-        safe_free(decl->name);
-        exp_free(decl->init);
-    
+        switch (decl->tag) {
+            case DECL_FUNCTION: decl_function_free(&decl->func); break;
+            case DECL_VARIABLE: decl_variable_free(&decl->var); break;
+        }
+
         safe_free(decl);
     }
 }   
 
 //
-// Allocatorfor all statement objects.
+// Allocator for all statement objects.
 //
 static Statement *stmt_alloc(StatementTag tag, FileLine loc)
 {
@@ -607,76 +696,32 @@ void blki_free(BlockItem *blki)
 }
 
 //
-// Allocator for all AST nodes.
+// Construct a program.
 //
-static AstNode *ast_alloc(AstTag tag, FileLine loc)
+AstProgram *ast_program(List decls, FileLine loc)
 {
-    AstNode *ast = safe_zalloc(sizeof(AstNode));
-    ast->tag = tag;
-    ast->loc = loc;
-    return ast;
-}
-
-//
-// Construct a program with no contents.
-//
-AstNode *ast_program(FileLine loc)
-{
-    AstNode *ast = ast_alloc(AST_PROGRAM, loc);
-    return ast;
+    AstProgram *prog = safe_zalloc(sizeof(AstProgram));
+    prog->loc = loc;
+    prog->decls = decls;
+    return prog;
 }
 
 //
 // Free a program.
 //
-static void ast_free_program(AstProgram *prog)
+void ast_free_program(AstProgram *prog)
 {
-    ast_free(prog->func);
-}
+    if (prog) {
+        for (ListNode *curr = prog->decls.head; curr; ) {
+            ListNode *next = curr->next;
 
-//
-// Construct a function with the given name but no body.
-//
-AstNode *ast_function(char *name, List stmts, FileLine loc)
-{
-    AstNode *ast = ast_alloc(AST_FUNCTION, loc);
-    ast->func.name = safe_strdup(name);
-    ast->func.stmts =  stmts;
-    return ast;
-}
+            Declaration *decl = CONTAINER_OF(curr, Declaration, list);
+            declaration_free(decl);
 
-//
-// Free a function.
-//
-static void ast_free_function(AstFunction *func)
-{
-    safe_free(func->name);
-
-    for (ListNode *curr = func->stmts.head; curr; ) {
-        ListNode *next = curr->next;
-
-        blki_free(CONTAINER_OF(curr, BlockItem, list));
-
-        curr = next;
-    }
-}
-
-//
-// Construct compound statement.
-//
-
-//
-// Free an AST node.
-//
-void ast_free(AstNode *ast)
-{
-    if (ast) {
-        switch (ast->tag) {
-            case AST_PROGRAM: ast_free_program(&ast->prog); break;
-            case AST_FUNCTION: ast_free_function(&ast->func); break;
+            curr = next;
         }
 
-        safe_free(ast);
+        safe_free(prog);
     }
 }
 
@@ -745,6 +790,21 @@ static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
 }
 
 //
+// Print a function call expression.
+//
+static void print_exp_function_call(ExpFunctionCall *call, int tab, bool locs)
+{
+    printf("%*scall(%s) {\n", tab, "", call->name);
+    
+    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
+        Expression *arg = CONTAINER_OF(curr, Expression, list);
+        exp_print_recurse(arg, tab + 2, locs);
+    }
+
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -762,21 +822,59 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;
         case EXP_CONDITIONAL:   print_exp_conditional(&exp->conditional, tab, locs); break;
         case EXP_ASSIGNMENT:    print_exp_assignment(&exp->assignment, tab, locs); break;
+        case EXP_FUNCTION_CALL: print_exp_function_call(&exp->call, tab, locs); break;
     }
 }
 
 //
 // Print a variable declaration.
 //
-static void decl_print_declaration(Declaration *decl, int tab, bool locs)
+static void decl_print_variable(DeclVariable *var, int tab, bool locs)
 {
-    printf("%*sdeclare(%s)", tab, "", decl->name);
-    if (decl->init) {
+    printf("%*sdeclare-var(%s)", tab, "", var->name);
+    if (var->init) {
         printf(" = {\n");
-        exp_print_recurse(decl->init, tab + 2, locs);
+        exp_print_recurse(var->init, tab + 2, locs);
         printf("%*s}", tab, "");
     }
     printf(";\n");
+}
+
+//
+// Print a function declaration.
+//
+static void decl_print_function(DeclFunction *func, int tab, bool locs)
+{
+    printf("%*sdeclare-func(%s) (", tab, "", func->name);
+    
+    for (ListNode *curr = func->parms.head; curr; curr = curr->next) {
+        FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
+        printf("%s", parm->name);
+        if (curr->next) {
+            printf(", ");
+        }
+    }
+    
+    printf(")");
+
+    if (func->body.head) {
+        printf(" {\n");
+        ast_print_blockitem_list(func->body, tab + 2, locs);
+        printf("%*s}", tab, "");
+    }
+
+    printf("\n");
+}
+
+//
+// Print a declaration.
+//
+static void decl_print_declaration(Declaration *decl, int tab, bool locs)
+{
+    switch (decl->tag) {
+        case DECL_FUNCTION: decl_print_function(&decl->func, tab, locs); break;
+        case DECL_VARIABLE: decl_print_variable(&decl->var, tab, locs); break;
+    }
 }
 
 //
@@ -847,13 +945,7 @@ static void stmt_print_goto(StmtGoto *goto_, int tab)
 static void stmt_print_compound(StmtCompound *compound, int tab, bool locs)
 {
     printf("%*scompound {\n", tab, "");
-    for (ListNode *curr = compound->items.head; curr; curr = curr->next) {
-        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
-        switch (blki->tag) {
-            case BI_DECLARATION:    decl_print_declaration(blki->decl, tab + 2, locs); break;
-            case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs); break;
-        }
-    }
+    ast_print_blockitem_list(compound->items, tab + 2, locs);
     printf("%*s}\n", tab, "");
 }
 
@@ -992,16 +1084,6 @@ static void stmt_print_recurse(Statement *stmt, int tab, bool locs)
 }
 
 //
-// Print an entire AST program.
-//
-static void ast_print_program(AstProgram *prog, int tab, bool locs)
-{
-    printf("%*sprogram() {\n", tab, "");
-    ast_print_recurse(prog->func, tab + 2, locs);
-    printf("%*s}\n", tab, "");
-}
-
-//
 // Print a block (list of BlockItem's).
 //
 static void ast_print_blockitem_list(List block, int tab, bool locs)
@@ -1010,35 +1092,8 @@ static void ast_print_blockitem_list(List block, int tab, bool locs)
         BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
         switch (blki->tag) {
             case BI_DECLARATION:    decl_print_declaration(blki->decl, tab + 2, locs); break;
-            case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs);
+            case BI_STATEMENT:      stmt_print_recurse(blki->stmt, tab + 2, locs); break;
         }
-    }
-}
-
-//
-// Print an AST function.
-//
-static void ast_print_function(AstFunction *func, int tab, bool locs)
-{
-    printf("%*sfunction(int, %s) {\n", tab, "", func->name);
-    ast_print_blockitem_list(func->stmts, tab, locs);
-    printf("%*s}\n", tab, "");
-}
-
-//
-// Recursively print an AST, starting at indent `tab`.
-//
-static void ast_print_recurse(AstNode *ast, int tab, bool locs)
-{
-    if (locs) {
-        char *loc = fileline_describe(&ast->loc);
-        printf("%*s/* %s */\n", tab, "", loc);
-        safe_free(loc);
-    }
-
-    switch (ast->tag) {
-        case AST_PROGRAM:   ast_print_program(&ast->prog, tab, locs); break;
-        case AST_FUNCTION:  ast_print_function(&ast->func, tab, locs); break;
     }
 }
 
@@ -1046,7 +1101,12 @@ static void ast_print_recurse(AstNode *ast, int tab, bool locs)
 // Recursively print an AST. If `locs` is true, also print the file/line
 // location of each node.
 //
-void ast_print(AstNode *ast, bool locs)
+void ast_print(AstProgram *prog, bool locs)
 {
-    ast_print_recurse(ast, 0, locs);
+    printf("program() {\n");
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
+        decl_print_declaration(decl, 2, locs);
+    }
+    printf("}\n");
 }

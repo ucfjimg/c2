@@ -4,4 +4,4 @@
 
 #include <stdio.h>
 
-extern void emitcode(FILE *out, AsmNode *node);
+extern void emitcode(FILE *out, AsmNode *prog);

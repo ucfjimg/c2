@@ -208,11 +208,11 @@ static void ast_validate_statement(GotoState *state, Statement *stmt)
 //
 // Validate all gotos and labels in a function.
 //
-static void ast_goto_function(AstFunction *func)
+static void ast_goto_function(DeclFunction *func)
 {
     GotoState *state = goto_state_alloc();
 
-    ast_validate_block(state, func->stmts);
+    ast_validate_block(state, func->body);
 
     //
     // Check to see if there are any undefined entries in the hash table.
@@ -234,9 +234,14 @@ static void ast_goto_function(AstFunction *func)
 // - labels must not be multiply defined in the same function.
 // - labels referenced by goto must exist in the same function.
 //
-void ast_validate_goto(AstNode *ast)
+void ast_validate_goto(AstProgram *prog)
 {
-    ICE_ASSERT(ast->tag == AST_PROGRAM);
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
 
-    ast_goto_function(&ast->prog.func->func);
+        switch (decl->tag) {
+            case DECL_FUNCTION: ast_goto_function(&decl->func); break;
+            case DECL_VARIABLE: break;
+        }
+    }
 }

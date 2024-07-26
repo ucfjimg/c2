@@ -219,5 +219,8 @@ void asm_fix_operands(AsmNode *prog)
 {
     ICE_ASSERT(prog->tag == ASM_PROG);
 
-    asm_fixop_func(prog->prog.func);
+    for (ListNode *curr = prog->prog.funcs.head; curr; curr = curr->next) {
+        AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
+        asm_fixop_func(func);
+    }
 }

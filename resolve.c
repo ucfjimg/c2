@@ -91,26 +91,42 @@ static char *ast_unique_varname(char *name)
 }
 
 //
+// Resolve a single variable, by name, in the current scope. If the name is
+// already declared, report an error. In all cases, return the mapped, unique
+// name for the variable as an allocated string.
+//
+static char *ast_resolve_name(ResolveState *state, char *name, FileLine loc)
+{
+    VarMapNode *mapnode = restab_get(state, name);
+    if (mapnode->new_name && mapnode->from_curr_scope) {
+        err_report(EC_ERROR, &loc, "variable `%s` has already been declared.", name);
+    } else {
+        safe_free(mapnode->new_name);
+        mapnode->new_name = ast_unique_varname(name);
+        mapnode->from_curr_scope = true;
+    }
+
+    return safe_strdup(mapnode->new_name);
+}
+
+//
 // Check a declaration to see if duplicates another declaration in this scope;
 // if so, report an error. Otherwise, generate a new unique name for the 
 // declaration.
 //
 static void ast_resolve_declaration(ResolveState *state, Declaration *decl)
 {
-    VarMapNode *mapnode = restab_get(state, decl->name);
-    if (mapnode->new_name && mapnode->from_curr_scope) {
-        err_report(EC_ERROR, &decl->loc, "variable `%s` has already been declared.", decl->name);
-    } else {
-        safe_free(mapnode->new_name);
-        mapnode->new_name = ast_unique_varname(decl->name);
-        mapnode->from_curr_scope = true;
+    if (decl->tag == DECL_FUNCTION) {
+        ICE_NYI("resolve::DECL_FUNCTION");
     }
 
-    safe_free(decl->name);
-    decl->name = safe_strdup(mapnode->new_name);
+    char *new_name = ast_resolve_name(state, decl->var.name, decl->loc);
 
-    if (decl->init) {
-        ast_resolve_expression(state, decl->init);
+    safe_free(decl->var.name);
+    decl->var.name = safe_strdup(new_name);
+
+    if (decl->var.init) {
+        ast_resolve_expression(state, decl->var.init);
     }
 }
 
@@ -178,6 +194,17 @@ static void ast_resolve_assign_exp(ResolveState *state, ExpAssignment *assign)
 }
 
 //
+// Resolve variables in a function call argument list.
+//
+static void ast_resolve_function_call(ResolveState *state, ExpFunctionCall *call)
+{
+    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
+        Expression *arg = CONTAINER_OF(curr, Expression, list);
+        ast_resolve_expression(state, arg);
+    }
+}
+
+//
 // Resolve variable references in an expression.
 //
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
@@ -188,6 +215,7 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_UNARY:         ast_resolve_unary_exp(state, &exp->unary); break;
         case EXP_CONDITIONAL:   ast_resolve_conditional_exp(state, &exp->conditional); break;
         case EXP_ASSIGNMENT:    ast_resolve_assign_exp(state, &exp->assignment); break;
+        case EXP_FUNCTION_CALL: ast_resolve_function_call(state, &exp->call); break;
         case EXP_INT:           break;
     }
 }
@@ -349,9 +377,36 @@ static void ast_resolve_statement(ResolveState *state, Statement *stmt)
 //
 // Resolve variables for one function.
 //
-static void ast_resolve_function(ResolveState *state, AstFunction *func)
+static void ast_resolve_function(Declaration *decl)
 {
-    ast_resolve_block(state, func->stmts);
+    ICE_ASSERT(decl->tag == DECL_FUNCTION);
+
+    DeclFunction *func = &decl->func;
+
+    ResolveState state;
+    restab_init(&state);
+
+    //
+    // Function parameters are in their own scope.
+    //
+    for (ListNode *curr = func->parms.head; curr; curr = curr->next) {
+        FuncParameter *param = CONTAINER_OF(curr, FuncParameter, list);
+        char *new_name = ast_resolve_name(&state, param->name, decl->loc);
+
+        safe_free(param->name);
+        param->name = new_name;
+    }
+
+    //
+    // New scope for function body.
+    //
+    ResolveState bodystate;
+    restab_new_scope(&state, &bodystate);
+
+    ast_resolve_block(&bodystate, func->body);
+
+    restab_free(&bodystate);
+    restab_free(&state);
 }
 
 //
@@ -361,12 +416,13 @@ static void ast_resolve_function(ResolveState *state, AstFunction *func)
 //   - variables are not declared more than once in the same scope
 // - rename variables to unique names within the entire program
 //
-void ast_resolve(AstNode *ast)
+void ast_resolve(AstProgram *prog)
 {
-    ICE_ASSERT(ast->tag == AST_PROGRAM);
-
-    ResolveState state;
-    restab_init(&state);
-    ast_resolve_function(&state, &ast->prog.func->func);
-    restab_free(&state);
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
+        switch (decl->tag) {
+            case DECL_FUNCTION: ast_resolve_function(decl); break;
+            case DECL_VARIABLE: ICE_NYI("ast_resolve::global_variables");
+        }
+    } 
 }

@@ -276,6 +276,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_BINARY:        return tcg_binary_op(state, exp);
         case EXP_CONDITIONAL:   return tcg_conditional(state, exp);
         case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
+        case EXP_FUNCTION_CALL: ICE_NYI("tacgen::EXP_FUNCTION_CALL"); break; 
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -295,10 +296,9 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
 //
 static void tcg_declaration(TacState *state, Declaration *decl)
 {
-    if (decl->init) {
-        TacNode *initval = tcg_expression(state, decl->init);
-
-        TacNode *declvar = tac_var(decl->name, decl->loc);
+    if (decl->tag == DECL_VARIABLE && decl->var.init) {
+        TacNode *initval = tcg_expression(state, decl->var.init);
+        TacNode *declvar = tac_var(decl->var.name, decl->loc);
         tcg_append(state, tac_copy(initval, declvar, decl->loc));
     }
 }
@@ -619,16 +619,16 @@ static void tcg_statement(TacState *state, Statement *stmt)
 //
 // Generate TAC for a function definition.
 //
-static TacNode *tcg_funcdef(TacState *state, AstNode *func)
+static TacNode *tcg_funcdef(Declaration *func)
 {
     ICE_ASSERT(func);
-    ICE_ASSERT(func->tag == AST_FUNCTION);
-
+    ICE_ASSERT(func->tag == DECL_FUNCTION);
+    
     FileLine loc = func->loc;
 
     TacState funcstate;
     list_clear(&funcstate.code);
-    tcg_block(&funcstate, func->func.stmts);
+    tcg_block(&funcstate, func->func.body);
 
     //
     // Put a `return 0;` at the end of all functions. This gives the 
@@ -648,18 +648,21 @@ static TacNode *tcg_funcdef(TacState *state, AstNode *func)
 //
 // Top level entry to generate a TAC program from an AST.
 //
-TacNode *tcg_gen(AstNode *ast)
+TacNode *tcg_gen(AstProgram *prog)
 {
-    ICE_ASSERT(ast != NULL);
-    ICE_ASSERT(ast->tag == AST_PROGRAM);
+    List funcs;
+    list_clear(&funcs);
 
-    TacState state;
+    for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
+        Declaration *decl = CONTAINER_OF(curr, Declaration, list);
 
-    list_clear(&state.code);
+        if (decl->tag != DECL_FUNCTION) {
+            ICE_NYI("tcg_gen::global_variables");
+        } else {
+            TacNode *func = tcg_funcdef(decl);
+            list_push_back(&funcs, &func->list);
+        }
+    }
 
-    FileLine loc = ast->loc;
-
-    TacNode *funcdef = tcg_funcdef(&state, ast->prog.func);
-
-    return tac_program(funcdef, loc);
+    return tac_program(funcs, prog->loc);
 }

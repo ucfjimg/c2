@@ -146,13 +146,13 @@ void aoper_print(AsmOperand *op)
 //
 // Construct an empty assembly program.
 //
-AsmNode *asm_prog(FileLine loc)
+AsmNode *asm_prog(List funcs, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_PROG;
     node->loc = loc;
-    node->prog.func = NULL;
+    node->prog.funcs = funcs;
 
     return node;
 }
@@ -350,7 +350,12 @@ AsmNode *asm_stack_reserve(int bytes, FileLine loc)
 //
 static void asm_prog_free(AsmProgram *prog)
 {
-    asm_free(prog->func);
+    for (ListNode *curr = prog->funcs.head; curr; ) {
+        ListNode *next = curr->next;
+        AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
+        asm_free(func);
+        curr = next;
+    }
 }
 
 //
@@ -477,7 +482,10 @@ void asm_free(AsmNode *node)
 static void asm_prog_print(AsmProgram *prog, FileLine *loc, bool locs)
 {
     printf("#\n# program\n#\n");
-    asm_print_recurse(prog->func, loc, locs);
+    for (ListNode *curr = prog->funcs.head; curr; curr = curr->next) {
+        AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
+        asm_print_recurse(func, &func->loc, locs);
+    }
 }
 
 //
