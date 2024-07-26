@@ -16,9 +16,11 @@
 #include "parser.h"
 #include "resolve.h"
 #include "safemem.h"
+#include "symtab.h"
 #include "switch.h"
 #include "tacgen.h"
 #include "token.h"
+#include "typecheck.h"
 
 typedef enum {
     STAGE_LEX = 256,
@@ -226,6 +228,7 @@ static int compile(Args *args)
     AstProgram *ast = NULL;
     AsmNode *asmcode = NULL;
     TacNode *taccode = NULL;
+    SymbolTable *stab = NULL;
     FILE *asmfile;
 
     Lexer *lex = lexer_open(args->prefile);
@@ -258,6 +261,9 @@ static int compile(Args *args)
     ast_validate_goto(ast);
     ast_label_loops(ast);
     ast_validate_switch(ast);
+
+    stab = stab_alloc();
+    ast_typecheck(ast, stab);
 
     if (err_has_errors()) {
         status = 1;
@@ -311,6 +317,7 @@ static int compile(Args *args)
     fclose(asmfile);
 
 done:
+    stab_free(stab);
     tac_free(taccode);
     asm_free(asmcode);
     ast_free_program(ast);

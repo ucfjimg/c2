@@ -5,5 +5,10 @@
     "for-init-not-function.c": "parse:fail",
     "undeclared.c": "validate:fail",
     "dup-param-names.c": "validate:fail",
-    "local-dup-of-param.c": "validate:fail"
+    "local-dup-of-param.c": "validate:fail",
+    "call-an-int.c": "validate:fail",
+    "func-as-var.c": "validate:fail",
+    "func-misdeclared.c": "validate:fail",
+    "func-mutiple-def.c": "validate:fail",
+    "redecl-of-empty-fn.c": "validate:fail"
 }

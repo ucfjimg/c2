@@ -23,10 +23,13 @@ add_executable(cc
     resolve.c
     safemem.c
     strbuilder.c
+    symtab.c
     switch.c
     tacgen.c
     tacnode.c
     token.c
+    type.c
+    typecheck.c
 )
 
 target_compile_options(cc PRIVATE -Wall -Werror)

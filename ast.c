@@ -233,7 +233,7 @@ static void func_parm_free(FuncParameter *parm)
 //
 // Constructor for a function declaration.
 //
-Declaration *decl_function(char *name, List parms, List body, FileLine loc)
+Declaration *decl_function(char *name, List parms, List body, bool has_body, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
@@ -242,6 +242,7 @@ Declaration *decl_function(char *name, List parms, List body, FileLine loc)
     decl->func.name = safe_strdup(name);
     decl->func.parms = parms;
     decl->func.body = body;
+    decl->func.has_body = has_body;
 
     return decl;
 }

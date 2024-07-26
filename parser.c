@@ -451,7 +451,6 @@ static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc
         } else {
             parse_next_token(parser);
         }
-
     } else {
         while (true) {
             if (parser->tok.type != TOK_INT) {
@@ -493,11 +492,13 @@ static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc
         }
     }
 
+    bool has_body = false;
     List body;
     list_clear(&body);
-
     if (parser->tok.type == '{') {
         parse_next_token(parser);
+        has_body = true;
+
         body = parse_block(parser);
 
         if (parser->tok.type != '}') {
@@ -515,7 +516,7 @@ static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc
         err_report(EC_ERROR, &loc, "`()` is not valid for a function with no parameters; use `(void)`.");
     }
 
-    return decl_function(name, parms, body, loc);    
+    return decl_function(name, parms, body, has_body, loc);    
 }
 
 //

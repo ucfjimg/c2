@@ -411,11 +411,12 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
         if (mapnode->from_curr_scope && !mapnode->has_linkage) {
             err_report(EC_ERROR, &decl->loc, "duplicate declaration for function `%s`.\n", func->name);
         } 
-    } else {
-        mapnode->new_name = safe_strdup(func->name);
-        mapnode->from_curr_scope = true;
-        mapnode->has_linkage = true;
-    }
+    } 
+    
+    safe_free(mapnode->new_name);
+    mapnode->new_name = safe_strdup(func->name);
+    mapnode->from_curr_scope = true;
+    mapnode->has_linkage = true;
 
     ResolveState newstate;
     restab_new_scope(state, &newstate);

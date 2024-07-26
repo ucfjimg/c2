@@ -77,9 +77,9 @@ void list_append(List *list, ListNode *head)
 //
 // Return the number of elements in a list
 //
-long list_count(List *list)
+int list_count(List *list)
 {
-    long count = 0;
+    int count = 0;
     ListNode *node;
 
     for (node = list->head; node; node = node->next) {

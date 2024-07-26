@@ -105,6 +105,7 @@ typedef struct {
     char *name;                 // function name
     List parms;                 // list <FuncParameter> of parameters
     List body;                  // if a definition, List <BlockItem>
+    bool has_body;              // declaration is also a definition
 } DeclFunction;
 
 struct Declaration {
@@ -119,7 +120,7 @@ struct Declaration {
 };
 
 extern Declaration *decl_variable(char *name, Expression *init, FileLine loc);
-extern Declaration *decl_function(char *name, List parms, List body, FileLine loc);
+extern Declaration *decl_function(char *name, List parms, List body, bool has_body, FileLine loc);
 extern void declaration_free(Declaration *decl);
 
 //

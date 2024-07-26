@@ -2,5 +2,7 @@
     "arglist.c": "validate:success",
     "two-functions.c": "validate:success",
     "call-no-args.c": "validate:success",
-    "func-decl-in-func.c": "validate:success"
+    "func-decl-in-func.c": "validate:success",
+    "shadow-func.c": "validate:success",
+    "func-shadows-var.c": "validate:success"
 }
