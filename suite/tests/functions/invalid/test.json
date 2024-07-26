@@ -2,5 +2,8 @@
     "empty-parameter-list.c": "validate:fail",
     "no-parameter-names.c": "validate:fail",
     "void-with-other-params.c": "validate:fail",
-    "for-init-not-function.c": "parse:fail"
+    "for-init-not-function.c": "parse:fail",
+    "undeclared.c": "validate:fail",
+    "dup-param-names.c": "validate:fail",
+    "local-dup-of-param.c": "validate:fail"
 }
