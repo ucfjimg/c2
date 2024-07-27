@@ -23,7 +23,6 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp);
 static void ast_resolve_statement(ResolveState *state, Statement *stmt);
 static void ast_resolve_function(ResolveState *state, Declaration *decl, bool global);
 
-
 //
 // Allocate a hash node for the resolve table.
 //
@@ -412,7 +411,7 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
             err_report(EC_ERROR, &decl->loc, "duplicate declaration for function `%s`.\n", func->name);
         } 
     } 
-    
+
     safe_free(mapnode->new_name);
     mapnode->new_name = safe_strdup(func->name);
     mapnode->from_curr_scope = true;

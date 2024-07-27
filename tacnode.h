@@ -20,6 +20,7 @@ typedef enum {
     TAC_BINARY,
     TAC_CONST_INT,
     TAC_VAR,
+    TAC_FUNCTION_CALL,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -32,11 +33,20 @@ typedef struct {
 } TacProgram;
 
 //
+// A function parameter.
+//
+typedef struct {
+    ListNode list;
+    char *name;                     // name of parameter
+} TacFuncParam;
+
+//
 // A function definition.
 //
 typedef struct {
     char *name;                     // name
-    List body;                      // list<TacNode*> of instructions
+    List parms;                     // List<TacFuncParam> of parameters
+    List body;                      // list<TacNode> of instructions
 } TacFuncDef;
 
 //
@@ -118,6 +128,15 @@ typedef struct {
 } TacVar;
 
 //
+// A function call
+//
+typedef struct {
+    char *name;                     // name of function to call
+    List args;                      // list <TacNode> of arguments
+    TacNode *dst;                   // where to save result
+} TacFunctionCall;
+
+//
 // A TAC node -- discriminated union based on `tag`
 //
 typedef struct TacNode {
@@ -138,11 +157,12 @@ typedef struct TacNode {
         TacBinary       binary;
         TacConstInt     constint;
         TacVar          var;
+        TacFunctionCall call;
     };
 } TacNode;
 
 extern TacNode *tac_program(List decls, FileLine loc);
-extern TacNode *tac_function_def(char *name, List body, FileLine loc);
+extern TacNode *tac_function_def(char *name, List parms, List body, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_jump(char *target, FileLine loc);
@@ -153,6 +173,7 @@ extern TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc);
 extern TacNode *tac_const_int(unsigned long val, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
+extern TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

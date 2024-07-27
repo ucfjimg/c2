@@ -44,12 +44,22 @@ static void tac_program_free(TacProgram *prog)
 //
 // Constructor for a TAC function definition.
 //
-TacNode *tac_function_def(char *name, List body, FileLine loc)
+TacNode *tac_function_def(char *name, List parms, List body, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_FUNCDEF, loc);
     tac->funcdef.name = safe_strdup(name);
+    tac->funcdef.parms = parms;
     tac->funcdef.body = body;
     return tac;
+}
+
+//
+// Free a TAC function parameter.
+//
+static void tac_func_parm_free(TacFuncParam *parm)
+{
+    safe_free(parm->name);
+    safe_free(parm);
 }
 
 //
@@ -59,6 +69,15 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 {
     safe_free(funcdef->name);
 
+    for (ListNode *curr = funcdef->parms.head; curr; ) {
+        ListNode *next = curr->next;
+
+        TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
+        tac_func_parm_free(parm);
+
+        curr = next;
+    }
+
     for (ListNode *curr = funcdef->body.head; curr; ) {
         ListNode *next = curr->next;
 
@@ -67,6 +86,7 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 
         curr = next;
     }
+
 }
 
 //
@@ -272,6 +292,46 @@ TacNode *tac_var(char *name, FileLine loc)
 }
 
 //
+// Free a TAC variable.
+//
+static void tac_var_free(TacVar *var)
+{
+    safe_free(var->name);
+}
+
+//
+// Constructor for a TAC function call.
+//
+TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_FUNCTION_CALL, loc);
+
+    tac->call.args = args;
+    tac->call.dst = dst;
+
+    return tac;
+}
+
+//
+// Free a TAC function call.
+//
+static void tac_function_call_free(TacFunctionCall *call)
+{
+    safe_free(call->name);
+
+    for (ListNode *curr = call->args.head; curr; ) {
+        ListNode *next = curr->next;
+
+        TacNode *arg = CONTAINER_OF(curr, TacNode, list);
+        tac_free(arg);
+
+        curr = next;
+    }
+
+    tac_free(call->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST_INT.
 //
@@ -290,14 +350,6 @@ TacNode *tac_clone_operand(TacNode *tac)
 
 
 //
-// Free a TAC variable.
-//
-static void tac_var_free(TacVar *var)
-{
-    safe_free(var->name);
-}
-
-//
 // Free a TAC tree.
 //
 void tac_free(TacNode *tac)
@@ -306,6 +358,7 @@ void tac_free(TacNode *tac)
         switch (tac->tag) {
             case TAC_PROGRAM:       tac_program_free(&tac->prog); break;
             case TAC_FUNCDEF:       tac_function_def_free(&tac->funcdef); break;
+            case TAC_CONST_INT:     break;
             case TAC_RETURN:        tac_return_free(&tac->ret); break;
             case TAC_COPY:          tac_copy_free(&tac->copy); break;
             case TAC_JUMP:          tac_jump_free(&tac->jump); break;
@@ -315,9 +368,7 @@ void tac_free(TacNode *tac)
             case TAC_UNARY:         tac_unary_free(&tac->unary); break;
             case TAC_BINARY:        tac_binary_free(&tac->binary); break;
             case TAC_VAR:           tac_var_free(&tac->var); break;
-
-        default:
-            break;
+            case TAC_FUNCTION_CALL: tac_function_call_free(&tac->call); break;
         }
 
         safe_free(tac);
@@ -352,7 +403,17 @@ static void tac_print_program(TacProgram *prog, int tab, bool locs)
 //
 static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
 {
-    printf("%*sfunction(%s) {\n", tab, "", funcdef->name);
+    printf("%*sfunction(%s) (", tab, "", funcdef->name);
+
+    for (ListNode *curr = funcdef->parms.head; curr; curr = curr->next) {
+        TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
+        printf("%s", parm->name);
+        if (curr->next) {
+            printf(", ");
+        }
+    }
+
+    printf(") {\n");
 
     for (ListNode *node = funcdef->body.head; node; node = node->next) {
         TacNode *tac = CONTAINER_OF(node, TacNode, list);
@@ -463,6 +524,27 @@ static void tac_print_var(TacVar *var, int tab)
 }
 
 //
+// Print a TAC function call.
+//
+static void tac_print_function_call(TacFunctionCall *call, int tab, bool locs)
+{
+    printf("%*scall(%s) {\n", tab, "", call->name);
+
+    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
+        TacNode *arg = CONTAINER_OF(curr, TacNode, list);
+        tac_print_recurse(arg, tab + 2, locs);
+    
+        if (curr->next) {
+            printf("%*s,", tab, "");
+        }
+    }
+
+    printf("%*s} -> {\n", tab, "");
+    tac_print_recurse(call->dst, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -483,6 +565,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_BINARY:        tac_print_binary(&tac->binary, tab, locs); break;
         case TAC_CONST_INT:     tac_print_const_int(&tac->constint, tab); break;
         case TAC_VAR:           tac_print_var(&tac->var, tab); break;
+        case TAC_FUNCTION_CALL: tac_print_function_call(&tac->call, tab, locs); break;
 
         default:
             printf("%*s<invalid-TAC-tag>();\n", tab, "");

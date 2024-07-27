@@ -265,7 +265,31 @@ struct TacNode *tcg_assignment(TacState *state, Expression *exp)
 }
 
 //
-// Generate TAC for an expression
+// Generate TAC for a function call.
+//
+static TacNode *tcg_function_call(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_FUNCTION_CALL);
+    ExpFunctionCall *call = &exp->call;
+
+    List args;
+    list_clear(&args);
+
+    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
+        Expression *arg = CONTAINER_OF(curr, Expression, list);
+        TacNode *tacarg = tcg_expression(state, arg);
+        list_push_back(&args, &tacarg->list);
+    }
+
+    TacNode *result = tcg_temporary(exp->loc);
+
+    tcg_append(state, tac_function_call(call->name, args, result, exp->loc));
+
+    return result;
+}
+
+//
+// Generate TAC for an expression.
 //
 static TacNode *tcg_expression(TacState *state, Expression *exp)
 {
@@ -276,7 +300,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_BINARY:        return tcg_binary_op(state, exp);
         case EXP_CONDITIONAL:   return tcg_conditional(state, exp);
         case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
-        case EXP_FUNCTION_CALL: ICE_NYI("tacgen::EXP_FUNCTION_CALL"); break; 
+        case EXP_FUNCTION_CALL: return tcg_function_call(state, exp); break; 
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -626,6 +650,18 @@ static TacNode *tcg_funcdef(Declaration *func)
     
     FileLine loc = func->loc;
 
+    List parms;
+    list_clear(&parms);
+
+    for (ListNode *curr = func->func.parms.head; curr; curr = curr->next) {
+        FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
+
+        TacFuncParam * tparm = safe_zalloc(sizeof(TacFuncParam));
+        tparm->name = safe_strdup(parm->name);
+
+        list_push_back(&parms, &tparm->list);
+    }
+
     TacState funcstate;
     list_clear(&funcstate.code);
     tcg_block(&funcstate, func->func.body);
@@ -642,7 +678,7 @@ static TacNode *tcg_funcdef(Declaration *func)
         )
     );
 
-    return tac_function_def(func->func.name, funcstate.code, loc);
+    return tac_function_def(func->func.name, parms, funcstate.code, loc);
 }
 
 //
