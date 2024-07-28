@@ -9,6 +9,7 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc);
 typedef enum {
     OS_BYTE = 1,
     OS_DWORD = 4,
+    OS_QWORD = 8,
 } OperandSize;
 
 //
@@ -16,11 +17,27 @@ typedef enum {
 //
 static void emit_reg(FILE *out, Register reg, OperandSize os)
 {
-    if (os == OS_DWORD) {
+    if (os == OS_QWORD) {
+        switch (reg) {
+            case REG_RAX: fprintf(out, "%%rax"); break;
+            case REG_RCX: fprintf(out, "%%rcx"); break;
+            case REG_RDX: fprintf(out, "%%rdx"); break;
+            case REG_RDI: fprintf(out, "%%rdi"); break;
+            case REG_RSI: fprintf(out, "%%rsi"); break;
+            case REG_R8:  fprintf(out, "%%r8"); break;
+            case REG_R9:  fprintf(out, "%%r9"); break;
+            case REG_R10: fprintf(out, "%%r10"); break;
+            case REG_R11: fprintf(out, "%%r11"); break;
+        }
+    } else if (os == OS_DWORD) {
         switch (reg) {
             case REG_RAX: fprintf(out, "%%eax"); break;
             case REG_RCX: fprintf(out, "%%ecx"); break;
             case REG_RDX: fprintf(out, "%%edx"); break;
+            case REG_RDI: fprintf(out, "%%edi"); break;
+            case REG_RSI: fprintf(out, "%%esi"); break;
+            case REG_R8:  fprintf(out, "%%r8d"); break;
+            case REG_R9:  fprintf(out, "%%r9d"); break;
             case REG_R10: fprintf(out, "%%r10d"); break;
             case REG_R11: fprintf(out, "%%r11d"); break;
         }
@@ -29,6 +46,10 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
             case REG_RAX: fprintf(out, "%%al"); break;
             case REG_RCX: fprintf(out, "%%cl"); break;
             case REG_RDX: fprintf(out, "%%dl"); break;
+            case REG_RDI: fprintf(out, "%%dil"); break;
+            case REG_RSI: fprintf(out, "%%sil"); break;
+            case REG_R8:  fprintf(out, "%%r8b"); break;
+            case REG_R9:  fprintf(out, "%%r9b"); break;
             case REG_R10: fprintf(out, "%%r10b"); break;
             case REG_R11: fprintf(out, "%%r11b"); break;
         }
@@ -236,6 +257,37 @@ static void emit_stack_reserve(FILE *out, AsmStackReserve *reserve)
 }
 
 //
+// Emit code to free locals on the stack.
+//
+static void emit_stack_free(FILE *out, AsmStackFree *reserve)
+{
+    fprintf(out, "        addq $%d, %%rsp\n", reserve->bytes);
+}
+
+//
+// Emit a push.
+//
+static void emit_push(FILE *out, AsmPush *push)
+{
+    fprintf(out, "        push ");
+    emit_asmoper(out, push->value, OS_QWORD);
+    fprintf(out, "\n");
+}
+
+//
+// Emit a call.
+//
+static void emit_call(FILE *out, AsmCall *call)
+{
+#ifdef __APPLE__
+    fprintf(out, "        call _%s\n", call->id);
+#else
+    fprintf(out, "        call %s\n", call->id);
+#endif
+}
+
+
+//
 // Emit a function.
 //
 static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
@@ -293,6 +345,7 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         case ASM_PROG:          emit_program(out, &node->prog); break;
         case ASM_FUNC:          emit_function(out, &node->func, loc); break;
         case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
+        case ASM_STACK_FREE:    emit_stack_free(out, &node->stack_free); break;
         case ASM_MOV:           emit_mov(out, &node->mov); break;
         case ASM_UNARY:         emit_unary(out, &node->unary); break;
         case ASM_BINARY:        emit_binary(out, &node->binary); break;
@@ -304,6 +357,8 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         case ASM_RET:           emit_ret(out); break;
         case ASM_CDQ:           emit_cdq(out); break;
         case ASM_IDIV:          emit_idiv(out, &node->idiv); break;
+        case ASM_PUSH:          emit_push(out, &node->push); break;
+        case ASM_CALL:          emit_call(out, &node->call); break;
     }
 }
 

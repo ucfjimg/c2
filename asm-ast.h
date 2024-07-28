@@ -10,6 +10,10 @@ typedef enum {
     REG_RAX,
     REG_RCX,
     REG_RDX,
+    REG_RDI,
+    REG_RSI,
+    REG_R8,
+    REG_R9,
     REG_R10,
     REG_R11,
 } Register;
@@ -68,6 +72,9 @@ typedef enum {
     ASM_SETCC,
     ASM_RET,
     ASM_STACK_RESERVE,
+    ASM_STACK_FREE,
+    ASM_PUSH,
+    ASM_CALL,
 } AsmNodeTag;
 
 typedef struct AsmNode AsmNode;
@@ -108,10 +115,6 @@ typedef struct {
 } AsmIdiv;
 
 typedef struct {
-    int bytes;              // number of bytes to reserve for local variables
-} AsmStackReserve;
-
-typedef struct {
     char *target;           // label to jump to
 } AsmJump;
 
@@ -128,6 +131,22 @@ typedef struct {
     AsmOperand *dst;        // value to set if cc is true
     AsmConditionCode cc;    // condition code to test
 } AsmSetCc;
+
+typedef struct {
+    int bytes;              // number of bytes to reserve for local variables
+} AsmStackReserve;
+
+typedef struct {
+    int bytes;              // number of bytes to pop off the stack
+} AsmStackFree;
+
+typedef struct {
+    AsmOperand *value;      // value to push onto the stack
+} AsmPush;
+
+typedef struct {
+    char *id;               // name of function to call
+} AsmCall;
 
 struct AsmNode {
     AsmNodeTag tag;         // discriminated union tag
@@ -147,6 +166,9 @@ struct AsmNode {
         AsmLabel label;                 // ASM_LABEL
         AsmSetCc setcc;                 // ASM_SETCC
         AsmStackReserve stack_reserve;  // ASM_STACK_RESERVE
+        AsmStackFree stack_free;        // ASM_STACK_FREE
+        AsmPush push;                   // ASM_PUSH
+        AsmCall call;                   // ASM_CALL
     };
 };
 
@@ -164,6 +186,9 @@ extern AsmNode *asm_label(char *label, FileLine loc);
 extern AsmNode *asm_setcc(AsmOperand *dst, AsmConditionCode cc, FileLine loc);
 extern AsmNode *asm_ret(FileLine loc);
 extern AsmNode *asm_stack_reserve(int bytes, FileLine loc);
+extern AsmNode *asm_stack_free(int bytes, FileLine loc);
+extern AsmNode *asm_push(AsmOperand *value, FileLine loc);
+extern AsmNode *asm_call(char *id, FileLine loc);
 extern void asm_free(AsmNode *node);
 extern void asm_print(AsmNode *node, bool locs);
 

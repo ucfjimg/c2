@@ -152,11 +152,22 @@ static void asm_alloc_setcc(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a push instruction.
+//
+static void asm_alloc_push(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_PUSH);
+
+    asm_alloc_operand(vartab, &instr->push.value);
+}
+
+//
 // Apply pseudoregister replacement to an instruction.
 //
 static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
 {
     switch (instr->tag) {
+        case ASM_PROG:          break;
         case ASM_MOV:           asm_alloc_mov(vartab, instr); break;
         case ASM_UNARY:         asm_alloc_unary(vartab, instr); break;
         case ASM_BINARY:        asm_alloc_binary(vartab, instr); break;
@@ -169,9 +180,10 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_SETCC:         asm_alloc_setcc(vartab, instr); break;
         case ASM_RET:           break;
         case ASM_STACK_RESERVE: break;
-
-        default:
-            ICE_ASSERT(((void)"invalid asm-ast node in asm_alloc_instr", false));
+        case ASM_STACK_FREE:    break;
+        case ASM_FUNC:          break;
+        case ASM_PUSH:          asm_alloc_push(vartab, instr); break;
+        case ASM_CALL:          break;
     }
 }
 

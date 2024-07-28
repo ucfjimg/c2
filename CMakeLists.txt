@@ -7,6 +7,7 @@ add_executable(cc
     allocvars.c
     asm-ast.c
     ast.c
+    bitmath.c
     codegen.c
     emitcode.c
     errors.c

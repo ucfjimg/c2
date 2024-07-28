@@ -1,6 +1,7 @@
 #include "fixoperands.h"
 
 #include "asm-ast.h"
+#include "bitmath.h"
 #include "codegen.h"
 #include "ice.h"
 
@@ -178,7 +179,8 @@ static void asm_fixop_func(AsmNode *func)
     // If the function requires locals, reserve space for them.
     //
     if (func->func.locals_size) {
-        AsmNode *reserve = asm_stack_reserve(func->func.locals_size, func->loc);
+        int reserve_bytes = align_up(func->func.locals_size, 16);
+        AsmNode *reserve = asm_stack_reserve(reserve_bytes, func->loc);
         list_push_front(&newcode, &reserve->list);
     }
 
@@ -193,7 +195,19 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
             case ASM_CMP:       asm_fixop_cmp(&newcode, node); break;
 
-            default:
+            case ASM_PUSH:
+            case ASM_CALL:
+            case ASM_PROG:
+            case ASM_FUNC:
+            case ASM_UNARY:
+            case ASM_CDQ:
+            case ASM_JUMP:
+            case ASM_JUMPCC:
+            case ASM_LABEL:
+            case ASM_SETCC:
+            case ASM_RET:
+            case ASM_STACK_RESERVE:
+            case ASM_STACK_FREE:
                 //
                 // instructions which need no modification
                 //

@@ -8,10 +8,21 @@ typedef struct {
     List code;
 } CodegenState;
 
+static Register int_arg_regs[] =
+{
+    REG_RDI,
+    REG_RSI,
+    REG_RDX,
+    REG_RCX,
+    REG_R8,
+    REG_R9,
+};
+static const int int_arg_reg_count = sizeof(int_arg_regs) / sizeof(int_arg_regs[0]);
+
 //
 // Create a nested state.
 //
-CodegenState nested_state(CodegenState *outer)
+static CodegenState nested_state(CodegenState *outer)
 {
     CodegenState nested = *outer;
     return nested;
@@ -20,7 +31,7 @@ CodegenState nested_state(CodegenState *outer)
 //
 // Push an assembly instruction onto a code list.
 //
-void codegen_push_instr(CodegenState *state, AsmNode *instr)
+static void codegen_push_instr(CodegenState *state, AsmNode *instr)
 {
     list_push_back(&state->code, &instr->list);
 }
@@ -30,7 +41,7 @@ static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac);
 //
 // Generate code for a const int.
 //
-AsmOperand *codegen_const_int(CodegenState *state, TacNode *tac)
+static AsmOperand *codegen_const_int(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_CONST_INT);
     return aoper_imm(tac->constint.val);
@@ -39,7 +50,7 @@ AsmOperand *codegen_const_int(CodegenState *state, TacNode *tac)
 //
 // Generate code for a variable reference.
 //
-AsmOperand *codegen_var(CodegenState *state, TacNode *tac)
+static AsmOperand *codegen_var(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_VAR);
     return aoper_pseudoreg(tac->var.name);
@@ -50,7 +61,7 @@ AsmOperand *codegen_var(CodegenState *state, TacNode *tac)
 // will be appended to state->code, and an unreferenced operand
 // node containing the result location will be returned.
 //
-AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
+static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
 {
     switch (tac->tag) {
         case TAC_CONST_INT: return codegen_const_int(state, tac);
@@ -69,7 +80,7 @@ AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
 //
 // Generate code for a unary operator.
 //
-void codegen_unary(CodegenState *state, TacNode *tac)
+static void codegen_unary(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_UNARY);
 
@@ -92,7 +103,7 @@ void codegen_unary(CodegenState *state, TacNode *tac)
 //
 // Generate code for a relational operator.
 //
-void codegen_relational(CodegenState *state, TacNode *tac)
+static void codegen_relational(CodegenState *state, TacNode *tac)
 {
     AsmConditionCode cc = ACC_E;
 
@@ -120,7 +131,7 @@ void codegen_relational(CodegenState *state, TacNode *tac)
 //
 // Generate code for a binary operator.
 //
-void codegen_binary(CodegenState *state, TacNode *tac)
+static void codegen_binary(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_BINARY);
 
@@ -155,7 +166,7 @@ void codegen_binary(CodegenState *state, TacNode *tac)
 //
 // Generate code for a return instruction.
 //
-void codegen_return(CodegenState *state, TacNode *tac)
+static void codegen_return(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_RETURN);
 
@@ -168,7 +179,7 @@ void codegen_return(CodegenState *state, TacNode *tac)
 //
 // Generate code for a jump instruction.
 //
-void codegen_jump(CodegenState *state, TacNode *tac)
+static void codegen_jump(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_JUMP);
 
@@ -178,7 +189,7 @@ void codegen_jump(CodegenState *state, TacNode *tac)
 //
 // Generate code for a jump-on-zero instruction.
 //
-void codegen_jump_zero(CodegenState *state, TacNode *tac)
+static void codegen_jump_zero(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_JUMP_ZERO);
 
@@ -191,7 +202,7 @@ void codegen_jump_zero(CodegenState *state, TacNode *tac)
 //
 // Generate code for a jump-on-not-zero instruction.
 //
-void codegen_jump_not_zero(CodegenState *state, TacNode *tac)
+static void codegen_jump_not_zero(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_JUMP_NOT_ZERO);
 
@@ -204,7 +215,7 @@ void codegen_jump_not_zero(CodegenState *state, TacNode *tac)
 //
 // Generate code for a copy instruction.
 //
-void codegen_copy(CodegenState *state, TacNode *tac)
+static void codegen_copy(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_COPY);
 
@@ -217,11 +228,85 @@ void codegen_copy(CodegenState *state, TacNode *tac)
 //
 // Generate code for a label.
 //
-void codegen_label(CodegenState *state, TacNode *tac)
+static void codegen_label(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_LABEL);
 
     codegen_push_instr(state, asm_label(tac->label.name, tac->loc));
+}
+
+//
+// Generate code for a function call.
+//
+// The stack pointer on entry is guaranteed to be 16-byte aligned; it must
+// maintain this alignment at the call point.
+//
+// The calling convention takes the first 6 integer arguments in registers;
+// following arguments are pushed in reverse order on the stack. The caller
+// is responsible for stack cleanup.
+//
+static void codegen_function_call(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_FUNCTION_CALL);
+    TacFunctionCall *call = &tac->call;
+
+    int arg_count = list_count(&call->args);
+    int args_in_regs = arg_count < int_arg_reg_count ? arg_count : int_arg_reg_count;
+    int args_on_stack = arg_count - args_in_regs;
+
+    //
+    // We push 8-byte arguments on the stack, but the stack pointer must stay 
+    // 16-byte aligned; if there are an odd number of stack arguments, insert 
+    // 8 bytes of padding.
+    //
+    int stack_padding = (args_on_stack & 1) ? 8 : 0;
+    
+    if (stack_padding) {
+        codegen_push_instr(state, asm_stack_reserve(stack_padding, tac->loc));
+    }
+
+    //
+    // Load register arguments.
+    //
+    ListNode *curr = call->args.head;
+    for (int i = 0; i < args_in_regs; i++, curr = curr->next) {
+        Register arg_reg = int_arg_regs[i];
+        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
+        AsmOperand *arg = codegen_expression(state, tac_arg);
+        codegen_push_instr(state, asm_mov(arg, aoper_reg(arg_reg), tac->loc));
+    }
+
+    //
+    // Push stack args.
+    //
+    list_reverse(&call->args);
+
+    curr = call->args.head;
+    for (int i = 0; i < args_on_stack; i++, curr = curr->next) {
+        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
+        AsmOperand *arg = codegen_expression(state, tac_arg);
+        codegen_push_instr(state, asm_mov(arg, aoper_reg(REG_RAX), tac->loc));
+        codegen_push_instr(state, asm_push(aoper_reg(REG_RAX), tac->loc));
+    }
+
+    //
+    // Do the call
+    //
+    codegen_push_instr(state, asm_call(call->name, tac->loc));
+
+    //
+    // Clean up
+    //
+    int bytes_to_free = stack_padding + 8 * args_on_stack;
+    if (bytes_to_free) {
+        codegen_push_instr(state, asm_stack_free((bytes_to_free), tac->loc));
+    }
+
+    //
+    // Return value, if any, goes in RAX.
+    //
+    AsmOperand *result = codegen_expression(state, call->dst);
+    codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, tac->loc));
 }
 
 //
@@ -238,9 +323,12 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_JUMP_NOT_ZERO:     codegen_jump_not_zero(state, tac); break;
         case TAC_COPY:              codegen_copy(state, tac); break;
         case TAC_LABEL:             codegen_label(state, tac); break;
+        case TAC_FUNCTION_CALL:     codegen_function_call(state, tac); break;
 
-    default:
-        ICE_ASSERT(((void)"invalid TAC node in codegen_single", false));
+        case TAC_PROGRAM:           break;
+        case TAC_CONST_INT:         break;
+        case TAC_VAR:               break;
+        case TAC_FUNCDEF:           break;
     }
 }
 
@@ -250,10 +338,56 @@ static void codegen_single(CodegenState *state, TacNode *tac)
 static void codegen_funcdef(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_FUNCDEF);
+    TacFuncDef *func = &tac->funcdef;
 
     CodegenState funcstate = nested_state(state);
     list_clear(&funcstate.code);
 
+    //
+    // Move parameters into local pseudoregisters.
+    //
+    int param_count = list_count(&func->parms);
+    int params_in_regs = param_count > int_arg_reg_count ? int_arg_reg_count : param_count;
+    int params_on_stack = param_count - params_in_regs;
+
+    //
+    // Register based parameters.
+    //
+    ListNode *curr = func->parms.head;
+    for (int i = 0; i < params_in_regs; i++, curr = curr->next) {
+        TacFuncParam *param = CONTAINER_OF(curr, TacFuncParam, list);
+        codegen_push_instr(
+            &funcstate,
+            asm_mov(
+                aoper_reg(int_arg_regs[i]),
+                aoper_pseudoreg(param->name),
+                tac->loc
+            )
+        );
+    }
+
+    //
+    // Stack based parameters.
+    //
+    int offset = 16;
+    for (int i = 0; i < params_on_stack; i++, curr = curr->next) {
+        TacFuncParam *param = CONTAINER_OF(curr, TacFuncParam, list);
+        codegen_push_instr(
+            &funcstate,
+            asm_mov(
+                aoper_stack(offset),
+                aoper_pseudoreg(param->name),
+                tac->loc
+            )
+        );
+
+        offset += 8;
+    }
+
+
+    //
+    // Statements.
+    //
     for (ListNode *curr = tac->funcdef.body.head; curr; curr = curr->next) {
         TacNode *stmt = CONTAINER_OF(curr, TacNode, list);
         codegen_single(&funcstate, stmt);

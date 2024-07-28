@@ -41,7 +41,7 @@ def gcc_retval_test(dir, name):
     srcfile = os.path.join(dir, name)
     binfile = os.path.splitext(srcfile)
     if binfile[1] != '.c':
-        print(f'gcc_retval_test: test `{name}` in `{dir}` mist name a c source file.')
+        print(f'gcc_retval_test: test `{name}` in `{dir}` must name a c source file.')
         sys.exit(1)
     binfile = binfile[0]
 
@@ -66,6 +66,36 @@ def gcc_retval_test(dir, name):
 
     return (True, '')
 
+def stdout_test(dir, name):
+    srcfile = os.path.join(dir, name)
+    binfile = os.path.splitext(srcfile)
+    if binfile[1] != '.c':
+        print(f'gcc_retval_test: test `{name}` in `{dir}` must name a c source file.')
+        sys.exit(1)
+    binfile = binfile[0]
+
+    cmd = ['gcc', '-o', binfile, srcfile]
+    out = subprocess.run(cmd, capture_output = True, cwd = '.')
+    if out.returncode != 0:
+        return (False, f'gcc compilation failed.\n' + out.stderr.decode('ascii'))
+    
+    out = subprocess.run(binfile, capture_output = True)
+    expected = out.stdout.decode('ascii')
+
+    cmd = [cc, srcfile]
+    out = subprocess.run(cmd, capture_output = True, cwd='.')
+    if out.returncode != 0:
+        return (False, f'compilation failed.\n' + out.stderr.decode('ascii'))
+
+    out = subprocess.run(binfile, capture_output = True)
+    got = out.stdout.decode('ascii')
+
+    if expected != got:
+        return (False, f'program printed `{got}`; expected `{expected}`')
+
+    return (True, '')
+
+
 def runtest(dir, name, test, run_stage, verbose):
     global total_tests
 
@@ -80,7 +110,7 @@ def runtest(dir, name, test, run_stage, verbose):
 
     total_tests += 1
 
-    if not stage in ['lex', 'parse', 'validate', 'tacky', 'gcc-retval']:
+    if not stage in ['lex', 'parse', 'validate', 'tacky', 'gcc-retval', 'stdout']:
         print(f'invalid test stage `{stage}` for test `{name}` in dir `{dir}`.')
         sys.exit(1)
 
@@ -100,6 +130,8 @@ def runtest(dir, name, test, run_stage, verbose):
         passed, out = stage_test(stage, dir, name, verbose)
     elif stage == 'gcc-retval':
         passed, out = gcc_retval_test(dir, name)
+    elif stage == 'stdout':
+        passed, out = stdout_test(dir, name)
 
     success = True
     if action == 'success' and not passed:

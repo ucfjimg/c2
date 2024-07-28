@@ -306,6 +306,7 @@ TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_FUNCTION_CALL, loc);
 
+    tac->call.name = safe_strdup(name);
     tac->call.args = args;
     tac->call.dst = dst;
 
@@ -535,7 +536,7 @@ static void tac_print_function_call(TacFunctionCall *call, int tab, bool locs)
         tac_print_recurse(arg, tab + 2, locs);
     
         if (curr->next) {
-            printf("%*s,", tab, "");
+            printf("%*s,\n", tab + 2, "");
         }
     }
 

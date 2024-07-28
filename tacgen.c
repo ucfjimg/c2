@@ -285,7 +285,7 @@ static TacNode *tcg_function_call(TacState *state, Expression *exp)
 
     tcg_append(state, tac_function_call(call->name, args, result, exp->loc));
 
-    return result;
+    return tac_clone_operand(result);
 }
 
 //
@@ -695,8 +695,10 @@ TacNode *tcg_gen(AstProgram *prog)
         if (decl->tag != DECL_FUNCTION) {
             ICE_NYI("tcg_gen::global_variables");
         } else {
-            TacNode *func = tcg_funcdef(decl);
-            list_push_back(&funcs, &func->list);
+            if (decl->func.has_body) {
+                TacNode *func = tcg_funcdef(decl);
+                list_push_back(&funcs, &func->list);
+            }
         }
     }
 

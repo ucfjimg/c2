@@ -1,8 +1,10 @@
 {
-    "arglist.c": "validate:success",
-    "two-functions.c": "validate:success",
-    "call-no-args.c": "validate:success",
-    "func-decl-in-func.c": "validate:success",
-    "shadow-func.c": "validate:success",
-    "func-shadows-var.c": "validate:success"
+    "arglist.c": "gcc-retval:success",
+    "two-functions.c": "gcc-retval:success",
+    "call-no-args.c": "gcc-retval:success",
+    "func-decl-in-func.c": "gcc-retval:success",
+    "shadow-func.c": "gcc-retval:success",
+    "func-shadows-var.c": "gcc-retval:success",
+    "func-many-args.c": "gcc-retval:success",
+    "call-putchar.c": "stdout:success"
 }

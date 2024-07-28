@@ -17,6 +17,10 @@ char *reg_name(Register reg)
         case REG_RAX:   return "rax";
         case REG_RCX:   return "rcx";
         case REG_RDX:   return "rdx";
+        case REG_RDI:   return "rdi";
+        case REG_RSI:   return "rsi";
+        case REG_R8:    return "r8";
+        case REG_R9:    return "r9";
         case REG_R10:   return "r10";
         case REG_R11:   return "r11";
     }
@@ -139,7 +143,7 @@ void aoper_print(AsmOperand *op)
         case AOP_IMM: printf("%lu", op->imm); break;
         case AOP_REG: printf("$%s", reg_name(op->reg)); break;
         case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
-        case AOP_STACK: printf("[$rbp%d]", op->stack_offset); break;
+        case AOP_STACK: printf("[$rbp+%d]", op->stack_offset); break;
     }
 }
 
@@ -346,6 +350,49 @@ AsmNode *asm_stack_reserve(int bytes, FileLine loc)
 }
 
 //
+// Construct a stack free instruction, to remove `bytes` bytes from 
+// the stack.
+//
+AsmNode *asm_stack_free(int bytes, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_STACK_FREE;
+    node->loc = loc;
+    node->stack_free.bytes = bytes;
+
+    return node;
+}
+
+//
+// Construct a push instruction.
+//
+AsmNode *asm_push(AsmOperand *value, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_PUSH;
+    node->loc = loc;
+    node->push.value = value;
+
+    return node;
+}
+
+//
+// Construct a call instruction.
+//
+AsmNode *asm_call(char *id, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_CALL;
+    node->loc = loc;
+    node->call.id = safe_strdup(id);
+
+    return node;
+}
+
+//
 // Free an assembly program
 //
 static void asm_prog_free(AsmProgram *prog)
@@ -450,26 +497,46 @@ static void asm_func_free(AsmFunction *func)
 }
 
 //
+// Free a push instruction.
+//
+static void asm_push_free(AsmPush *push)
+{
+    aoper_free(push->value);
+}
+
+//
+// Free a call instruction.
+//
+static void asm_call_free(AsmCall *call)
+{
+    safe_free(call->id);
+}
+
+//
 // Free an assembly node.
 //
 void asm_free(AsmNode *node)
 {
     if (node) {
         switch (node->tag) {
-            case ASM_PROG:      asm_prog_free(&node->prog); break;
-            case ASM_MOV:       asm_mov_free(&node->mov); break;
-            case ASM_UNARY:     asm_unary_free(&node->unary); break;
-            case ASM_BINARY:    asm_binary_free(&node->binary); break;
-            case ASM_CMP:       asm_cmp_free(&node->cmp); break;
-            case ASM_JUMP:      asm_jump_free(&node->jump); break;
-            case ASM_JUMPCC:    asm_jumpcc_free(&node->jumpcc); break;
-            case ASM_LABEL:     asm_label_free(&node->label); break;
-            case ASM_SETCC:     asm_setcc_free(&node->setcc); break;
-            case ASM_IDIV:      asm_idiv_free(&node->idiv); break;
-            case ASM_FUNC:      asm_func_free(&node->func); break; 
+            case ASM_PROG:          asm_prog_free(&node->prog); break;
+            case ASM_MOV:           asm_mov_free(&node->mov); break;
+            case ASM_UNARY:         asm_unary_free(&node->unary); break;
+            case ASM_BINARY:        asm_binary_free(&node->binary); break;
+            case ASM_CMP:           asm_cmp_free(&node->cmp); break;
+            case ASM_JUMP:          asm_jump_free(&node->jump); break;
+            case ASM_JUMPCC:        asm_jumpcc_free(&node->jumpcc); break;
+            case ASM_LABEL:         asm_label_free(&node->label); break;
+            case ASM_SETCC:         asm_setcc_free(&node->setcc); break;
+            case ASM_IDIV:          asm_idiv_free(&node->idiv); break;
+            case ASM_FUNC:          asm_func_free(&node->func); break; 
+            case ASM_PUSH:          asm_push_free(&node->push); break;
+            case ASM_CALL:          asm_call_free(&node->call); break;
 
-            default:
-                break;
+            case ASM_STACK_RESERVE: break;
+            case ASM_STACK_FREE:    break;
+            case ASM_RET:           break;
+            case ASM_CDQ:           break;
         }
 
         safe_free(node);
@@ -616,6 +683,32 @@ static void asm_stack_reserve_print(AsmStackReserve *reserve)
 }
 
 //
+// Print a stack free instruction.
+//
+static void asm_stack_free_print(AsmStackFree *free)
+{
+    printf("        stack-free %d\n", free->bytes);
+}
+
+//
+// Print a push instruction.
+//
+static void asm_push_print(AsmPush *push)
+{
+    printf("        push ");
+    aoper_print(push->value);
+    printf("\n");
+}
+
+//
+// Print a call instruction.
+//
+static void asm_call_print(AsmCall *call)
+{
+    printf("        call %s\n", call->id);
+}
+
+//
 // Print the assembly AST.
 //
 static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
@@ -644,6 +737,9 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_CDQ:           asm_cdq_print(); break;
         case ASM_RET:           asm_ret_print(); break;
         case ASM_STACK_RESERVE: asm_stack_reserve_print(&node->stack_reserve); break;
+        case ASM_STACK_FREE:    asm_stack_free_print(&node->stack_free); break;
+        case ASM_PUSH:          asm_push_print(&node->push); break;
+        case ASM_CALL:          asm_call_print(&node->call); break;
     }
 }
 

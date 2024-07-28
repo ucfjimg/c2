@@ -72,4 +72,6 @@ char *type_describe(Type *type)
         case TT_INT:    return saprintf("int");
         case TT_FUNC:   return type_describe_func(&type->func); break;
     }
+
+    return saprintf("<invalid-type>");
 }
