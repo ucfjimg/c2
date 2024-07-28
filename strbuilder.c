@@ -2,6 +2,10 @@
 
 #include "safemem.h"
 
+#include <stdarg.h>
+#include <string.h>
+#include <stdio.h>
+
 #define STB_DEFAULT_ALLOC 16
 
 //
@@ -71,7 +75,7 @@ char *stb_take(StrBuilder *stb)
 }
 
 //
-// 
+// Append a character to a string builder. 
 //
 void stb_push_char(StrBuilder *stb, char ch)
 {
@@ -79,4 +83,32 @@ void stb_push_char(StrBuilder *stb, char ch)
 
     stb->str[stb->length++] = ch;
     stb->str[stb->length] = '\0';
+}
+
+//
+// Append a printf formatted string to a string builder.
+//
+void stb_printf(StrBuilder *stb, const char *fmt, ...)
+{
+    char ch;
+    size_t n;
+    va_list arg;
+
+    //
+    // Get length to append.
+    //    
+    va_start(arg, fmt);
+    n = vsnprintf(&ch, 1, fmt, arg);
+    va_end(arg);
+
+    //
+    // Make sure we have space and append.
+    //
+    stb_ensure(stb, n);
+
+    va_start(arg, fmt);
+    vsnprintf(&stb->str[stb->length], n+1, fmt, arg);
+    va_end(arg);
+
+    stb->length += n;
 }

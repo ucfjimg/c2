@@ -36,7 +36,6 @@ def stage_test(stage, dir, name, verbose):
 
     return (out.returncode == 0, out.stderr.decode('ascii'))
 
-
 def gcc_retval_test(dir, name):
     srcfile = os.path.join(dir, name)
     binfile = os.path.splitext(srcfile)
@@ -45,7 +44,7 @@ def gcc_retval_test(dir, name):
         sys.exit(1)
     binfile = binfile[0]
 
-    cmd = ['gcc', '-o', binfile, srcfile]
+    cmd = ['gcc', f'-I{utilsdir}', f'-L{utilsdir}', '-o', binfile, srcfile, '-lutil']
     out = subprocess.run(cmd, capture_output = True, cwd = '.')
     if out.returncode != 0:
         return (False, f'gcc compilation failed.\n' + out.stderr.decode('ascii'))
@@ -53,7 +52,7 @@ def gcc_retval_test(dir, name):
     out = subprocess.run(binfile)
     gccrc = out.returncode
 
-    cmd = [cc, srcfile]
+    cmd = [cc, f'-I{utilsdir}', srcfile, f'{utilslib}']
     out = subprocess.run(cmd, capture_output = True, cwd='.')
     if out.returncode != 0:
         return (False, f'compilation failed.\n' + out.stderr.decode('ascii'))
@@ -74,7 +73,7 @@ def stdout_test(dir, name):
         sys.exit(1)
     binfile = binfile[0]
 
-    cmd = ['gcc', '-o', binfile, srcfile]
+    cmd = ['gcc', f'-I{utilsdir}', f'-L{utilsdir}', '-o', binfile, srcfile, '-lutil']
     out = subprocess.run(cmd, capture_output = True, cwd = '.')
     if out.returncode != 0:
         return (False, f'gcc compilation failed.\n' + out.stderr.decode('ascii'))
@@ -82,7 +81,7 @@ def stdout_test(dir, name):
     out = subprocess.run(binfile, capture_output = True)
     expected = out.stdout.decode('ascii')
 
-    cmd = [cc, srcfile]
+    cmd = [cc, f'-I{utilsdir}', srcfile, f'{utilslib}']
     out = subprocess.run(cmd, capture_output = True, cwd='.')
     if out.returncode != 0:
         return (False, f'compilation failed.\n' + out.stderr.decode('ascii'))
@@ -189,7 +188,21 @@ verbose = False
 
 run_stage = None
 
-args = sys.argv[1:]
+prog, args = sys.argv[0], sys.argv[1:]
+
+prog = os.path.realpath(prog)
+progdir = os.path.split(prog)[0]
+utilsdir = os.path.join(progdir, 'utils')
+utilslib = os.path.join(utilsdir, 'libutil.a')
+
+#
+# build helper library
+#
+results = subprocess.run(['make'], cwd=utilsdir)
+
+if results.returncode != 0:
+    print('failed to build helper library.')
+    sys.exit(1)
 
 action = rundir
 while args and args[0][0] == '-':

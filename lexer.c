@@ -28,6 +28,8 @@ static Keyword keywords[] = {
     { "switch",     TOK_SWITCH },
     { "case",       TOK_CASE },
     { "default",    TOK_DEFAULT },
+    { "static",     TOK_STATIC },
+    { "extern",     TOK_EXTERN },
     { NULL,         TOK_EOF }
 };
 

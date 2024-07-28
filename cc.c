@@ -11,11 +11,13 @@
 #include "errors.h"
 #include "fixoperands.h"
 #include "goto.h"
+#include "list.h"
 #include "looplabel.h"
 #include "lexer.h"
 #include "parser.h"
 #include "resolve.h"
 #include "safemem.h"
+#include "strbuilder.h"
 #include "symtab.h"
 #include "switch.h"
 #include "tacgen.h"
@@ -37,9 +39,17 @@ typedef enum {
 } Options;
 
 typedef struct {
+    ListNode list;
+    char *path;
+} PathNode;
+
+typedef struct {
     bool compile_only;                  // if set, don't link, just produce .o file
     bool line_nos;                      // if set, print line number information
     bool keep;                          // if set, don't remove any produced files, even on error
+    bool verbose;                       // echo verbose information while compiling and linking
+    List includes;                      // list of <PathNode>; -I options from command line
+    List non_c_source;                  // list of <PathNode>; non .c source, object, or libraries 
     char *srcfile;                      // name of source file
     char *prefile;                      // computed name of preprocessed file (.i)
     char *asmfile;                      // computed name of asm file (.s)
@@ -64,7 +74,7 @@ static struct option long_opts[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-c] [--lex | --parse | --validate | --codegen | --tacky] [--keep] [--line-no] srcfile\n");
+    fprintf(stderr, "cc: [-cv] [-Iinclude] [--lex | --parse | --validate | --codegen | --tacky]\n    [--keep] [--line-no] srcfile [non-c-files]\n");
     exit(1);
 }
 
@@ -72,6 +82,8 @@ static void usage(void)
 // Return the extension of the given filename, or a pointer to 
 // the end of the string if there is no extension. The extension
 // is returned including the preceding '.'.
+//
+// The returned pointer is not allocated, but points into `fname`.
 //
 static char *get_ext(char *fname)
 {
@@ -118,6 +130,23 @@ static char *replace_extension(char *fname, char *ext)
 }
 
 //
+// Append an include path to the argument list.
+//
+static void args_append_include_path(Args *args, char *path)
+{
+    PathNode *node = safe_malloc(sizeof(PathNode));
+    node->path = safe_strdup(path);
+    list_push_back(&args->includes, &node->list);
+}
+
+static void args_append_non_c_file(Args *args, char *file)
+{
+    PathNode *node = safe_malloc(sizeof(PathNode));
+    node->path = safe_strdup(file);
+    list_push_back(&args->non_c_source, &node->list);
+}
+
+//
 // Parse command line arguments in `argc` and `argv`, populating
 // `args`.
 //
@@ -132,10 +161,18 @@ static void parse_args(int argc, char *argv[], Args *args)
 
     args->stage = STAGE_ALL;
 
-    while ((flag = getopt_long(argc, argv, "c", long_opts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "cI:v", long_opts, NULL)) != -1) {
         switch (flag) {
             case 'c':
                 args->compile_only = true;
+                break;
+
+            case 'I':
+                args_append_include_path(args, optarg);
+                break;
+
+            case 'v':
+                args->verbose = true;
                 break;
 
             case OPT_KEEP:
@@ -164,8 +201,45 @@ static void parse_args(int argc, char *argv[], Args *args)
         }
     }
 
-    if (optind + 1 != argc) {
-        usage();
+    //
+    // Pick up list of files to process. Compile .c files and let
+    // gcc/linker handle assembly, object, and library files.
+    //
+    static char *valid_non_c_exts[] = {
+        ".s",
+        ".o",
+        ".a",
+        NULL
+    };
+
+    //
+    // For now, require exactly one .c file.
+    //
+    for (int i = optind; i < argc; i++) {
+        char *ext = get_ext(argv[i]);
+        if (strcmp(ext, ".c") == 0) {
+            if (args->srcfile) {
+                fprintf(stderr, "only one .c file at a time.\n");
+                usage();
+            }
+            args->srcfile = safe_strdup(argv[i]);
+            continue;
+        }
+
+        int extidx = 0;
+        for (; valid_non_c_exts[extidx]; extidx++) {
+            if (strcmp(ext, valid_non_c_exts[extidx]) == 0) {
+                break;
+            }
+        }
+
+        if (valid_non_c_exts[extidx] == NULL) {
+            fprintf(stderr, "file `%s` has unsupported extension.\n", argv[i]);
+            usage();
+        }  
+
+
+        args_append_non_c_file(args, argv[i]);  
     }
 
     args->srcfile = safe_strdup(argv[optind]);
@@ -182,10 +256,27 @@ static void parse_args(int argc, char *argv[], Args *args)
 }
 
 //
+// Free a list of PathNode's.
+//
+static void free_path_node_list(List *list)
+{
+    for (ListNode *curr = list->head; curr; ) {
+        ListNode *next = curr->next;
+        PathNode *node = CONTAINER_OF(curr, PathNode, list);
+        safe_free(node->path);
+        curr = next;
+    }
+
+    list_clear(list);
+}
+
+//
 // Free command line arguments
 //
 static void free_args(Args *args)
 {
+    free_path_node_list(&args->includes);
+    free_path_node_list(&args->non_c_source);
     safe_free(args->srcfile);
     safe_free(args->prefile);
     safe_free(args->asmfile);
@@ -205,14 +296,38 @@ static void cleanup(Args *args)
 }
 
 //
+// Run an external command and return the status. Echo the 
+// command being run if verbose is enabled.
+//
+static int run(Args *args, char *cmd)
+{
+    int status = system(cmd);
+    if (args->verbose) {
+        printf("[%d] %s\n", status, cmd);
+    }
+    return status;
+}
+
+
+
+//
 // Preprocess the source file; return on success or an error code on
 // failure.
 //
 static int preprocess(Args *args)
 {
-    char *cmd = saprintf("gcc -E %s -o %s", args->srcfile, args->prefile);
-    int status = system(cmd);
-    safe_free(cmd);
+    StrBuilder *cmd = stb_alloc();
+
+    stb_printf(cmd, "gcc -E");
+
+    for (ListNode *curr = args->includes.head; curr; curr = curr->next) {
+        PathNode *path = CONTAINER_OF(curr, PathNode, list);
+        stb_printf(cmd, " -I%s", path->path);
+    }
+
+    stb_printf(cmd, " %s -o %s", args->srcfile, args->prefile);
+    int status = run(args, cmd->str);
+    stb_free(cmd);
 
     return status == 0 ? 0 : 1;
 }
@@ -331,7 +446,7 @@ done:
 static int assemble(Args *args)
 {
     char *cmd = saprintf("gcc -c -o %s %s", args->objfile, args->asmfile);
-    int status = system(cmd);
+    int status = run(args, cmd);
     safe_free(cmd);
 
     return status == 0 ? 0 : 1;
@@ -342,9 +457,24 @@ static int assemble(Args *args)
 //
 static int link_program(Args *args)
 {
-    char *cmd = saprintf("gcc -o %s %s", args->binfile, args->asmfile);
-    int status = system(cmd);
-    safe_free(cmd);
+    StrBuilder *cmd = stb_alloc();
+
+    stb_printf(cmd, "gcc");
+
+    for (ListNode *curr = args->includes.head; curr; curr = curr->next) {
+        PathNode *path = CONTAINER_OF(curr, PathNode, list);
+        stb_printf(cmd, " -I%s", path->path);
+    }
+
+    stb_printf(cmd, " -o %s %s", args->binfile, args->asmfile);
+
+    for (ListNode *curr = args->non_c_source.head; curr; curr = curr->next) {
+        PathNode *file = CONTAINER_OF(curr, PathNode, list);
+        stb_printf(cmd, " %s", file->path);
+    }
+
+    int status = run(args, cmd->str);
+    stb_free(cmd);
 
     return status == 0 ? 0 : 1;
 }

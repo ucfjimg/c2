@@ -6,5 +6,8 @@
     "shadow-func.c": "gcc-retval:success",
     "func-shadows-var.c": "gcc-retval:success",
     "func-many-args.c": "gcc-retval:success",
-    "call-putchar.c": "stdout:success"
+    "call-putchar.c": "stdout:success",
+    "stack-aligned-simple.c": "gcc-retval:success",
+    "stack-aligned-7-args.c": "gcc-retval:success",
+    "stack-aligned-8-args.c": "gcc-retval:success"
 }
