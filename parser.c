@@ -401,12 +401,94 @@ static Expression *parse_expression(Parser *parser, int min_prec)
 }
 
 //
+// Return true if the current token is a type specifier.
+//
+static bool is_type_specifier(Parser *parser)
+{
+    TokenType tt = parser->tok.type;
+
+    return
+        tt == TOK_INT ||
+        tt == TOK_EXTERN ||
+        tt == TOK_STATIC;
+}
+
+//
+// Parse the type specifiers of a declaration:
+//
+// <specifiers> := { "int" | "extern" | "static" }
+//
+static TypeSpecifier *parse_type_specifier(Parser *parser)
+{
+    enum {
+        TOK_INT_INDEX,
+        TOK_EXTERN_INDEX,
+        TOK_STATIC_INDEX
+    };
+
+    struct {
+        TokenType tt;
+        int count;
+    } spec_tokens[] = {
+        { TOK_INT, 0 },
+        { TOK_EXTERN, 0 },
+        { TOK_STATIC, 0 },
+    };
+    const int spec_token_count = sizeof(spec_tokens) / sizeof(spec_tokens[0]);
+
+    FileLine loc = parser->tok.loc;
+
+    //
+    // Consume and count all tokens that count as a type specifier.
+    //
+    bool was_spec_token;
+    do {
+        was_spec_token = false;  
+        for (int i = 0; i < spec_token_count && !was_spec_token; i++) {
+            if (parser->tok.type == spec_tokens[i].tt) {
+                spec_tokens[i].count++;
+                was_spec_token = true;
+                parse_next_token(parser);
+            }
+        }
+    } while (was_spec_token);
+
+    //
+    // Validate that the tokens are syntactically correct.
+    //
+    for (int i = 0; i < spec_token_count; i++) {
+        if (spec_tokens[i].count > 1) {
+            char *err_tok = token_type_describe(spec_tokens[i].tt);
+            err_report(EC_ERROR, &loc, "type specifier `%s` may only be given once.", err_tok);
+            safe_free(err_tok);
+        }
+    }
+
+    if (spec_tokens[TOK_EXTERN_INDEX].count && spec_tokens[TOK_STATIC_INDEX].count) {
+        err_report(EC_ERROR, &loc, "`static` and `extern` are mutually exclusive.");
+    }
+
+    if (spec_tokens[TOK_INT_INDEX].count == 0) {
+        err_report(EC_ERROR, &loc, "missing type specifier.");
+    }
+
+    StorageClass sc = SC_NONE;
+    if (spec_tokens[TOK_STATIC_INDEX].count) {
+        sc = SC_STATIC;
+    } else if (spec_tokens[TOK_EXTERN_INDEX].count) {
+        sc = SC_EXTERN;
+    }
+
+    return typespec_alloc(sc, type_int());
+}
+
+//
 // Parse a variable declaration.
 // <declaration> := "int" <identifier> [ "=" <exp> ] ";"  |
 //
 // The type and identifier have already been parsed.
 //
-static Declaration *parse_decl_variable(Parser *parser, char *name, FileLine loc)
+static Declaration *parse_decl_variable(Parser *parser, TypeSpecifier *typespec, char *name, FileLine loc)
 {
     Expression *init = NULL;
 
@@ -421,7 +503,7 @@ static Declaration *parse_decl_variable(Parser *parser, char *name, FileLine loc
         parse_next_token(parser);
     }
 
-    return decl_variable(name, init, loc);
+    return decl_variable(name, typespec->sc, init, loc);
 }
 
 //
@@ -430,7 +512,7 @@ static Declaration *parse_decl_variable(Parser *parser, char *name, FileLine loc
 //
 // Tokens up to and including the opening '(' have been parsed.
 //
-static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc)
+static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec, char *name, FileLine loc)
 {
     List parms;
     bool parm_list_err = false;
@@ -516,7 +598,7 @@ static Declaration *parse_decl_function(Parser *parser, char *name, FileLine loc
         err_report(EC_ERROR, &loc, "`()` is not valid for a function with no parameters; use `(void)`.");
     }
 
-    return decl_function(name, parms, body, has_body, loc);    
+    return decl_function(name, typespec->sc, parms, body, has_body, loc);    
 }
 
 //
@@ -532,9 +614,13 @@ static Declaration *parse_declaration(Parser *parser)
     Declaration *decl = NULL;
     char *name = NULL;
     FileLine loc = parser->tok.loc;
+    TypeSpecifier *typespec = NULL;
+
+    typespec = parse_type_specifier(parser);
 
     if (parser->tok.type != TOK_ID) {
         report_expected_err(&parser->tok, "identifier");
+        parse_next_token(parser);
         goto done;
     }
     name = safe_strdup(parser->tok.id);
@@ -542,9 +628,9 @@ static Declaration *parse_declaration(Parser *parser)
 
     if (parser->tok.type == '(') {
         parse_next_token(parser);
-        decl = parse_decl_function(parser, name, loc);
+        decl = parse_decl_function(parser, typespec, name, loc);
     } else {
-        decl = parse_decl_variable(parser, name, loc);
+        decl = parse_decl_variable(parser, typespec, name, loc);
     }
 
 done:
@@ -552,8 +638,9 @@ done:
         //
         // If there's no name, just add a dummy declaration.
         //
-        decl = decl_variable(".error", NULL, loc);
+        decl = decl_variable(".error", SC_NONE, NULL, loc);
     }
+    typespec_free(typespec);
     safe_free(name);
     return decl;
 }
@@ -572,11 +659,8 @@ static List parse_block(Parser *parser)
     if (parser->tok.type != '}') {
         while (parser->tok.type != '}' && parser->tok.type != TOK_EOF) {
             BlockItem *blki = NULL;
-            //
-            // In the future, this will be on any type, not just `int`.
-            //
-            if (parser->tok.type == TOK_INT) {
-                parse_next_token(parser);
+
+            if (is_type_specifier(parser)) {
                 Declaration *decl = parse_declaration(parser);
                 blki = blki_declaration(decl);
             } else {
@@ -843,12 +927,7 @@ static ForInit *parse_forinit(Parser *parser)
         return forinit();
     }
 
-    //
-    // TODO when there are real types, this will check for a type,
-    // not just int.
-    //
-    if (parser->tok.type == TOK_INT) {
-        parse_next_token(parser);
+    if (is_type_specifier(parser)) {
         Declaration *decl = parse_declaration(parser);
 
         if (decl->tag == DECL_FUNCTION) {
@@ -1179,21 +1258,13 @@ AstProgram *parser_parse(Lexer *lex)
     FileLine loc = parser.tok.loc;
 
     //
-    // <program> := { <function> }+
+    // <program> := { <declaration> }
     //
     List decls;
     list_clear(&decls);
 
     while (parser.tok.type != TOK_EOF) {
-        if (parser.tok.type != TOK_INT) {
-            report_expected_err(&parser.tok, "`int`");
-            break;
-        } else {
-            parse_next_token(&parser);
-        }
-
-        Declaration *decl = parse_declaration(&parser);
-        
+        Declaration *decl = parse_declaration(&parser);        
         list_push_back(&decls, &decl->list);
     }
 

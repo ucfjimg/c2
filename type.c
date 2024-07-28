@@ -75,3 +75,28 @@ char *type_describe(Type *type)
 
     return saprintf("<invalid-type>");
 }
+
+//
+// Construct a type specifier.
+//
+TypeSpecifier *typespec_alloc(StorageClass sc, Type *type)
+{
+    TypeSpecifier *ts = safe_zalloc(sizeof(TypeSpecifier));
+
+    ts->sc = sc;
+    ts->type = type;
+
+    return ts;
+}
+
+//
+// Free a type specifier.
+//
+void typespec_free(TypeSpecifier *typespec)
+{
+    if (typespec) {
+        type_free(typespec->type);
+        safe_free(typespec);
+    }
+}
+

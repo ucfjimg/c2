@@ -44,6 +44,32 @@ char *token_describe(Token *tok)
         case TOK_ID:                return saprintf("id(%s)", tok->id);
         case TOK_INT_CONST:         return saprintf("int-const(%lu)", tok->intval);
 
+        default:                    break;
+    }
+
+    return token_type_describe(tok->type);
+}
+
+//
+// Return a description of a token type for debug output or error message. 
+// Returns an allocated string which must be free'd.
+//
+char *token_type_describe(TokenType tt)
+{
+    if (tt < TOK_FENCE) {
+        //
+        // Single character ASCII token
+        //
+        return saprintf("%c", tt);
+    }
+
+    switch (tt) {
+        case TOK_EOF:               return saprintf("<eof>");
+        case TOK_ERROR:             return saprintf("<invalid-token>");
+
+        case TOK_ID:                return saprintf("<id>");
+        case TOK_INT_CONST:         return saprintf("<int-const>");
+
         case TOK_INCREMENT:         return saprintf("++");
         case TOK_DECREMENT:         return saprintf("--");
         case TOK_LSHIFT:            return saprintf("<<");
@@ -80,12 +106,39 @@ char *token_describe(Token *tok)
         case TOK_SWITCH:            return saprintf("switch");
         case TOK_CASE:              return saprintf("case");
         case TOK_DEFAULT:           return saprintf("default");
+        case TOK_STATIC:            return saprintf("static");
+        case TOK_EXTERN:            return saprintf("extern");
 
-        default:
+        //
+        // All of these are handled by the single-character case.
+        //
+        case TOK_FENCE:
+        case TOK_LBRACE:
+        case TOK_LPAREN:
+        case TOK_RBRACE:
+        case TOK_RPAREN:
+        case TOK_SEMI:
+        case TOK_PLUS:
+        case TOK_MINUS:
+        case TOK_MULTIPLY:
+        case TOK_DIVIDE:
+        case TOK_MODULO:
+        case TOK_COMPLEMENT:
+        case TOK_LESSTHAN:
+        case TOK_GREATERTHAN:
+        case TOK_BITAND:
+        case TOK_BITOR:
+        case TOK_BITXOR:
+        case TOK_LOGNOT:
+        case TOK_ASSIGN:
+        case TOK_QUESTION:
+        case TOK_COLON:
+        case TOK_COMMA:
             break;
+
     }
 
-    return saprintf("<unknown-token-type-%d>", tok->type);
+    return saprintf("<invalid-token-type-%d>", tt);
 }
 
 //

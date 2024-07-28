@@ -87,6 +87,8 @@ typedef enum {
     TOK_SWITCH,
     TOK_CASE,
     TOK_DEFAULT,
+    TOK_STATIC,
+    TOK_EXTERN
 } TokenType;
 
 typedef struct {
@@ -102,4 +104,5 @@ typedef struct {
 
 extern void token_free(Token *tok);
 extern char *token_describe(Token *tok);
+extern char *token_type_describe(TokenType tt);
 extern void token_clone(Token *src, Token *dst);

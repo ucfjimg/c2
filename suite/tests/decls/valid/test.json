@@ -1,0 +1,4 @@
+{
+    "extern-func-int.c": "parse:success",
+    "static-func-int.c": "parse:success"
+}

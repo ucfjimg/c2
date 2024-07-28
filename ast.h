@@ -3,6 +3,7 @@
 #include "fileline.h"
 #include "list.h"
 #include "operators.h"
+#include "type.h"
 
 #include <stdbool.h>
 
@@ -92,6 +93,7 @@ typedef enum {
 typedef struct {
     char *name;                 // variable name
     Expression *init;           // optional initializer
+    StorageClass storage_class; // if the declaration is marked as static or extern
 } DeclVariable;
 
 typedef struct {
@@ -106,6 +108,7 @@ typedef struct {
     List parms;                 // list <FuncParameter> of parameters
     List body;                  // if a definition, List <BlockItem>
     bool has_body;              // declaration is also a definition
+    StorageClass storage_class; // if the declaration is marked as static or extern
 } DeclFunction;
 
 struct Declaration {
@@ -119,8 +122,8 @@ struct Declaration {
     };
 };
 
-extern Declaration *decl_variable(char *name, Expression *init, FileLine loc);
-extern Declaration *decl_function(char *name, List parms, List body, bool has_body, FileLine loc);
+extern Declaration *decl_variable(char *name, StorageClass sc, Expression *init, FileLine loc);
+extern Declaration *decl_function(char *name, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
 extern void declaration_free(Declaration *decl);
 
 //

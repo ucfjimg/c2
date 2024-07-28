@@ -190,12 +190,13 @@ void exp_free(Expression *exp)
 // Note that `init` is optional and will be NULL if the declaration
 // has no initializer.
 // 
-Declaration *decl_variable(char *name, Expression *init, FileLine loc)
+Declaration *decl_variable(char *name, StorageClass sc, Expression *init, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
     decl->tag = DECL_VARIABLE;
     decl->loc = loc;
+    decl->var.storage_class = sc;
     decl->var.name = safe_strdup(name);
     decl->var.init = init;
 
@@ -233,12 +234,13 @@ static void func_parm_free(FuncParameter *parm)
 //
 // Constructor for a function declaration.
 //
-Declaration *decl_function(char *name, List parms, List body, bool has_body, FileLine loc)
+Declaration *decl_function(char *name, StorageClass sc, List parms, List body, bool has_body, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
     decl->tag = DECL_FUNCTION;
     decl->loc = loc;
+    decl->func.storage_class = sc;
     decl->func.name = safe_strdup(name);
     decl->func.parms = parms;
     decl->func.body = body;
@@ -828,11 +830,25 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
 }
 
 //
+// Return a static storage class decription with a trailing space.
+//
+static char *storage_class_describe(StorageClass sc)
+{
+    switch (sc) {
+        case SC_EXTERN: return "extern ";
+        case SC_STATIC: return "static ";
+        case SC_NONE:   break;
+    }
+
+    return "";
+}
+
+//
 // Print a variable declaration.
 //
 static void decl_print_variable(DeclVariable *var, int tab, bool locs)
 {
-    printf("%*sdeclare-var(%s)", tab, "", var->name);
+    printf("%*sdeclare-var(%s%s)", tab, "", storage_class_describe(var->storage_class), var->name);
     if (var->init) {
         printf(" = {\n");
         exp_print_recurse(var->init, tab + 2, locs);
@@ -846,7 +862,7 @@ static void decl_print_variable(DeclVariable *var, int tab, bool locs)
 //
 static void decl_print_function(DeclFunction *func, int tab, bool locs)
 {
-    printf("%*sdeclare-func(%s) (", tab, "", func->name);
+    printf("%*sdeclare-func(%s%s) (", tab, "", storage_class_describe(func->storage_class), func->name);
     
     for (ListNode *curr = func->parms.head; curr; curr = curr->next) {
         FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
