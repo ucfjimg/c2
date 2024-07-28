@@ -3,5 +3,5 @@
     "static-with-extern.c": "parse:fail",
     "too-many-statics.c": "parse:fail",
     "too-many-types.c": "parse:fail",
-    "dup-auto.c": "parse:fail"
+    "dup-auto.c": "validate:fail"
 }
