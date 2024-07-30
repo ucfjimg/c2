@@ -27,11 +27,25 @@
 typedef enum {
     STAGE_LEX = 256,
     STAGE_PARSE,
-    STAGE_VALIDATE,
     STAGE_CODEGEN,
     STAGE_TACKY,
     STAGE_ALL,
+
+    STAGE_VALIDATE,
+    STAGE_VALIDATE_RESOLVE,
+    STAGE_VALIDATE_GOTO,
+    STAGE_VALIDATE_LOOPS,
+    STAGE_VALIDATE_SWITCH,
+    STAGE_VALIDATE_TYPECHECK,
+    STAGE_VALIDATE_LAST = STAGE_VALIDATE_TYPECHECK,
+
+    STAGE_INVALID,
 } Stage;
+
+static bool is_validate_stage(Stage stage)
+{
+    return stage >= STAGE_VALIDATE && stage <= STAGE_VALIDATE_LAST;
+}
 
 typedef enum {
     OPT_KEEP = 512,
@@ -61,12 +75,26 @@ typedef struct {
 static struct option long_opts[] = {
     { "lex",        no_argument, 0, STAGE_LEX },
     { "parse",      no_argument, 0, STAGE_PARSE },
-    { "validate",   no_argument, 0, STAGE_VALIDATE },
+    { "validate",   optional_argument, 0, STAGE_VALIDATE },
     { "codegen",    no_argument, 0, STAGE_CODEGEN },
     { "tacky",      no_argument, 0, STAGE_TACKY },
     { "keep",       no_argument, 0, OPT_KEEP },
     { "line-nos",   no_argument, 0, OPT_LINENOS },
     { 0, 0, 0, 0},    
+};
+
+typedef struct {
+    char *name;                         // name of substage
+    Stage stage;                        // and stage to set
+} Substage;
+
+static Substage validate_substages[] = {
+    { "resolve",    STAGE_VALIDATE_RESOLVE },
+    { "goto",       STAGE_VALIDATE_GOTO },
+    { "loops",      STAGE_VALIDATE_LOOPS },
+    { "switch",     STAGE_VALIDATE_SWITCH },
+    { "typecheck",  STAGE_VALIDATE_TYPECHECK },
+    { NULL,         0 },
 };
 
 //
@@ -147,6 +175,21 @@ static void args_append_non_c_file(Args *args, char *file)
 }
 
 //
+// Loop up a substage from an option and a substage table. Returns
+// STAGE_INVALID if the option was not found in the table.
+//
+static Stage lookup_substage(Substage *table, char *option)
+{
+    for (int i = 0; table[i].name; i++) {
+        if (strcmp(table[i].name, option) == 0) {
+            return table[i].stage;
+        }
+    }
+
+    return STAGE_INVALID;
+}
+
+//
 // Parse command line arguments in `argc` and `argv`, populating
 // `args`.
 //
@@ -191,6 +234,14 @@ static void parse_args(int argc, char *argv[], Args *args)
                 if (args->stage != STAGE_ALL) {
                     fprintf(stderr, "--stage may only be specified once.\n");
                     usage();
+                }
+
+                if (flag == STAGE_VALIDATE && optarg) {
+                    flag = lookup_substage(validate_substages, optarg);
+                    if (flag == STAGE_INVALID) {
+                        fprintf(stderr, "invalid substage `%s` for --validate.\n", optarg);
+                        usage();
+                    }
                 }
 
                 args->stage = flag;
@@ -373,18 +424,23 @@ static int compile(Args *args)
     // Semantic passes.
     //
     ast_resolve(ast);
+    if (args->stage == STAGE_VALIDATE_RESOLVE) goto semantic_done;
     ast_validate_goto(ast);
+    if (args->stage == STAGE_VALIDATE_GOTO) goto semantic_done;
     ast_label_loops(ast);
+    if (args->stage == STAGE_VALIDATE_LOOPS) goto semantic_done;
     ast_validate_switch(ast);
+    if (args->stage == STAGE_VALIDATE_SWITCH) goto semantic_done;
 
     stab = stab_alloc();
     ast_typecheck(ast, stab);
 
+semantic_done:
     if (err_has_errors()) {
         status = 1;
     }
 
-    if (args->stage == STAGE_VALIDATE) {
+    if (is_validate_stage(args->stage)) {
         ast_print(ast, args->line_nos);
         goto done;
     }

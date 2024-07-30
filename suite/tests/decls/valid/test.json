@@ -1,4 +1,5 @@
 {
-    "extern-func-int.c": "parse:success",
-    "static-func-int.c": "parse:success"
+    "extern-func-int.c": "validate:success",
+    "static-func-int.c": "validate:success",
+    "redecl-static-func.c": "validate:success"
 }

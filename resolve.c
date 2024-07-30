@@ -114,17 +114,57 @@ static char *ast_resolve_name(ResolveState *state, char *name, FileLine loc)
 }
 
 //
+// Update a declaration entry in the give map node.
+//
+static void update_map_node(IdentifierMapNode *mapnode, char *name, bool from_curr_scope, bool has_linkage)
+{
+    safe_free(mapnode->new_name);
+    mapnode->new_name = safe_strdup(name);
+    mapnode->from_curr_scope = from_curr_scope;
+    mapnode->has_linkage = has_linkage;
+}
+
+//
+// Resolve a global variable declaration.
+//
+static void ast_resolve_global_var_decl(ResolveState *state, Declaration *decl)
+{
+    ICE_ASSERT(decl->tag == DECL_VARIABLE);
+    DeclVariable *var = &decl->var;
+
+    IdentifierMapNode *mapnode = restab_get(state, var->name);
+    update_map_node(mapnode, var->name, true, true);
+}
+
+//
 // Resolve a variable declaration.
 //
 static void ast_resolve_var_decl(ResolveState *state, Declaration *decl)
 {
-    char *new_name = ast_resolve_name(state, decl->var.name, decl->loc);
+    ICE_ASSERT(decl->tag == DECL_VARIABLE);
+    DeclVariable *var = &decl->var;
 
-    safe_free(decl->var.name);
-    decl->var.name = safe_strdup(new_name);
+    IdentifierMapNode *mapnode = restab_get(state, var->name);
 
-    if (decl->var.init) {
-        ast_resolve_expression(state, decl->var.init);
+    if (mapnode->new_name) {
+        if (mapnode->from_curr_scope) {
+            if (!(mapnode->has_linkage && var->storage_class == SC_EXTERN)) {
+                err_report(EC_ERROR, &decl->loc, "conflicting declarations for variable `%s`.", var->name);
+            }
+        }
+    }
+
+    if (var->storage_class == SC_EXTERN) {
+        update_map_node(mapnode, var->name, true, true);
+    } else {
+        char *new_name = ast_unique_varname(var->name);
+        decl->var.name = safe_strdup(new_name);
+        update_map_node(mapnode, new_name, true, false);
+        safe_free(new_name);
+    }
+
+    if (var->init) {
+        ast_resolve_expression(state, var->init);
     }
 }
 
@@ -404,6 +444,10 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
     ICE_ASSERT(decl->tag == DECL_FUNCTION);
 
     DeclFunction *func = &decl->func;
+
+    if (!global && func->storage_class == SC_STATIC) {
+        err_report(EC_ERROR, &decl->loc, "invalid storage class for function `%s`.", func->name);
+    }
     
     IdentifierMapNode *mapnode = restab_get(state, func->name);
     if (mapnode->new_name) {
@@ -459,7 +503,7 @@ void ast_resolve(AstProgram *prog)
         Declaration *decl = CONTAINER_OF(curr, Declaration, list);
         switch (decl->tag) {
             case DECL_FUNCTION: ast_resolve_function(&state, decl, true); break;
-            case DECL_VARIABLE: ICE_NYI("ast_resolve::global_variables");
+            case DECL_VARIABLE: ast_resolve_global_var_decl(&state, decl); break;
         }
     } 
 

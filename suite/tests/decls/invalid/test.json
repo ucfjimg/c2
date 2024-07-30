@@ -3,5 +3,12 @@
     "static-with-extern.c": "parse:fail",
     "too-many-statics.c": "parse:fail",
     "too-many-types.c": "parse:fail",
-    "dup-auto.c": "validate:fail"
+    "dup-auto.c": "validate:fail",
+    "static-func-in-block.c": "validate:fail",
+    "non-const-global-init.c": "validate:fail",
+    "global-var-redefines-func.c": "validate:fail",
+    "multiple-global-initializers.c": "validate:fail",
+    "local-extern-init.c": "validate:fail",
+    "func-redef-as-local-extern.c": "validate:fail",
+    "for-init-with-sc.c": "validate:fail"
 }

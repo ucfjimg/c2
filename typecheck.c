@@ -9,7 +9,7 @@ typedef struct {
     SymbolTable *stab;
 } TypeCheckState;
 
-static void ast_check_declaration(TypeCheckState *state, Declaration *decl);
+static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool filescope);
 static void ast_check_statement(TypeCheckState *state, Statement *stmt);
 static void ast_check_block(TypeCheckState *state, List block);
 static void ast_check_expression(TypeCheckState *state, Expression *exp);
@@ -184,8 +184,20 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
 {
     switch (for_->init->tag) {
         case FI_NONE:           break;
-        case FI_DECLARATION:    ast_check_declaration(state, for_->init->decl); break;
+        case FI_DECLARATION:    ast_check_declaration(state, for_->init->decl, false); break;
         case FI_EXPRESSION:     ast_check_expression(state, for_->init->exp); break;
+    }
+
+    if (for_->init->tag == FI_DECLARATION) {
+        Declaration *decl = for_->init->decl;
+        //
+        // Parser already validated this.
+        //
+        ICE_ASSERT(decl->tag == DECL_VARIABLE);
+
+        if (decl->var.storage_class != SC_NONE) {
+            err_report(EC_ERROR, &decl->loc, "for loop initializer declaration may not have a storage class.");
+        }
     }
 
     if (for_->cond) {
@@ -265,7 +277,7 @@ static void ast_check_block(TypeCheckState *state, List block)
     for (ListNode *curr = block.head; curr; curr = curr->next) {
         BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
         switch (blki->tag) {
-            case BI_DECLARATION:    ast_check_declaration(state, blki->decl); break;
+            case BI_DECLARATION:    ast_check_declaration(state, blki->decl, false); break;
             case BI_STATEMENT:      ast_check_statement(state, blki->stmt); break;
         }
     }
@@ -280,21 +292,29 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 
     Symbol *sym = stab_lookup(state->stab, func->func.name);
     int parm_count = list_count(&func->func.parms);
+    bool global = func->func.storage_class != SC_STATIC;
 
     if (sym->type) {
         if (sym->type->tag != TT_FUNC || sym->type->func.parms != parm_count) {
             err_report(EC_ERROR, &func->loc, "invalid redeclaration of symbol `%s`.", func->func.name);
         }
 
-        if (sym->defined && func->func.has_body) {
+        if (sym->func.defined && func->func.has_body) {
             err_report(EC_ERROR, &func->loc, "invalid redefinition of function `%s`.", func->func.name);
         }
+
+        if (sym->func.global && !global) {
+            err_report(EC_ERROR, &func->loc, "non-static function `%s` may not be redeclared as static.", func->func.name);
+        }
+        global = sym->func.global;
     } else {
         sym->type = type_function(parm_count); 
     }
 
+    sym->func.global = global;
+
     if (func->func.has_body) {
-        sym->defined = true;
+        sym->func.defined = true;
 
         for (ListNode *curr = func->func.parms.head; curr; curr = curr->next) {
             FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
@@ -313,34 +333,141 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 }
 
 //
+// Type check a file scope variable declaration.
+//
+static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
+{
+    ICE_ASSERT(decl->tag == DECL_VARIABLE);
+    DeclVariable *var = &decl->var;
+
+    StaticInitialValue init_value = SIV_NO_INIT;
+    unsigned long init_const = 0;
+
+    if (var->init == NULL) {
+        if (var->storage_class == SC_EXTERN) {
+            init_value = SIV_NO_INIT;
+        } else {
+            init_value = SIV_TENTATIVE;
+        }
+    } else if (var->init->tag == EXP_INT) {
+        init_const = var->init->intval;
+    } else {
+        err_report(EC_ERROR, &decl->loc, "non-constant initializer not allowed for static `%s`.", var->name);
+    }
+
+    bool globally_visible = var->storage_class != SC_STATIC;
+
+    Symbol *sym = stab_lookup(state->stab, var->name);
+
+    if (sym->type) {
+        if (sym->type->tag == TT_FUNC) {
+            err_report(EC_ERROR, &decl->loc, "symbol `%s` redefined as different type.", var->name);
+        }
+
+        if (var->storage_class == SC_EXTERN) {
+            //
+            // externs keep their old visibility
+            //
+            globally_visible = sym->stvar.global;
+        } else if (globally_visible != sym->stvar.global) {
+            //
+            // Otherwise, can't change visibility.
+            //
+            err_report(EC_ERROR, &decl->loc, "symbol `%s` redefined as different visibility.", var->name);
+        }
+
+        //
+        // Make sure not trying to have two initialized declarations.
+        //
+        if (sym->stvar.explicit_init) {
+            if (var->init) {
+                err_report(EC_ERROR, &decl->loc, "symbol `%s` has conflicting declarations.", var->name);
+            } else {
+                init_const = sym->stvar.initial;
+            }
+        } else if (var->init == NULL && sym->stvar.siv == SIV_TENTATIVE) {
+            init_value = SIV_TENTATIVE;
+        }
+    }
+
+    sym->type = type_int();
+    sym->tag = ST_STATIC_VAR;
+    sym->stvar.global = globally_visible;
+    sym->stvar.explicit_init = var->init != NULL;
+    sym->stvar.initial = init_const;
+    sym->stvar.siv = init_value;
+}
+
+//
 // Type check a variable declaration.
 //
-static void ast_check_var_decl(TypeCheckState *state, Declaration *var)
+static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool filescope)
 {
-    ICE_ASSERT(var->tag == DECL_VARIABLE);
-
-    Symbol *sym = stab_lookup(state->stab, var->var.name);
-    //
-    // If the type is not NULL, it means a duplicate declaration, which we will
-    // have already reported in the resolve pass.
-    //
-    if (sym->type == NULL) {
-        sym->type = type_int();
+    if (filescope) {
+        ast_check_global_var_decl(state, decl);
+        return;
     }
 
-    if (var->var.init) {
-        ast_check_expression(state, var->var.init);
+    ICE_ASSERT(decl->tag == DECL_VARIABLE);
+    DeclVariable *var = &decl->var;
+
+    Symbol *sym = stab_lookup(state->stab, var->name);
+
+    if (var->storage_class == SC_EXTERN) {
+        if (var->init != NULL) {
+            err_report(EC_ERROR, &decl->loc, "local extern variable `%s` may not have an initializer.", var->name);
+        }
+
+        if (sym->type) {
+            if (sym->type->tag == TT_FUNC) {
+                err_report(EC_ERROR, &decl->loc, "cannot redeclare function `%s` as a local extern.", var->name);
+            }
+        } else {
+            sym->tag = ST_STATIC_VAR;
+            sym->stvar.explicit_init = false;
+            sym->stvar.siv = SIV_NO_INIT;
+            sym->stvar.global = true;
+        }
+    } else if (var->storage_class == SC_STATIC) {
+        if (var->init == NULL) {
+            sym->tag = ST_STATIC_VAR;
+            sym->stvar.explicit_init = false;
+            sym->stvar.siv = SIV_INIT;
+            sym->stvar.initial = 0;
+        } else if (var->init->tag == EXP_INT) {
+            sym->tag = ST_STATIC_VAR;
+            sym->stvar.explicit_init = true;
+            sym->stvar.siv = SIV_INIT;
+            sym->stvar.initial = var->init->intval;
+        } else {
+            err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
+            sym->tag = ST_STATIC_VAR;
+            sym->stvar.explicit_init = false;
+            sym->stvar.siv = SIV_INIT;
+            sym->stvar.initial = 0;
+        }
+        sym->stvar.global = false;
+    } else {
+        //
+        // No storage class
+        //
+        sym->tag = ST_LOCAL_VAR;
+        if (var->init) {
+            ast_check_expression(state, var->init);
+        }
     }
+    
+    sym->type = type_int();
 }
 
 //
 // Type check a declaration.
 //
-static void ast_check_declaration(TypeCheckState *state, Declaration *decl)
+static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool filescope)
 {
     switch (decl->tag) {
         case DECL_FUNCTION: ast_check_func_decl(state, decl); break;
-        case DECL_VARIABLE: ast_check_var_decl(state, decl); break;
+        case DECL_VARIABLE: ast_check_var_decl(state, decl, filescope); break;
     }
 }
 
@@ -355,6 +482,6 @@ void ast_typecheck(AstProgram *prog, SymbolTable *stab)
 
     for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
         Declaration *decl = CONTAINER_OF(curr, Declaration, list);
-        ast_check_declaration(&state, decl);
+        ast_check_declaration(&state, decl, true);
     } 
 }
