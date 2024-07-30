@@ -293,6 +293,8 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
     Symbol *sym = stab_lookup(state->stab, func->func.name);
     int parm_count = list_count(&func->func.parms);
     bool global = func->func.storage_class != SC_STATIC;
+    bool had_body = false;
+    Type *type = NULL;
 
     if (sym->type) {
         if (sym->type->tag != TT_FUNC || sym->type->func.parms != parm_count) {
@@ -306,16 +308,17 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
         if (sym->func.global && !global) {
             err_report(EC_ERROR, &func->loc, "non-static function `%s` may not be redeclared as static.", func->func.name);
         }
+
+        had_body = sym->type->tag == TT_FUNC && sym->func.defined;
+        type = sym->type;
         global = sym->func.global;
     } else {
-        sym->type = type_function(parm_count); 
+        type = type_function(parm_count); 
     }
 
-    sym->func.global = global;
+    sym_update_func(sym, type, had_body || func->func.has_body, global);
 
     if (func->func.has_body) {
-        sym->func.defined = true;
-
         for (ListNode *curr = func->func.parms.head; curr; curr = curr->next) {
             FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
             Symbol *sym = stab_lookup(state->stab, parm->name);
@@ -324,7 +327,7 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
             // list, which we will have already reported in the resolve pass.
             //
             if (sym->type == NULL) {
-                sym->type = type_int();
+                sym_update_local(sym, type_int());
             }
         }
 
@@ -390,12 +393,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         }
     }
 
-    sym->type = type_int();
-    sym->tag = ST_STATIC_VAR;
-    sym->stvar.global = globally_visible;
-    sym->stvar.explicit_init = var->init != NULL;
-    sym->stvar.initial = init_const;
-    sym->stvar.siv = init_value;
+    sym_update_static_var(sym, type_int(), init_value, init_const, var->init != NULL, globally_visible);
 }
 
 //
@@ -423,41 +421,26 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
                 err_report(EC_ERROR, &decl->loc, "cannot redeclare function `%s` as a local extern.", var->name);
             }
         } else {
-            sym->tag = ST_STATIC_VAR;
-            sym->stvar.explicit_init = false;
-            sym->stvar.siv = SIV_NO_INIT;
-            sym->stvar.global = true;
+            sym_update_static_var(sym, type_int(), SIV_NO_INIT, 0, false, true);
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            sym->tag = ST_STATIC_VAR;
-            sym->stvar.explicit_init = false;
-            sym->stvar.siv = SIV_INIT;
-            sym->stvar.initial = 0;
+            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false);
         } else if (var->init->tag == EXP_INT) {
-            sym->tag = ST_STATIC_VAR;
-            sym->stvar.explicit_init = true;
-            sym->stvar.siv = SIV_INIT;
-            sym->stvar.initial = var->init->intval;
+            sym_update_static_var(sym, type_int(), SIV_INIT, var->init->intval, true, false);
         } else {
             err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
-            sym->tag = ST_STATIC_VAR;
-            sym->stvar.explicit_init = false;
-            sym->stvar.siv = SIV_INIT;
-            sym->stvar.initial = 0;
+            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false);
         }
-        sym->stvar.global = false;
     } else {
         //
         // No storage class
         //
-        sym->tag = ST_LOCAL_VAR;
+        sym_update_local(sym, type_int());
         if (var->init) {
             ast_check_expression(state, var->init);
         }
     }
-    
-    sym->type = type_int();
 }
 
 //

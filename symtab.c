@@ -53,3 +53,49 @@ Symbol *stab_lookup(SymbolTable *stab, char *name)
     return sym;
 }
 
+//
+// Update the given symbol to be a function.
+//
+void sym_update_func(Symbol *sym, Type *type, bool defined, bool global)
+{
+    sym->tag = ST_FUNCTION;
+   
+    if (sym->type != type) {
+        type_free(sym->type);
+        sym->type = type;
+    }
+
+    sym->func.defined = defined;
+    sym->func.global = global;
+}
+
+//
+// Update the given symbol to be a static variable.
+//
+void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global)
+{
+    sym->tag = ST_STATIC_VAR;
+
+    if (sym->type != type) {
+        type_free(sym->type);
+        sym->type = type;
+    }
+
+    sym->stvar.explicit_init = explicit_init;
+    sym->stvar.initial = init;
+    sym->stvar.siv = siv;
+    sym->stvar.global = global;
+}
+
+//
+// Update the given symbol to be a local variable.
+//
+extern void sym_update_local(Symbol *sym, Type *type)
+{
+    sym->tag = ST_LOCAL_VAR;
+    
+    if (sym->type != type) {
+        type_free(sym->type);
+        sym->type = type;
+    }
+}
