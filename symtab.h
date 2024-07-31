@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hashtab.h"
+#include "fileline.h"
 #include "type.h"
 
 #include <stdbool.h>
@@ -27,6 +28,7 @@ typedef struct {
     unsigned long initial;          // if SIV_INIT, the initial value
     bool explicit_init;             // if explicit initial value given
     bool global;                    // variable is globally visible
+    FileLine loc;                   // where declared
 } SymStaticVar;
 
 typedef struct {
@@ -49,7 +51,7 @@ extern void stab_free(SymbolTable *stab);
 extern Symbol *stab_lookup(SymbolTable *stab, char *name);
 
 extern void sym_update_func(Symbol *sym, Type *type, bool defined, bool global);
-extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global);
+extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global, FileLine loc);
 extern void sym_update_local(Symbol *sym, Type *type);
 
 

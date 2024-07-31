@@ -44,10 +44,11 @@ static void tac_program_free(TacProgram *prog)
 //
 // Constructor for a TAC function definition.
 //
-TacNode *tac_function_def(char *name, List parms, List body, FileLine loc)
+TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_FUNCDEF, loc);
     tac->funcdef.name = safe_strdup(name);
+    tac->funcdef.global = global;
     tac->funcdef.parms = parms;
     tac->funcdef.body = body;
     return tac;
@@ -86,7 +87,26 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 
         curr = next;
     }
+}
 
+//
+// Constructor for a TAC static variable declaration.
+//
+TacNode *tac_static_var(char *name, bool global, unsigned long init, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_STATIC_VAR, loc);
+    tac->static_var.name = safe_strdup(name);
+    tac->static_var.global = global;
+    tac->static_var.init = init;
+    return tac;
+}
+
+//
+// Free a TAC static variable.
+//
+static void tac_static_var_free(TacStaticVar *var)
+{
+    safe_free(var->name);
 }
 
 //
@@ -359,6 +379,7 @@ void tac_free(TacNode *tac)
         switch (tac->tag) {
             case TAC_PROGRAM:       tac_program_free(&tac->prog); break;
             case TAC_FUNCDEF:       tac_function_def_free(&tac->funcdef); break;
+            case TAC_STATIC_VAR:    tac_static_var_free(&tac->static_var); break;
             case TAC_CONST_INT:     break;
             case TAC_RETURN:        tac_return_free(&tac->ret); break;
             case TAC_COPY:          tac_copy_free(&tac->copy); break;
@@ -404,7 +425,11 @@ static void tac_print_program(TacProgram *prog, int tab, bool locs)
 //
 static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
 {
-    printf("%*sfunction(%s) (", tab, "", funcdef->name);
+    printf("%*sfunction(%s) ", tab, "", funcdef->name);
+    if (funcdef->global) {
+        printf("global ");
+    }
+    printf("(\n");
 
     for (ListNode *curr = funcdef->parms.head; curr; curr = curr->next) {
         TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
@@ -422,6 +447,18 @@ static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
     }
 
     printf("%*s}\n", tab, "");
+}
+
+//
+// Print a TAC static variable declaration.
+//
+static void tac_print_static_var(TacStaticVar *var, int tab)
+{
+    printf("%*sstatic-var(%s) ", tab, "", var->name);
+    if (var->global) {
+        printf("global ");
+    }
+    printf("= %lu\n", var->init);
 }
 
 //
@@ -556,6 +593,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
     switch (tac->tag) {
         case TAC_PROGRAM:       tac_print_program(&tac->prog, tab, locs); break;
         case TAC_FUNCDEF:       tac_print_funcdef(&tac->funcdef, tab, locs); break;
+        case TAC_STATIC_VAR:    tac_print_static_var(&tac->static_var, tab); break;
         case TAC_RETURN:        tac_print_return(&tac->ret, tab, locs); break;
         case TAC_COPY:          tac_print_copy(&tac->copy, tab, locs); break;
         case TAC_JUMP:          tac_print_jump(&tac->jump, tab, locs); break;

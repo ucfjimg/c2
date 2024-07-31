@@ -10,6 +10,7 @@
 typedef enum {
     TAC_PROGRAM,
     TAC_FUNCDEF,
+    TAC_STATIC_VAR,
     TAC_RETURN,
     TAC_COPY,
     TAC_JUMP,
@@ -45,9 +46,19 @@ typedef struct {
 //
 typedef struct {
     char *name;                     // name
+    bool global;                    // is the function globally visible
     List parms;                     // List<TacFuncParam> of parameters
     List body;                      // list<TacNode> of instructions
 } TacFuncDef;
+
+//
+// A static variable declaration.
+//
+typedef struct {
+    char *name;                     // name
+    bool global;                    // is the variable globally visible
+    unsigned long init;             // the initial value
+} TacStaticVar;
 
 //
 // A return statement with a value to return.
@@ -147,6 +158,7 @@ typedef struct TacNode {
     union {
         TacProgram      prog;
         TacFuncDef      funcdef;
+        TacStaticVar    static_var;
         TacReturn       ret;
         TacCopy         copy;
         TacJump         jump;
@@ -162,7 +174,8 @@ typedef struct TacNode {
 } TacNode;
 
 extern TacNode *tac_program(List decls, FileLine loc);
-extern TacNode *tac_function_def(char *name, List parms, List body, FileLine loc);
+extern TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLine loc);
+extern TacNode *tac_static_var(char *name, bool global, unsigned long init, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_jump(char *target, FileLine loc);

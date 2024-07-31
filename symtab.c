@@ -1,5 +1,6 @@
 #include "symtab.h"
 
+#include "fileline.h"
 #include "safemem.h"
 
 //
@@ -72,7 +73,7 @@ void sym_update_func(Symbol *sym, Type *type, bool defined, bool global)
 //
 // Update the given symbol to be a static variable.
 //
-void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global)
+void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global, FileLine loc)
 {
     sym->tag = ST_STATIC_VAR;
 
@@ -85,6 +86,7 @@ void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsi
     sym->stvar.initial = init;
     sym->stvar.siv = siv;
     sym->stvar.global = global;
+    sym->stvar.loc = loc;
 }
 
 //

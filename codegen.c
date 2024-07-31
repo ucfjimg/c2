@@ -325,6 +325,8 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_LABEL:             codegen_label(state, tac); break;
         case TAC_FUNCTION_CALL:     codegen_function_call(state, tac); break;
 
+        case TAC_STATIC_VAR:        ICE_NYI("codegen_single::static-var");
+
         case TAC_PROGRAM:           break;
         case TAC_CONST_INT:         break;
         case TAC_VAR:               break;

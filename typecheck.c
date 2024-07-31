@@ -393,7 +393,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         }
     }
 
-    sym_update_static_var(sym, type_int(), init_value, init_const, var->init != NULL, globally_visible);
+    sym_update_static_var(sym, type_int(), init_value, init_const, var->init != NULL, globally_visible, decl->loc);
 }
 
 //
@@ -421,16 +421,16 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
                 err_report(EC_ERROR, &decl->loc, "cannot redeclare function `%s` as a local extern.", var->name);
             }
         } else {
-            sym_update_static_var(sym, type_int(), SIV_NO_INIT, 0, false, true);
+            sym_update_static_var(sym, type_int(), SIV_NO_INIT, 0, false, true, decl->loc);
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false);
+            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false, decl->loc);
         } else if (var->init->tag == EXP_INT) {
-            sym_update_static_var(sym, type_int(), SIV_INIT, var->init->intval, true, false);
+            sym_update_static_var(sym, type_int(), SIV_INIT, var->init->intval, true, false, decl->loc);
         } else {
             err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
-            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false);
+            sym_update_static_var(sym, type_int(), SIV_INIT, 0, false, false, decl->loc);
         }
     } else {
         //

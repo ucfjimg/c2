@@ -1,14 +1,17 @@
 #include "tacgen.h"
 
 #include "errors.h"
+#include "hashtab.h"
 #include "ice.h"
 #include "list.h"
 #include "safemem.h"
+#include "symtab.h"
 #include "tacnode.h"
 
 typedef struct 
 {
     List code;              // list of TacNode *
+    SymbolTable *stab;      // symbol table
 } TacState;
 
 static TacNode *tcg_expression(TacState *state, Expression *exp);
@@ -320,7 +323,23 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
 //
 static void tcg_declaration(TacState *state, Declaration *decl)
 {
-    if (decl->tag == DECL_VARIABLE && decl->var.init) {
+    if (decl->tag != DECL_VARIABLE) {
+        return;
+    }
+
+    DeclVariable *var = &decl->var;
+
+    if (var->storage_class == SC_EXTERN || var->storage_class == SC_STATIC) {
+        //
+        // These will be taken care of later by enumerating the symbol table.
+        //
+        return;
+    }
+
+    //
+    // For local variables, generate code for initializers
+    //
+    if (decl->var.init) {
         TacNode *initval = tcg_expression(state, decl->var.init);
         TacNode *declvar = tac_var(decl->var.name, decl->loc);
         tcg_append(state, tac_copy(initval, declvar, decl->loc));
@@ -643,7 +662,7 @@ static void tcg_statement(TacState *state, Statement *stmt)
 //
 // Generate TAC for a function definition.
 //
-static TacNode *tcg_funcdef(Declaration *func)
+static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
 {
     ICE_ASSERT(func);
     ICE_ASSERT(func->tag == DECL_FUNCTION);
@@ -664,6 +683,8 @@ static TacNode *tcg_funcdef(Declaration *func)
 
     TacState funcstate;
     list_clear(&funcstate.code);
+    funcstate.stab = stab;
+
     tcg_block(&funcstate, func->func.body);
 
     //
@@ -678,29 +699,61 @@ static TacNode *tcg_funcdef(Declaration *func)
         )
     );
 
-    return tac_function_def(func->func.name, parms, funcstate.code, loc);
+    Symbol *sym = stab_lookup(stab, func->func.name);
+    ICE_ASSERT(sym->tag == ST_FUNCTION);
+
+    return tac_function_def(func->func.name, sym->func.global, parms, funcstate.code, loc);
+}
+
+//
+// Enumerate the symbol table for static variables.
+//
+static void tcg_statics(List *code, SymbolTable *stab)
+{
+    HashIterator iter;
+
+    for (HashNode *node = hashtab_first(stab->hashtab, &iter); node; node = hashtab_next(&iter)) {
+        Symbol *sym = CONTAINER_OF(node, Symbol, hash);
+        if (sym->tag == ST_STATIC_VAR) {
+            TacNode *var = NULL;
+            
+            bool global = sym->stvar.global;
+            FileLine loc = sym->stvar.loc;
+
+            switch (sym->stvar.siv) {
+                case SIV_INIT:      var = tac_static_var(node->key, global, sym->stvar.initial, loc); break;
+                case SIV_NO_INIT:   break;
+                case SIV_TENTATIVE: var = tac_static_var(node->key, global, 0, loc); break;
+            }
+
+            if (var) {
+                list_push_back(code, &var->list);
+            }
+        }
+    }
 }
 
 //
 // Top level entry to generate a TAC program from an AST.
 //
-TacNode *tcg_gen(AstProgram *prog)
+TacNode *tcg_gen(AstProgram *prog, SymbolTable *stab)
 {
     List funcs;
     list_clear(&funcs);
 
+    //
+    // Generate TAC for functions. Global scope variables are separate.
+    //
     for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
         Declaration *decl = CONTAINER_OF(curr, Declaration, list);
 
-        if (decl->tag != DECL_FUNCTION) {
-            ICE_NYI("tcg_gen::global_variables");
-        } else {
-            if (decl->func.has_body) {
-                TacNode *func = tcg_funcdef(decl);
-                list_push_back(&funcs, &func->list);
-            }
+        if (decl->tag == DECL_FUNCTION && decl->func.has_body) {
+            TacNode *func = tcg_funcdef(decl, stab);
+            list_push_back(&funcs, &func->list);
         }
     }
+
+    tcg_statics(&funcs, stab);
 
     return tac_program(funcs, prog->loc);
 }

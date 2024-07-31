@@ -452,7 +452,7 @@ semantic_done:
     //
     // TAC generation.
     //
-    taccode = tcg_gen(ast);
+    taccode = tcg_gen(ast, stab);
     if (args->stage == STAGE_TACKY) {
         tac_print(taccode, args->line_nos);
         goto done;
