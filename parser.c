@@ -270,6 +270,7 @@ static Expression *parse_function_call(Parser *parser, Expression *func)
     // We only needed the name from the function expression, free it since
     // we will not hold a reference to it.
     //
+    safe_free(name);
     exp_free(func);
     return exp;
 } 

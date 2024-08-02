@@ -262,6 +262,13 @@ static void decl_function_free(DeclFunction *func)
         func_parm_free(parm);
         curr = next;
     }
+
+    for (ListNode *curr = func->body.head; curr; ) {
+        ListNode *next = curr->next;
+        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
+        blki_free(blki);
+        curr = next;
+    }
 }
 
 //

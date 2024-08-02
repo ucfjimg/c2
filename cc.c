@@ -300,13 +300,11 @@ static void parse_args(int argc, char *argv[], Args *args)
         args_append_non_c_file(args, argv[i]);  
     }
 
-    if (optind == argc) {
+    if (args->srcfile == NULL) {
         fprintf(stderr, "missing source file.\n");
         usage();
     }
 
-    args->srcfile = safe_strdup(argv[optind]);
-    
     if (!has_extension(args->srcfile, ".c")) {
         fprintf(stderr, "input must be a c file.\n");
         usage();

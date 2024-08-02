@@ -37,6 +37,8 @@ static HashNode *restab_alloc_mapnode(void)
 //
 static void restab_free_mapnode(HashNode *node)
 {
+    IdentifierMapNode *mapnode = CONTAINER_OF(node, IdentifierMapNode, hash);
+    safe_free(mapnode->new_name);
     safe_free(node);
 }
 
@@ -114,7 +116,7 @@ static char *ast_resolve_name(ResolveState *state, char *name, FileLine loc)
 }
 
 //
-// Update a declaration entry in the give map node.
+// Update a declaration entry in the given map node.
 //
 static void update_map_node(IdentifierMapNode *mapnode, char *name, bool from_curr_scope, bool has_linkage)
 {
