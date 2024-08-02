@@ -4,6 +4,7 @@
 #include "ice.h"
 #include "list.h"
 #include "safemem.h"
+#include "symtab.h"
 
 #include <stdbool.h>
 
@@ -11,6 +12,7 @@ typedef struct
 {
     HashTable *vars;
     int next_offset;
+    SymbolTable *stab;
 } VarTable;
 
 typedef struct 
@@ -40,10 +42,11 @@ static void vartab_free_varnode(HashNode *node)
 //
 // Initialize variable table.
 //
-static void vartab_init(VarTable *table)
+static void vartab_init(VarTable *table, SymbolTable *stab)
 {
     table->vars = hashtab_alloc(vartab_alloc_varnode, vartab_free_varnode);
     table->next_offset = 0;
+    table->stab = stab;
 }
 
 //
@@ -70,8 +73,18 @@ static void vartab_free(VarTable *table)
 static void asm_alloc_operand(VarTable *vartab, AsmOperand **oper)
 {
     if ((*oper)->tag == AOP_PSEUDOREG) {
+        char *name = (*oper)->pseudoreg;
+
         VarTableNode *var = vartab_get(vartab, (*oper)->pseudoreg);
         if (!var->allocated) {
+            Symbol *sym = stab_lookup(vartab->stab, name);
+            if (sym->tag == ST_STATIC_VAR) {
+                AsmOperand *old = *oper;
+                *oper = aoper_data(name);
+                aoper_free(old);
+                return;
+            }
+
             //
             // TODO 4 because right now, all variables are integers.
             //
@@ -182,6 +195,7 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_STACK_RESERVE: break;
         case ASM_STACK_FREE:    break;
         case ASM_FUNC:          break;
+        case ASM_STATIC_VAR:    break;
         case ASM_PUSH:          asm_alloc_push(vartab, instr); break;
         case ASM_CALL:          break;
     }
@@ -210,15 +224,17 @@ static void asm_alloc_func(VarTable *vartab, AsmNode *func)
 //
 // Allocate pseudoregisters in a function's stack frame. 
 //
-void asm_allocate_vars(AsmNode *prog)
+void asm_allocate_vars(AsmNode *prog, SymbolTable *stab)
 {
     ICE_ASSERT(prog->tag == ASM_PROG);
 
     for (ListNode *curr = prog->prog.funcs.head; curr; curr = curr->next) {
         AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
-        VarTable vartab;
-        vartab_init(&vartab);
-        asm_alloc_func(&vartab, func);
-        vartab_free(&vartab);
+        if (func->tag ==  ASM_FUNC) {
+            VarTable vartab;
+            vartab_init(&vartab, stab);
+            asm_alloc_func(&vartab, func);
+            vartab_free(&vartab);
+        }
     }
 }

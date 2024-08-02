@@ -26,7 +26,6 @@ typedef enum {
 typedef struct {
     StaticInitialValue siv;         // initializer type
     unsigned long initial;          // if SIV_INIT, the initial value
-    bool explicit_init;             // if explicit initial value given
     bool global;                    // variable is globally visible
     FileLine loc;                   // where declared
 } SymStaticVar;
@@ -49,9 +48,10 @@ typedef struct {
 extern SymbolTable *stab_alloc(void);
 extern void stab_free(SymbolTable *stab);
 extern Symbol *stab_lookup(SymbolTable *stab, char *name);
+extern void stab_print(SymbolTable *stab);
 
 extern void sym_update_func(Symbol *sym, Type *type, bool defined, bool global);
-extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool explicit_init, bool global, FileLine loc);
+extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, bool global, FileLine loc);
 extern void sym_update_local(Symbol *sym, Type *type);
 
 

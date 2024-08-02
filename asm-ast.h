@@ -24,7 +24,8 @@ typedef enum  {
     AOP_IMM,
     AOP_REG,
     AOP_PSEUDOREG,
-    AOP_STACK,
+    AOP_STACK,          // a variable reference to a stack object
+    AOP_DATA,           // a variable reference to a static object
 } AsmOperandTag;
 
 typedef enum {
@@ -45,6 +46,7 @@ typedef struct {
         Register reg;       // AOP_REG
         unsigned long imm;  // AOP_IMM
         char *pseudoreg;    // AOP_PSEUDOREG 
+        char *data;         // AOP_DATA
         int stack_offset;   // AOP_STACK, offset from frame pointer
     };
 } AsmOperand;
@@ -54,12 +56,15 @@ extern AsmOperand *aoper_reg(Register reg);
 extern AsmOperand *aoper_pseudoreg(char *name);
 extern AsmOperand *aoper_imm(unsigned long val);
 extern AsmOperand *aoper_stack(int val);
+extern AsmOperand *aoper_data(char *name);
+extern bool aoper_is_mem(AsmOperand *oper);
 extern void aoper_free(AsmOperand *op);
 extern void aoper_print(AsmOperand *op);
 
 typedef enum {
     ASM_PROG,
     ASM_FUNC,
+    ASM_STATIC_VAR,
     ASM_MOV,
     ASM_UNARY,
     ASM_BINARY,
@@ -87,7 +92,14 @@ typedef struct {
     char *name;             // function name
     int locals_size;        // needed bytes for locals
     List body;              // list <AsmNode> of instructions
+    bool global;            // function is globally visible
 } AsmFunction;
+
+typedef struct {
+    char *name;             // variable name
+    bool global;            // variable is globally visible
+    unsigned long init;     // initial value
+} AsmStaticVar;
 
 typedef struct {
     AsmOperand *src;        // source operand
@@ -156,6 +168,7 @@ struct AsmNode {
     union {
         AsmProgram prog;                // ASM_PROG
         AsmFunction func;               // ASM_FUNC
+        AsmStaticVar static_var;        // ASM_STATIC_VAR
         AsmMov mov;                     // ASM_MOV
         AsmUnary unary;                 // ASM_UNARY
         AsmBinary binary;               // ASM_BINARY
@@ -173,7 +186,8 @@ struct AsmNode {
 };
 
 extern AsmNode *asm_prog(List funcs, FileLine loc);
-extern AsmNode *asm_func(char *name, List body, FileLine loc);
+extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
+extern AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc);
 extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc);

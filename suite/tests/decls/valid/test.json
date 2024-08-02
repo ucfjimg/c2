@@ -1,5 +1,7 @@
 {
-    "extern-func-int.c": "validate:success",
-    "static-func-int.c": "validate:success",
-    "redecl-static-func.c": "validate:success"
+    "extern-func-int.c": "gcc-retval:success",
+    "static-func-int.c": "gcc-retval:success",
+    "redecl-static-func.c": "gcc-retval:success",
+    "static-extern-int.c": "gcc-retval:success",
+    "static-var.c": "gcc-retval:success"
 }

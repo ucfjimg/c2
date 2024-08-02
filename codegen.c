@@ -395,7 +395,14 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
         codegen_single(&funcstate, stmt);
     }
 
-    codegen_push_instr(state, asm_func(tac->funcdef.name, funcstate.code, tac->loc));
+    codegen_push_instr(state, asm_func(tac->funcdef.name, funcstate.code, func->global, tac->loc));
+}
+
+static void codegen_static_var(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
+
+    codegen_push_instr(state, asm_static_var(decl->static_var.name, decl->static_var.global, decl->static_var.init, decl->loc));
 }
 
 //
@@ -410,7 +417,13 @@ AsmNode *codegen(TacNode *tac)
 
     for (ListNode *curr = tac->prog.decls.head; curr; curr = curr->next) {
         TacNode *decl = CONTAINER_OF(curr, TacNode, list);
-        codegen_funcdef(&state, decl);
+
+        switch (decl->tag) {
+            case TAC_FUNCDEF: codegen_funcdef(&state, decl); break;
+            case TAC_STATIC_VAR: codegen_static_var(&state, decl); break;
+
+            default: ICE_ASSERT(((void)"unexpected tag for top-level TAC node", false)); 
+        }
     }
 
     return asm_prog(state.code, tac->loc);

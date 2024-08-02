@@ -73,6 +73,14 @@ static void emit_stack(FILE *out, int offset)
 }
 
 //
+// Emit a data reference.
+//
+static void emit_data(FILE *out, char *name)
+{
+    fprintf(out, "%s(%%rip)", name);
+}
+
+//
 // Emit an assembly operand.
 //
 static void emit_asmoper(FILE *out, AsmOperand *oper, OperandSize os)
@@ -81,6 +89,7 @@ static void emit_asmoper(FILE *out, AsmOperand *oper, OperandSize os)
         case AOP_IMM:   emit_imm(out, oper->imm); break;
         case AOP_REG:   emit_reg(out, oper->reg, os); break;
         case AOP_STACK: emit_stack(out, oper->stack_offset); break;
+        case AOP_DATA:  emit_data(out, oper->data); break;
         
         case AOP_PSEUDOREG:
             ICE_ASSERT(((void)"pseuedoreg operand found at code emission time.", false));
@@ -293,10 +302,16 @@ static void emit_call(FILE *out, AsmCall *call)
 static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
 {
 #ifdef __APPLE__
-    fprintf(out, "        .globl _%s\n", func->name);
+    if (func->global) {
+        fprintf(out, "        .globl _%s\n", func->name);
+    }
+    fprintf(out, "        .text\n");
     fprintf(out, "_%s:\n", func->name);
-#else   
-    fprintf(out, "        .globl %s\n", func->name);
+#else
+    if (func->global) {   
+        fprintf(out, "        .globl %s\n", func->name);
+    }
+    fprintf(out, "        .text\n");
     fprintf(out, "%s:\n", func->name);
 #endif
     fprintf(out, "        pushq %%rbp\n");
@@ -306,6 +321,28 @@ static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
         emitcode_recurse(out, node, loc);
     }    
+}
+
+//
+// Emit a static variable.
+//
+static void emit_static_var(FILE *out, AsmStaticVar *var)
+{
+    if (var->global) {
+        fprintf(out, "        .globl %s\n", var->name);        
+    }
+
+    if (var->init == 0) {
+        fprintf(out, "        .bss\n");
+        fprintf(out, "        .balign 4\n");
+        fprintf(out, "%s:\n", var->name);
+        fprintf(out, "        .zero 4\n");
+    } else {
+        fprintf(out, "        .data\n");
+        fprintf(out, "        .balign 4\n");
+        fprintf(out, "%s:\n", var->name);
+        fprintf(out, "        .long %lu\n", var->init);
+    }
 }
 
 //
@@ -344,6 +381,7 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
     switch (node->tag) {
         case ASM_PROG:          emit_program(out, &node->prog); break;
         case ASM_FUNC:          emit_function(out, &node->func, loc); break;
+        case ASM_STATIC_VAR:    emit_static_var(out, &node->static_var); break;
         case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
         case ASM_STACK_FREE:    emit_stack_free(out, &node->stack_free); break;
         case ASM_MOV:           emit_mov(out, &node->mov); break;

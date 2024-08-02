@@ -45,7 +45,6 @@ const char *acc_describe(AsmConditionCode cc)
     return "<invalid-condition-code>";
 }
 
-
 //
 // Clone an assembly operand.
 //
@@ -56,6 +55,7 @@ AsmOperand *aoper_clone(AsmOperand *oper)
         case AOP_REG:       return aoper_reg(oper->reg);
         case AOP_PSEUDOREG: return aoper_pseudoreg(oper->pseudoreg);
         case AOP_STACK:     return aoper_stack(oper->stack_offset);
+        case AOP_DATA:      return aoper_data(oper->data);
 
     default:
         ICE_ASSERT(((void)"invalid operand in aoper_clone", false));
@@ -119,6 +119,26 @@ AsmOperand *aoper_stack(int offset)
 }
 
 //
+// Allocate a static operand.
+//
+AsmOperand *aoper_data(char *name)
+{
+    AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
+
+    op->tag = AOP_DATA;
+    op->data = safe_strdup(name);
+    return op;    
+}
+
+//
+// Check if an assembly operand is a memory reference.
+//
+bool aoper_is_mem(AsmOperand *oper)
+{
+    return oper->tag == AOP_STACK || oper->tag == AOP_DATA;
+}
+
+//
 // Free an assembly operand.
 //
 void aoper_free(AsmOperand *op)
@@ -126,6 +146,7 @@ void aoper_free(AsmOperand *op)
     if (op) {
         switch (op->tag) { 
             case AOP_PSEUDOREG: safe_free(op->pseudoreg); break;
+            case AOP_DATA: safe_free(op->data); break;
 
             default:
                 break;
@@ -144,6 +165,7 @@ void aoper_print(AsmOperand *op)
         case AOP_REG: printf("$%s", reg_name(op->reg)); break;
         case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
         case AOP_STACK: printf("[$rbp+%d]", op->stack_offset); break;
+        case AOP_DATA: printf("%s", op->data); break;
     }
 }
 
@@ -162,9 +184,9 @@ AsmNode *asm_prog(List funcs, FileLine loc)
 }
 
 //
-// Construct an assembly function with no instructions.
+// Construct an assembly function.
 //
-AsmNode *asm_func(char *name, List body, FileLine loc)
+AsmNode *asm_func(char *name, List body, bool global, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -172,8 +194,25 @@ AsmNode *asm_func(char *name, List body, FileLine loc)
     node->loc = loc;
     node->func.name = safe_strdup(name);
     node->func.body = body;
+    node->func.global = global;
 
     return node;
+}
+
+//
+// Construct an assembly static variable.
+//
+AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_STATIC_VAR;
+    node->loc = loc;
+    node->static_var.name = safe_strdup(name);
+    node->static_var.global = global;
+    node->static_var.init = init;
+
+    return node;    
 }
 
 //
@@ -497,6 +536,14 @@ static void asm_func_free(AsmFunction *func)
 }
 
 //
+// Free an assembly static variable.
+//
+static void asm_static_var_free(AsmStaticVar *var)
+{
+    safe_free(var->name);
+}
+
+//
 // Free a push instruction.
 //
 static void asm_push_free(AsmPush *push)
@@ -529,7 +576,8 @@ void asm_free(AsmNode *node)
             case ASM_LABEL:         asm_label_free(&node->label); break;
             case ASM_SETCC:         asm_setcc_free(&node->setcc); break;
             case ASM_IDIV:          asm_idiv_free(&node->idiv); break;
-            case ASM_FUNC:          asm_func_free(&node->func); break; 
+            case ASM_FUNC:          asm_func_free(&node->func); break;
+            case ASM_STATIC_VAR:    asm_static_var_free(&node->static_var); break; 
             case ASM_PUSH:          asm_push_free(&node->push); break;
             case ASM_CALL:          asm_call_free(&node->call); break;
 
@@ -560,12 +608,26 @@ static void asm_prog_print(AsmProgram *prog, FileLine *loc, bool locs)
 //
 static void asm_func_print(AsmFunction *func, FileLine *loc, bool locs)
 {
+    if (func->global) {
+        printf(".global %s\n", func->name);
+    }
     printf("%s:\n", func->name);
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
         asm_print_recurse(node, loc, locs);
     }
+}
+
+//
+// Print an assembly static variable.
+//
+static void asm_static_var_print(AsmStaticVar *var)
+{
+    if (var->global) {
+        printf(".global %s\n", var->name);
+    }
+    printf("%s: .quad %lu\n", var->name, var->init);
 }
 
 //
@@ -725,6 +787,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
     switch (node->tag) {
         case ASM_PROG:          asm_prog_print(&node->prog, loc, locs); break;
         case ASM_FUNC:          asm_func_print(&node->func, loc, locs); break;
+        case ASM_STATIC_VAR:    asm_static_var_print(&node->static_var); break;
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
         case ASM_BINARY:        asm_binary_print(&node->binary); break;

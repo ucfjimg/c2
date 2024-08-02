@@ -21,7 +21,7 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
     //
     // MOV cannot have both operands as memory.
     //
-    if (mov->src->tag == AOP_STACK && mov->dst->tag == AOP_STACK) {
+    if (aoper_is_mem(mov->src) && aoper_is_mem(mov->dst)) {
         list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), movnode->loc)->list);
         list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst), movnode->loc)->list);
 
@@ -83,8 +83,8 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
          binop->op == BOP_BITAND || 
          binop->op == BOP_BITOR ||
          binop->op == BOP_BITXOR) &&
-        binop->src->tag == AOP_STACK &&
-        binop->dst->tag == AOP_STACK) {
+        aoper_is_mem(binop->src) &&
+        aoper_is_mem(binop->dst)) {
               
         list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_R10), binopnode->loc)->list);
         list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_R10), aoper_clone(binop->dst), binopnode->loc)->list);
@@ -97,7 +97,7 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     //
     // IMUL can't have a memory operand as its destination
     //
-    if (binop->op == BOP_MULTIPLY && binop->dst->tag == AOP_STACK) {
+    if (binop->op == BOP_MULTIPLY && aoper_is_mem(binop->dst)) {
 
         list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), binopnode->loc)->list);
         list_push_back(code, &asm_binary(
@@ -113,7 +113,7 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     // SHR/SAR/SHL can't have a memory shift count, and the shift count must be in CL if
     // a register is needed.
     //
-    if ((binop->op == BOP_LSHIFT || binop->op == BOP_RSHIFT) && binop->src->tag == AOP_STACK) {
+    if ((binop->op == BOP_LSHIFT || binop->op == BOP_RSHIFT) && aoper_is_mem(binop->src)) {
         list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), binopnode->loc)->list);
         list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_RCX), aoper_clone(binop->dst), binopnode->loc)->list);
 
@@ -140,7 +140,7 @@ static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
     ICE_ASSERT(cmp->left->tag != AOP_PSEUDOREG);
     ICE_ASSERT(cmp->right->tag != AOP_PSEUDOREG);
 
-    if (cmp->left->tag == AOP_STACK && cmp->right->tag == AOP_STACK) {
+    if (aoper_is_mem(cmp->left) && aoper_is_mem(cmp->right)) {
         list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), loc)->list);
         list_push_back(code, &asm_cmp(aoper_reg(REG_R10), aoper_clone(cmp->right), loc)->list);
   
@@ -208,6 +208,7 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_RET:
             case ASM_STACK_RESERVE:
             case ASM_STACK_FREE:
+            case ASM_STATIC_VAR:
                 //
                 // instructions which need no modification
                 //
@@ -235,6 +236,8 @@ void asm_fix_operands(AsmNode *prog)
 
     for (ListNode *curr = prog->prog.funcs.head; curr; curr = curr->next) {
         AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
-        asm_fixop_func(func);
+        if (func->tag == ASM_FUNC) {
+            asm_fixop_func(func);
+        }
     }
 }

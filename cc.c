@@ -50,6 +50,7 @@ static bool is_validate_stage(Stage stage)
 typedef enum {
     OPT_KEEP = 512,
     OPT_LINENOS,
+    OPT_PRINT_STAB,
 } Options;
 
 typedef struct {
@@ -62,6 +63,7 @@ typedef struct {
     bool line_nos;                      // if set, print line number information
     bool keep;                          // if set, don't remove any produced files, even on error
     bool verbose;                       // echo verbose information while compiling and linking
+    bool print_stab;                    // if set, print the symbol table
     List includes;                      // list of <PathNode>; -I options from command line
     List non_c_source;                  // list of <PathNode>; non .c source, object, or libraries 
     char *srcfile;                      // name of source file
@@ -80,6 +82,7 @@ static struct option long_opts[] = {
     { "tacky",      no_argument, 0, STAGE_TACKY },
     { "keep",       no_argument, 0, OPT_KEEP },
     { "line-nos",   no_argument, 0, OPT_LINENOS },
+    { "stab",       no_argument, 0, OPT_PRINT_STAB },
     { 0, 0, 0, 0},    
 };
 
@@ -102,7 +105,7 @@ static Substage validate_substages[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-cv] [-Iinclude] [--lex | --parse | --validate | --codegen | --tacky]\n    [--keep] [--line-no] srcfile [non-c-files]\n");
+    fprintf(stderr, "cc: [-cv] [-Iinclude] [--lex | --parse | --validate | --codegen | --tacky]\n    [--keep] [--stab] [--line-no] srcfile [non-c-files]\n");
     exit(1);
 }
 
@@ -226,6 +229,10 @@ static void parse_args(int argc, char *argv[], Args *args)
                 args->line_nos = true;
                 break;
 
+            case OPT_PRINT_STAB:
+                args->print_stab = true;
+                break;
+
             case STAGE_LEX:
             case STAGE_PARSE:
             case STAGE_VALIDATE:
@@ -291,6 +298,11 @@ static void parse_args(int argc, char *argv[], Args *args)
 
 
         args_append_non_c_file(args, argv[i]);  
+    }
+
+    if (optind == argc) {
+        fprintf(stderr, "missing source file.\n");
+        usage();
     }
 
     args->srcfile = safe_strdup(argv[optind]);
@@ -465,7 +477,7 @@ semantic_done:
     ast_free_program(ast);
     ast = NULL;
 
-    asm_allocate_vars(asmcode);
+    asm_allocate_vars(asmcode, stab);
     asm_fix_operands(asmcode);
 
     if (args->stage == STAGE_CODEGEN) {
@@ -488,6 +500,11 @@ semantic_done:
     fclose(asmfile);
 
 done:
+    if (stab && args->print_stab) {
+        printf("\n=== symbol table ===\n");
+        stab_print(stab);
+    }
+
     stab_free(stab);
     tac_free(taccode);
     asm_free(asmcode);
