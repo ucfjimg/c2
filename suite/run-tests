@@ -10,8 +10,8 @@ import sys
 # compiler to test
 #
 cc = os.getenv('CC')
+root = os.path.dirname(os.path.abspath(sys.argv[0]))
 if cc == None:
-    root = os.path.dirname(os.path.abspath(sys.argv[0]))
     cc = os.path.join(root, '../build/cc')
 cc = os.path.abspath(cc)
 if not os.access(cc, os.X_OK):

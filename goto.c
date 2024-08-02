@@ -12,6 +12,7 @@ typedef struct {
     bool is_defined;                // true if defined (else just referenced)
     bool is_used;                   // true if label has been used
     FileLine loc;                   // location of first reference by goto
+    char *new_name;                 // unique generated name
 } LabelNode;
 
 typedef struct {
@@ -34,6 +35,7 @@ static HashNode *goto_alloc_hashnode(void)
 static void goto_free_hashnode(HashNode *node)
 {
     LabelNode *lnode = CONTAINER_OF(node, LabelNode, hash);
+    safe_free(lnode->new_name);
     safe_free(lnode);
 }
 
@@ -56,10 +58,23 @@ static void goto_state_free(GotoState *state)
     safe_free(state);
 }
 
+//
+// Get a label from the label table.
+//
 static LabelNode *goto_get_label(GotoState *state, char *label)
 {
     HashNode *node = hashtab_lookup(state->hashtab, label);
     return CONTAINER_OF(node, LabelNode, hash);
+}
+
+//
+// Generate a unique label.
+//
+static char *make_unique_label(char *label)
+{
+    static int seq = 1;
+
+    return saprintf("%s.%d", label, seq++);
 }
 
 //
@@ -77,6 +92,12 @@ static void ast_validate_label(GotoState *state, Statement *stmt)
     }
 
     node->is_defined = true;
+    if (node->new_name == NULL) {
+        node->new_name = make_unique_label(label->name);
+    }
+
+    safe_free(label->name);
+    label->name = safe_strdup(node->new_name);
 
     ast_validate_statement(state, label->stmt);
 }
@@ -90,6 +111,14 @@ static void ast_validate_goto_stmt(GotoState *state, Statement *stmt)
     StmtGoto *goto_ = &stmt->goto_;
 
     LabelNode *node = goto_get_label(state, goto_->target);
+    
+    if (node->new_name == NULL) {
+        node->new_name = make_unique_label(goto_->target);
+    }
+
+    safe_free(goto_->target);
+    goto_->target = safe_strdup(node->new_name);
+
     if (!node->is_used) {
         node->is_used = true;
         node->loc = stmt->loc;
