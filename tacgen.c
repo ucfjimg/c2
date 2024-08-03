@@ -304,6 +304,8 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_CONDITIONAL:   return tcg_conditional(state, exp);
         case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
         case EXP_FUNCTION_CALL: return tcg_function_call(state, exp); break; 
+        case EXP_CAST:          ICE_NYI("tcg_expression::cast");
+        case EXP_LONG:          ICE_NYI("tcg_expression::long");
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));

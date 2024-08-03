@@ -589,6 +589,11 @@ static int lex_pass(Args *args)
     }
 
     lexer_close(lex);
+    
+    if (err_has_errors()) {
+        status = 1;
+    }
+
     return status;
 }
 

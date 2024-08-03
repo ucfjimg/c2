@@ -84,6 +84,8 @@ static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 static Expression *parse_expression(Parser *parser, int min_prec);
 static Statement *parse_statement(Parser *parser);
 static List parse_block(Parser *parser);
+static TypeSpecifier *parse_type_specifier(Parser *parser);
+static bool is_type_specifier(Parser *parser);
 
 //
 // Create a parser bookmark at the current state.
@@ -172,10 +174,16 @@ static Expression *parse_primary(Parser *parser)
     FileLine loc = parser->tok.loc;
 
     //
-    // <primary> := <int>
+    // <primary> := <int> | <long>
     //
     if (parser->tok.type == TOK_INT_CONST) {
-        Expression *exp = exp_int(parser->tok.intval, loc);
+        Expression *exp;
+        
+        if (parser->tok.int_const.is_long) {
+            exp = exp_long(parser->tok.int_const.intval, loc);
+        } else {
+            exp = exp_int(parser->tok.int_const.intval, loc);
+        }
         parse_next_token(parser);
         return exp;
     }
@@ -190,7 +198,7 @@ static Expression *parse_primary(Parser *parser)
     }
 
     //
-    // <primary> := "(" <exp> ")"
+    // <primary> := "(" <exp> ")" | "(" { <specifier> }+ ")"
     //
     if (parser->tok.type == '(') {
         parse_next_token(parser);
@@ -306,7 +314,7 @@ done:
 
 //
 // Parse a factor.
-// <factor> := <unop> <factor> | <postfix>
+// <factor> := <unop> <factor> | "(" { <specifier> }+ ")" <fcator> | <postfix>
 //
 static Expression *parse_factor(Parser *parser)
 {
@@ -320,6 +328,43 @@ static Expression *parse_factor(Parser *parser)
         Expression *rhs = parse_factor(parser);
         Expression *exp = exp_unary(uop, rhs, loc);
         return exp;
+    }
+
+
+    //
+    // '(' could be the start of a cast, or at a higher precedence,
+    // a function call or precedence operator. Check for a type to
+    // see if it's a cast.
+    //
+    // <factor> := "(" { <specifier> }+ ")" <factor>
+    //
+    if (parser->tok.type == '(') {
+        ParserBookmark *bmrk = parse_bookmark(parser);
+        parse_next_token(parser);
+
+        if (is_type_specifier(parser)) {
+            parse_free_bookmark(bmrk);
+            TypeSpecifier *ts = parse_type_specifier(parser);
+
+            if (ts->sc != SC_NONE) {
+                err_report(EC_ERROR, &parser->tok.loc, "cast operator may not include storage class.");
+            }
+
+            if (parser->tok.type != ')') {
+                report_expected_err(&parser->tok, "`)`");
+            } else {
+                parse_next_token(parser);
+            }
+
+            Expression *exp = parse_factor(parser);
+            Expression *cast = exp_cast(typespec_take_type(ts), exp, parser->tok.loc);
+
+            typespec_free(ts);
+            return cast;
+        }
+
+        parse_goto_bookmark(bmrk);
+        parse_free_bookmark(bmrk);
     }
 
     return parse_postfix(parser);
@@ -410,6 +455,7 @@ static bool is_type_specifier(Parser *parser)
 
     return
         tt == TOK_INT ||
+        tt == TOK_LONG ||
         tt == TOK_EXTERN ||
         tt == TOK_STATIC;
 }
@@ -417,12 +463,13 @@ static bool is_type_specifier(Parser *parser)
 //
 // Parse the type specifiers of a declaration:
 //
-// <specifiers> := { "int" | "extern" | "static" }
+// <specifiers> := { "int" | "long" | "extern" | "static" }
 //
 static TypeSpecifier *parse_type_specifier(Parser *parser)
 {
     enum {
         TOK_INT_INDEX,
+        TOK_LONG_INDEX,
         TOK_EXTERN_INDEX,
         TOK_STATIC_INDEX
     };
@@ -432,6 +479,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         int count;
     } spec_tokens[] = {
         { TOK_INT, 0 },
+        { TOK_LONG, 0 },
         { TOK_EXTERN, 0 },
         { TOK_STATIC, 0 },
     };
@@ -469,7 +517,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         err_report(EC_ERROR, &loc, "`static` and `extern` are mutually exclusive.");
     }
 
-    if (spec_tokens[TOK_INT_INDEX].count == 0) {
+    if (spec_tokens[TOK_INT_INDEX].count == 0 && spec_tokens[TOK_LONG_INDEX].count == 0) {
         err_report(EC_ERROR, &loc, "missing type specifier.");
     }
 
@@ -480,12 +528,16 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         sc = SC_EXTERN;
     }
 
+    if (spec_tokens[TOK_LONG_INDEX].count) {
+        return typespec_alloc(sc, type_long());
+    }
+
     return typespec_alloc(sc, type_int());
 }
 
 //
 // Parse a variable declaration.
-// <declaration> := "int" <identifier> [ "=" <exp> ] ";"  |
+// <declaration> := { <specifier> }+ <identifier> [ "=" <exp> ] ";"  |
 //
 // The type and identifier have already been parsed.
 //
@@ -504,22 +556,30 @@ static Declaration *parse_decl_variable(Parser *parser, TypeSpecifier *typespec,
         parse_next_token(parser);
     }
 
-    return decl_variable(name, typespec->sc, init, loc);
+    return decl_variable(name, typespec_take_type(typespec), typespec->sc, init, loc);
 }
 
 //
 // Parse a function declaration.
-// <declaration> := "int" <identifier> "(" <param-list> ")" ";"
+// <declaration> := { <specifier> }+ <identifier> "(" <param-list> ")" ";"
 //
 // Tokens up to and including the opening '(' have been parsed.
+//
+// `typespec` is the parsed return type.
 //
 static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec, char *name, FileLine loc)
 {
     List parms;
+    List ptypes;
     bool parm_list_err = false;
     bool is_void = false;
 
+    //
+    // parms is the list of identifiers of the parameter list, which goes in the AST.
+    // ptypes is the list of types in the parameter list, which goes in the function type.
+    //
     list_clear(&parms);
+    list_clear(&ptypes);
 
     //
     // Special case - "(" "void" ")" means empty parameter list.
@@ -536,17 +596,18 @@ static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec,
         }
     } else {
         while (true) {
-            if (parser->tok.type != TOK_INT) {
-                report_expected_err(&parser->tok, "`int`");
+            TypeSpecifier *ptypespec = parse_type_specifier(parser);
+            
+            if (ptypespec->sc != SC_NONE) {
+                err_report(EC_ERROR, &parser->tok.loc, "function parameters may not have storage classes.");
                 parm_list_err = true;
                 break;
-            } else {
-                parse_next_token(parser);
             }
 
             char *parm_name = NULL;
             if (parser->tok.type != TOK_ID) {
                 parm_list_err = true;
+                typespec_free(ptypespec);
                 report_expected_err(&parser->tok, "identifier");
                 break;
             } else {
@@ -557,6 +618,10 @@ static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec,
             FuncParameter *parm = func_parm(parm_name);
             list_push_back(&parms, &parm->list);
 
+            TypeFuncParam *tparm = type_func_param(typespec_take_type(ptypespec));
+            list_push_back(&ptypes, &tparm->list);
+
+            typespec_free(ptypespec);
             safe_free(parm_name);
 
             if (parser->tok.type == ',') {
@@ -574,6 +639,8 @@ static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec,
             parse_next_token(parser);
         }
     }
+
+    Type *functype = type_function(typespec_take_type(typespec), ptypes);
 
     bool has_body = false;
     List body;
@@ -599,14 +666,14 @@ static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec,
         err_report(EC_ERROR, &loc, "`()` is not valid for a function with no parameters; use `(void)`.");
     }
 
-    return decl_function(name, typespec->sc, parms, body, has_body, loc);    
+    return decl_function(name, functype, typespec->sc, parms, body, has_body, loc);    
 }
 
 //
 // Parse a declaration.
 // <declaration> := 
-//    "int" <identifier> [ "=" <exp> ] ";"  |
-//    "int" <identifier> "(" <param-list> ")" ( <block> | ";" )
+//    { <specifier> }+ <identifier> [ "=" <exp> ] ";"  |
+//    { <specifier> }+ <identifier> "(" <param-list> ")" ( <block> | ";" )
 //
 // The type has already been parsed.
 //
@@ -639,7 +706,7 @@ done:
         //
         // If there's no name, just add a dummy declaration.
         //
-        decl = decl_variable(".error", SC_NONE, NULL, loc);
+        decl = decl_variable(".error", type_int(), SC_NONE, NULL, loc);
     }
     typespec_free(typespec);
     safe_free(name);
@@ -1051,7 +1118,7 @@ static Statement *parse_case(Parser *parser, FileLine loc)
         // TODO when we have proper typing, this will be converted to
         // the proper size/signedness value.
         //
-        value = (int)parser->tok.intval;
+        value = (int)parser->tok.int_const.intval;
         parse_next_token(parser);
     }
 

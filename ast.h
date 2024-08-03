@@ -17,12 +17,14 @@ typedef struct BlockItem BlockItem;
 //
 typedef enum { 
     EXP_INT,
+    EXP_LONG,
     EXP_VAR,
     EXP_UNARY,
     EXP_BINARY,
     EXP_CONDITIONAL,
     EXP_ASSIGNMENT,
     EXP_FUNCTION_CALL,
+    EXP_CAST,
 } ExpressionTag;
 
 typedef struct {
@@ -57,30 +59,41 @@ typedef struct {
     List args;                              // of <Expression>
 } ExpFunctionCall;
 
+typedef struct {
+    Type *type;
+    Expression *exp;
+} ExpCast;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;       
     ListNode list;        
+    Type *type;
 
     union {
         unsigned long intval;
+        unsigned long longval;
         ExpVar var;
         ExpUnary unary;
         ExpBinary binary;
         ExpConditional conditional;
         ExpAssignment assignment;
         ExpFunctionCall call;
+        ExpCast cast;
     };
 };
 
 extern Expression *exp_int(unsigned long intval, FileLine loc);
+extern Expression *exp_long(unsigned long intval, FileLine loc);
 extern Expression *exp_var(char *name, FileLine loc);
 extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc);
 extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern Expression *exp_function_call(char *name, List args, FileLine loc);
+extern Expression *exp_cast(Type *type, Expression *exp, FileLine loc);
 extern void exp_free(Expression *exp);
+extern void exp_set_type(Expression *exp, Type *type);
 
 //
 // declarations
@@ -93,6 +106,7 @@ typedef enum {
 typedef struct {
     char *name;                 // variable name
     Expression *init;           // optional initializer
+    Type *type;                 // variable type
     StorageClass storage_class; // if the declaration is marked as static or extern
 } DeclVariable;
 
@@ -108,6 +122,7 @@ typedef struct {
     List parms;                 // list <FuncParameter> of parameters
     List body;                  // if a definition, List <BlockItem>
     bool has_body;              // declaration is also a definition
+    Type *type;                 // function type
     StorageClass storage_class; // if the declaration is marked as static or extern
 } DeclFunction;
 
@@ -122,8 +137,8 @@ struct Declaration {
     };
 };
 
-extern Declaration *decl_variable(char *name, StorageClass sc, Expression *init, FileLine loc);
-extern Declaration *decl_function(char *name, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
+extern Declaration *decl_variable(char *name, Type *type, StorageClass sc, Expression *init, FileLine loc);
+extern Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
 extern void declaration_free(Declaration *decl);
 
 //

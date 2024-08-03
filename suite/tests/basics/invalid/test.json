@@ -1,5 +1,8 @@
 {
     "bad-char.c": "lex:fail",
+    "bad-hex.c": "lex:fail",
+    "bad-octal.c": "lex:fail",
+    "no-digits.c": "lex:fail",
     "bad-identifier.c": "lex:fail",
     "no-return-type.c": "parse:fail",
     "stray-char.c": "parse:fail"

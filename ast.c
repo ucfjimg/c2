@@ -32,6 +32,16 @@ Expression *exp_int(unsigned long intval, FileLine loc)
 }
 
 //
+// Construct an long constant expression.
+//
+Expression *exp_long(unsigned long longval, FileLine loc)
+{
+    Expression *exp = exp_alloc(EXP_LONG, loc);
+    exp->longval = longval;
+    return exp;
+}
+
+//
 // Construct a variable reference expression.
 //
 Expression *exp_var(char *name, FileLine loc)
@@ -165,6 +175,28 @@ static void exp_function_call_free(ExpFunctionCall *call)
 }
 
 //
+// Construct a cast operator.
+//
+Expression *exp_cast(Type *type, Expression *exp, FileLine loc)
+{
+    Expression *cast = exp_alloc(EXP_CAST, loc);
+
+    cast->cast.type = type;
+    cast->cast.exp = exp;
+
+    return cast;
+}
+
+//
+// Free a cast operator.
+//
+static void exp_cast_free(ExpCast *cast)
+{
+    type_free(cast->type);
+    exp_free(cast->exp);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
@@ -177,12 +209,26 @@ void exp_free(Expression *exp)
             case EXP_CONDITIONAL:   exp_conditional_free(&exp->conditional); break;
             case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
             case EXP_FUNCTION_CALL: exp_function_call_free(&exp->call); break;
+            case EXP_CAST:          exp_cast_free(&exp->cast); break;
             default:                break;
         }
 
+        type_free(exp->type);
         safe_free(exp);
     }
 }
+
+//
+// Set the type annotation of an expression node, replacing any previous type.
+//
+void exp_set_type(Expression *exp, Type *type)
+{
+    if (exp->type) {
+        type_free(exp->type);
+    }
+    exp->type = type;
+}
+
 
 //
 // Constructor for a variable declaration.
@@ -190,12 +236,13 @@ void exp_free(Expression *exp)
 // Note that `init` is optional and will be NULL if the declaration
 // has no initializer.
 // 
-Declaration *decl_variable(char *name, StorageClass sc, Expression *init, FileLine loc)
+Declaration *decl_variable(char *name, Type *type, StorageClass sc, Expression *init, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
     decl->tag = DECL_VARIABLE;
     decl->loc = loc;
+    decl->var.type = type;
     decl->var.storage_class = sc;
     decl->var.name = safe_strdup(name);
     decl->var.init = init;
@@ -209,6 +256,7 @@ Declaration *decl_variable(char *name, StorageClass sc, Expression *init, FileLi
 static void decl_variable_free(DeclVariable *var)
 {
     safe_free(var->name);
+    type_free(var->type);
     exp_free(var->init);
 }
 
@@ -234,12 +282,13 @@ static void func_parm_free(FuncParameter *parm)
 //
 // Constructor for a function declaration.
 //
-Declaration *decl_function(char *name, StorageClass sc, List parms, List body, bool has_body, FileLine loc)
+Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
     decl->tag = DECL_FUNCTION;
     decl->loc = loc;
+    decl->func.type = type;
     decl->func.storage_class = sc;
     decl->func.name = safe_strdup(name);
     decl->func.parms = parms;
@@ -254,6 +303,7 @@ Declaration *decl_function(char *name, StorageClass sc, List parms, List body, b
 //
 static void decl_function_free(DeclFunction *func)
 {
+    type_free(func->type);
     safe_free(func->name);
 
     for (ListNode *curr = func->parms.head; curr; ) {
@@ -740,7 +790,15 @@ void ast_free_program(AstProgram *prog)
 //
 static void print_exp_const_int(unsigned long val, int tab)
 {
-    printf("%*sconst-int(%lu);\n", tab, "", val);
+    printf("const-int(%lu);\n", val);
+}
+
+//
+// Print a long constant expression.
+//
+static void print_exp_const_long(unsigned long val, int tab)
+{
+    printf("const-long(%lu);\n", val);
 }
 
 //
@@ -748,7 +806,7 @@ static void print_exp_const_int(unsigned long val, int tab)
 //
 static void print_exp_var(char *name, int tab)
 {
-    printf("%*svar(%s);\n", tab, "", name);
+    printf("var(%s);\n", name);
 }
 
 //
@@ -756,7 +814,7 @@ static void print_exp_var(char *name, int tab)
 //
 static void print_exp_unary(ExpUnary *unary, int tab, bool locs)
 {
-    printf("%*sunary(%s) {\n", tab, "", uop_describe(unary->op));
+    printf("unary(%s) {\n", uop_describe(unary->op));
     exp_print_recurse(unary->exp, tab + 2, locs);
     printf("%*s}\n", tab, "");
 }
@@ -766,7 +824,7 @@ static void print_exp_unary(ExpUnary *unary, int tab, bool locs)
 //
 static void print_exp_binary(ExpBinary *binary, int tab, bool locs)
 {
-    printf("%*sbinary(%s) {\n", tab, "", bop_describe(binary->op));
+    printf("binary(%s) {\n", bop_describe(binary->op));
     exp_print_recurse(binary->left, tab + 2, locs);
     printf("%*s  ,\n", tab, "");
     exp_print_recurse(binary->right, tab + 2, locs);
@@ -778,7 +836,7 @@ static void print_exp_binary(ExpBinary *binary, int tab, bool locs)
 //
 static void print_exp_conditional(ExpConditional *cond, int tab, bool locs)
 {
-    printf("%*sconditional {\n", tab, "");
+    printf("conditional {\n");
     exp_print_recurse(cond->cond, tab + 2, locs);
     printf("%*s} ? {\n", tab, "");
     exp_print_recurse(cond->trueval, tab + 2, locs);
@@ -792,7 +850,7 @@ static void print_exp_conditional(ExpConditional *cond, int tab, bool locs)
 //
 static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
 {
-    printf("%*sassignment(%s) {\n", tab, "", bop_describe(assign->op));
+    printf("assignment(%s) {\n", bop_describe(assign->op));
     exp_print_recurse(assign->left, tab + 2, locs);
     printf("%*s}, {\n", tab, "");
     exp_print_recurse(assign->right, tab + 2, locs);
@@ -804,12 +862,26 @@ static void print_exp_assignment(ExpAssignment *assign, int tab, bool locs)
 //
 static void print_exp_function_call(ExpFunctionCall *call, int tab, bool locs)
 {
-    printf("%*scall(%s) {\n", tab, "", call->name);
+    printf("call(%s) {\n", call->name);
     
     for (ListNode *curr = call->args.head; curr; curr = curr->next) {
         Expression *arg = CONTAINER_OF(curr, Expression, list);
         exp_print_recurse(arg, tab + 2, locs);
     }
+
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a cast expression.
+//
+static void print_exp_cast(ExpCast *cast, int tab, bool locs)
+{
+    char *type = type_describe(cast->type);
+    printf("cast(%s) {\n", type);
+    safe_free(type);
+
+    exp_print_recurse(cast->exp, tab + 2, locs);
 
     printf("%*s}\n", tab, "");
 }
@@ -825,14 +897,23 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         safe_free(loc);
     }
 
+    printf("%*s", tab, "");
+    if (exp->type) {
+        char *type = type_describe(exp->type);
+        printf("(%s) ", type);
+        safe_free(type);
+    }
+
     switch (exp->tag) {
         case EXP_INT:           print_exp_const_int(exp->intval, tab); break;
+        case EXP_LONG:          print_exp_const_long(exp->longval, tab); break;
         case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
         case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;
         case EXP_CONDITIONAL:   print_exp_conditional(&exp->conditional, tab, locs); break;
         case EXP_ASSIGNMENT:    print_exp_assignment(&exp->assignment, tab, locs); break;
         case EXP_FUNCTION_CALL: print_exp_function_call(&exp->call, tab, locs); break;
+        case EXP_CAST:          print_exp_cast(&exp->cast, tab, locs); break;
     }
 }
 

@@ -10,5 +10,7 @@
     "multiple-global-initializers.c": "validate:fail",
     "local-extern-init.c": "validate:fail",
     "func-redef-as-local-extern.c": "validate:fail",
-    "for-init-with-sc.c": "validate:fail"
+    "for-init-with-sc.c": "validate:fail",
+    "var-bad-redecl.c": "validate:fail"
+    
 }

@@ -1,12 +1,25 @@
 #pragma once
 
+#include "list.h"
+
+#include <stdbool.h>
+
+typedef struct Type Type;
+
 typedef enum {
     TT_INT,
+    TT_LONG,
     TT_FUNC,
 } TypeTag;
 
 typedef struct {
-    int parms;                  // number of parameters
+    ListNode list;
+    Type *parmtype;
+} TypeFuncParam;
+
+typedef struct {
+    Type *ret;                  // return value type
+    List parms;                 // of <TypeFuncParam>
 } TypeFunction;
 
 typedef enum {
@@ -15,13 +28,13 @@ typedef enum {
     SC_EXTERN,
 } StorageClass;
 
-typedef struct {
+struct Type {
     TypeTag tag;
 
     union {
-        TypeFunction func;      // TT_INT
+        TypeFunction func;      // TT_FUNC
     };
-} Type;
+};
 
 typedef struct {
     StorageClass sc;
@@ -29,10 +42,17 @@ typedef struct {
 } TypeSpecifier;
 
 extern Type *type_int(void);
-extern Type *type_function(int parms);
+extern Type *type_long(void);
+extern TypeFuncParam *type_func_param(Type *type);
+extern Type *type_function(Type *ret, List parms);
+extern Type *type_clone(Type *type);
+extern bool types_equal(Type *left, Type *right);
 extern void type_free(Type *type);
 extern char *type_describe(Type *type);
 
+
 extern TypeSpecifier *typespec_alloc(StorageClass sc, Type *type);
 extern void typespec_free(TypeSpecifier *typespec);
+extern Type *typespec_take_type(TypeSpecifier *typespec);
+
 

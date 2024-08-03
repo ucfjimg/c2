@@ -1,8 +1,10 @@
 #include "lexer.h"
 
 #include "errors.h"
+#include "ice.h"
 #include "safemem.h"
 #include "strbuilder.h"
+#include "target.h"
 
 #include <ctype.h>
 #include <stdbool.h>
@@ -15,6 +17,7 @@ typedef struct {
 
 static Keyword keywords[] = {
     { "int",        TOK_INT },
+    { "long",       TOK_LONG },
     { "return",     TOK_RETURN },
     { "void",       TOK_VOID },
     { "if",         TOK_IF },
@@ -236,31 +239,82 @@ static void lexer_scan_id_or_keyword(Lexer *lex, Token *tok)
 static void lexer_scan_int_const(Lexer *lex, Token *tok)
 {
     StrBuilder *integer = stb_alloc();
+    bool long_suffix = false;
+
+    int base = 10;
     
-    do {
-        stb_push_char(integer, lex->ch);
+    if (lex->ch == '0') {
+        base = 8;
         lexer_next_char(lex);
-    } while (isdigit(lex->ch));
-
-    //
-    // digits cannot be immediately followed by an identifier without intervening
-    // whitespace or an operator
-    //
-    if (isalpha(lex->ch) || lex->ch == '_') {
-        do {
-            stb_push_char(integer, lex->ch);
+        if (lex->ch == 'x' || lex->ch == 'X') {
+            base = 16;
             lexer_next_char(lex);
-        } while (isalnum(lex->ch) || lex->ch == '_');
+        } else {
+            stb_push_char(integer, '0');
+        }
+    }
 
-        tok->type = TOK_ERROR;
-        tok->err = stb_take(integer);
+    while (true) {
+        bool valid = false;
+        char ch = lex->ch;
 
-        err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
-    } else {
-        unsigned long val = strtoul(integer->str, NULL, 10);
+        switch (base) {
+            case 8: 
+            case 10: valid = isdigit(ch); break;
+            case 16: valid = isxdigit(ch); break;
+            default:
+                ICE_ASSERT(((void)"invalid base in lexer_scan_int_const", false));
+        }
+
+        if (!valid) {
+            break;
+        }
         
+        if (base == 8 && (ch == '8' || ch == '9')) {
+            err_report(EC_ERROR, &tok->loc, "invalid octal digit `%c`.", ch);
+        }
+
+
+        stb_push_char(integer, ch);
+        lexer_next_char(lex);
+    }
+
+    //
+    // Parse supported suffix characters.
+    // 
+    if (lex->ch == 'l' || lex->ch == 'L') {
+        long_suffix = true;
+        lexer_next_char(lex);
+    }
+    
+    if (integer->length == 0) {
+        err_report(EC_ERROR, &tok->loc, "invalid integer constant.");
+
         tok->type = TOK_INT_CONST;
-        tok->intval = val;
+        tok->int_const.intval = 0;
+        tok->int_const.is_long = false;
+    } else {
+        //
+        // Value cannot be immediately followed by an identifier without intervening
+        // whitespace or an operator.
+        //
+        if (isalpha(lex->ch) || lex->ch == '_') {
+            do {
+                stb_push_char(integer, lex->ch);
+                lexer_next_char(lex);
+            } while (isalnum(lex->ch) || lex->ch == '_');
+
+            tok->type = TOK_ERROR;
+            tok->err = stb_take(integer);
+
+            err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
+        } else {
+            unsigned long val = strtoul(integer->str, NULL, base);
+            
+            tok->type = TOK_INT_CONST;
+            tok->int_const.intval = val;
+            tok->int_const.is_long = long_suffix || !tgt_signed_fits_in_int(val);
+        }
     }
 
     stb_free(integer);

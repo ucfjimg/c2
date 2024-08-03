@@ -2,5 +2,9 @@
     "simple.c": "lex:success",
     "simple.c": "parse:success",
     "simple.c": "gcc-retval:success",
-    "return-2.c": "gcc-retval:success"
+    "return-2.c": "gcc-retval:success",
+    "hex.c": "gcc-retval:success",
+    "octal.c": "gcc-retval:success",
+    "zero.c": "gcc-retval:success"
+    
 }

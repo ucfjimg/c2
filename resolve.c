@@ -269,6 +269,14 @@ static void ast_resolve_function_call(ResolveState *state, Expression *callexp)
 }
 
 //
+// Resolve a cast expression.
+//
+static void ast_resolve_cast_exp(ResolveState *state, ExpCast *cast)
+{
+    ast_resolve_expression(state, cast->exp);
+}
+
+//
 // Resolve variable references in an expression.
 //
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
@@ -280,7 +288,9 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_CONDITIONAL:   ast_resolve_conditional_exp(state, &exp->conditional); break;
         case EXP_ASSIGNMENT:    ast_resolve_assign_exp(state, &exp->assignment); break;
         case EXP_FUNCTION_CALL: ast_resolve_function_call(state, exp); break;
+        case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
         case EXP_INT:           break;
+        case EXP_LONG:          break;
     }
 }
 

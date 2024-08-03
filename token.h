@@ -2,6 +2,8 @@
 
 #include "fileline.h"
 
+#include <stdbool.h>
+
 typedef enum {
     //
     // operators/puncuation
@@ -88,17 +90,23 @@ typedef enum {
     TOK_CASE,
     TOK_DEFAULT,
     TOK_STATIC,
-    TOK_EXTERN
+    TOK_EXTERN,
+    TOK_LONG,
 } TokenType;
+
+typedef struct {
+    unsigned long intval;       // the bit pattern
+    bool is_long;               // a long constant
+} TokIntConst;
 
 typedef struct {
     TokenType type;             // type for discrimated union
     FileLine loc;               // file/line of first character of token
 
     union {
-        char *id;               // if TOK_ID
-        unsigned long intval;   // if TOK_INT_CONST
-        char *err;              // if TOK_ERROR, the invalid token
+        char *id;               // TOK_ID
+        TokIntConst int_const;  // TOK_INT_CONST
+        char *err;              // TOK_ERROR, the invalid token
     };
 } Token;
 

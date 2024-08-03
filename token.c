@@ -1,5 +1,6 @@
 #include "token.h"
 
+#include "ice.h"
 #include "safemem.h"
 
 #include <ctype.h>
@@ -25,6 +26,18 @@ void token_free(Token *tok)
 }
 
 //
+// Format an integer constant into an allocated string.
+//
+static char *token_describe_int_const(Token *tok)
+{
+    ICE_ASSERT(tok->type == TOK_INT_CONST);
+
+    return saprintf("int-const(%lu%s)",
+        tok->int_const.intval,
+        tok->int_const.is_long ? "l" : "");
+}
+
+//
 // Return a description of a token for debug output or error message. 
 // Returns an allocated string which must be free'd.
 //
@@ -42,7 +55,7 @@ char *token_describe(Token *tok)
         case TOK_ERROR:             return saprintf("<invalid-token-%s>", tok->err);
 
         case TOK_ID:                return saprintf("id(%s)", tok->id);
-        case TOK_INT_CONST:         return saprintf("int-const(%lu)", tok->intval);
+        case TOK_INT_CONST:         return token_describe_int_const(tok); break;
 
         default:                    break;
     }
@@ -93,6 +106,7 @@ char *token_type_describe(TokenType tt)
         case TOK_COMPOUND_RSHIFT:   return saprintf(">>=");
 
         case TOK_INT:               return saprintf("int");
+        case TOK_LONG:              return saprintf("long");
         case TOK_RETURN:            return saprintf("return");
         case TOK_VOID:              return saprintf("void");
         case TOK_IF:                return saprintf("if");

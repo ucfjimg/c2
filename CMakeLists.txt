@@ -28,6 +28,7 @@ add_executable(cc
     switch.c
     tacgen.c
     tacnode.c
+    target.c
     token.c
     type.c
     typecheck.c

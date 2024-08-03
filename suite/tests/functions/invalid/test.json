@@ -10,5 +10,7 @@
     "func-as-var.c": "validate:fail",
     "func-misdeclared.c": "validate:fail",
     "func-mutiple-def.c": "validate:fail",
-    "redecl-of-empty-fn.c": "validate:fail"
+    "redecl-of-empty-fn.c": "validate:fail",
+    "func-ret-type-change.c": "validate:fail",
+    "func-plist-change.c": "validate:fail"
 }
