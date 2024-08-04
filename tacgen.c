@@ -89,12 +89,16 @@ static void tcg_append(TacState *state, TacNode *tac)
 //
 // Return a unique temporary variable.
 //
-static TacNode *tcg_temporary(FileLine loc)
+static TacNode *tcg_temporary(TacState *state, Type *type, FileLine loc)
 {
     static int suffix = 0;
 
     char *name = saprintf("tmp..%d", suffix++);
     TacNode *var = tac_var(name, loc);
+
+    Symbol *sym = stab_lookup(state->stab, name);
+    sym_update_local(sym, type);
+
     safe_free(name);
 
     return var;
@@ -121,16 +125,16 @@ static TacNode *tcg_unary_op(TacState *state, Expression *unary)
 {
     FileLine loc = unary->loc;
     TacNode *src = tcg_expression(state, unary->unary.exp);
-    TacNode *dst = tcg_temporary(loc);
+    TacNode *dst = tcg_temporary(state, type_clone(unary->type), loc);
 
     if (unary->unary.op == UOP_PREDECREMENT || unary->unary.op == UOP_PREINCREMENT) {
-        TacNode *tmp = tcg_temporary(loc);
+        TacNode *tmp = tcg_temporary(state, type_clone(unary->type), loc);
         TacNode *operand = tcg_expression(state, unary->unary.exp);
                 
         if (unary->unary.op == UOP_PREDECREMENT) {
-            tcg_append(state, tac_binary(BOP_SUBTRACT, operand, tac_const_int(1, loc), tmp, loc));
+            tcg_append(state, tac_binary(BOP_SUBTRACT, operand, tac_const_int(1, false, loc), tmp, loc));
         } else {
-            tcg_append(state, tac_binary(BOP_ADD, operand, tac_const_int(1, loc), tmp, loc));
+            tcg_append(state, tac_binary(BOP_ADD, operand, tac_const_int(1, false, loc), tmp, loc));
         }
 
         tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(operand), loc));
@@ -139,16 +143,16 @@ static TacNode *tcg_unary_op(TacState *state, Expression *unary)
     }
 
     if (unary->unary.op == UOP_POSTDECREMENT || unary->unary.op == UOP_POSTINCREMENT) {
-        TacNode *oldval = tcg_temporary(loc);
-        TacNode *tmp = tcg_temporary(loc);
+        TacNode *oldval = tcg_temporary(state, type_clone(unary->type), loc);
+        TacNode *tmp = tcg_temporary(state, type_clone(unary->type), loc);
         TacNode *operand = tcg_expression(state, unary->unary.exp);
                 
         tcg_append(state, tac_copy(tac_clone_operand(operand), oldval, loc));
 
         if (unary->unary.op == UOP_POSTDECREMENT) {
-            tcg_append(state, tac_binary(BOP_SUBTRACT, operand, tac_const_int(1, loc), tmp, loc));
+            tcg_append(state, tac_binary(BOP_SUBTRACT, operand, tac_const_int(1, false, loc), tmp, loc));
         } else {
-            tcg_append(state, tac_binary(BOP_ADD, operand, tac_const_int(1, loc), tmp, loc));
+            tcg_append(state, tac_binary(BOP_ADD, operand, tac_const_int(1, false, loc), tmp, loc));
         }
 
         tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(operand), loc));
@@ -178,16 +182,16 @@ static TacNode *tcg_short_circuit_op(TacState *state, Expression *binary)
 
     TacNode *tf_label = tcg_make_label(loc);
     TacNode *end_label = tcg_make_label(loc);
-    TacNode *result = tcg_temporary(loc);
+    TacNode *result = tcg_temporary(state, type_clone(binary->type), loc);
     
     TacNode *left = tcg_expression(state, binary->binary.left);
     tcg_append(state, tac_sc_jump(left, tf_label->label.name, loc));
     TacNode *right = tcg_expression(state, binary->binary.right);
     tcg_append(state, tac_sc_jump(right, tf_label->label.name, loc));
-    tcg_append(state, tac_copy(tac_const_int(success_val, loc), tac_var(result->var.name, loc), loc));
+    tcg_append(state, tac_copy(tac_const_int(success_val, false, loc), tac_var(result->var.name, loc), loc));
     tcg_append(state, tac_jump(end_label->label.name, loc));
     tcg_append(state, tf_label);
-    tcg_append(state, tac_copy(tac_const_int(fail_val, loc), tac_var(result->var.name, loc), loc));
+    tcg_append(state, tac_copy(tac_const_int(fail_val, false, loc), tac_var(result->var.name, loc), loc));
     tcg_append(state, end_label);
 
     return result;
@@ -209,7 +213,7 @@ static TacNode *tcg_binary_op(TacState *state, Expression *binary)
 
     TacNode *left = tcg_expression(state, binary->binary.left);
     TacNode *right = tcg_expression(state, binary->binary.right);
-    TacNode *dst = tcg_temporary(binary->loc);
+    TacNode *dst = tcg_temporary(state, type_clone(binary->type), binary->loc);
 
     tcg_append(state, tac_binary(binary->binary.op, left, right, dst, binary->loc));
 
@@ -226,7 +230,7 @@ static TacNode *tcg_conditional(TacState *state, Expression *condexp)
 
     TacNode *falsepart = tcg_make_label(cond->falseval->loc);
     TacNode *end = tcg_make_label(cond->falseval->loc);
-    TacNode *result = tcg_temporary(cond->cond->loc);
+    TacNode *result = tcg_temporary(state, type_clone(condexp->type), cond->cond->loc);
 
     TacNode *condval = tcg_expression(state, cond->cond);
     tcg_append(state, tac_jump_zero(condval, falsepart->label.name, cond->cond->loc));
@@ -257,7 +261,7 @@ struct TacNode *tcg_assignment(TacState *state, Expression *exp)
     } else {
         ICE_ASSERT(bop_is_compound_assign(assign->op));
         BinaryOp bop = bop_compound_to_binop(assign->op);
-        TacNode *tmp = tcg_temporary(exp->loc);
+        TacNode *tmp = tcg_temporary(state, type_clone(exp->type), exp->loc);
         
         tcg_append(state, tac_binary(bop, left, right, tmp, exp->loc));
         tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(left), exp->loc));
@@ -284,11 +288,53 @@ static TacNode *tcg_function_call(TacState *state, Expression *exp)
         list_push_back(&args, &tacarg->list);
     }
 
-    TacNode *result = tcg_temporary(exp->loc);
+    TacNode *result = tcg_temporary(state, type_clone(exp->type), exp->loc);
 
     tcg_append(state, tac_function_call(call->name, args, result, exp->loc));
 
     return tac_clone_operand(result);
+}
+
+//
+// Generate TAC for a constant integer.
+//
+static TacNode *tcg_const_int(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_INT);
+    return tac_const_int(exp->intval, false, exp->loc);
+}
+
+//
+// Generate TAC for a constant long.
+//
+static TacNode *tcg_const_long(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_LONG);
+    return tac_const_int(exp->intval, true, exp->loc);
+}
+
+//
+// Generata TAC for cast.
+//
+static TacNode *tcg_cast(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_CAST);
+    ExpCast *cast = &exp->cast;
+
+    TacNode *inner = tcg_expression(state, cast->exp);
+    if (types_equal(cast->exp->type, cast->type)) {
+        return inner;
+    }
+
+    TacNode *tmp = tcg_temporary(state, type_clone(cast->type), exp->loc);
+
+    if (cast->type->tag == TT_LONG) {
+        tcg_append(state, tac_sign_extend(inner, tmp, exp->loc));
+    } else {
+        tcg_append(state, tac_truncate(inner, tmp, exp->loc));
+    }
+
+    return tac_clone_operand(tmp);
 }
 
 //
@@ -297,15 +343,15 @@ static TacNode *tcg_function_call(TacState *state, Expression *exp)
 static TacNode *tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
-        case EXP_INT:           return tac_const_int(exp->intval, exp->loc);
+        case EXP_INT:           return tcg_const_int(state, exp);
+        case EXP_LONG:          return tcg_const_long(state, exp);
         case EXP_VAR:           return tac_var(exp->var.name, exp->loc);
         case EXP_UNARY:         return tcg_unary_op(state, exp);
         case EXP_BINARY:        return tcg_binary_op(state, exp);
         case EXP_CONDITIONAL:   return tcg_conditional(state, exp);
         case EXP_ASSIGNMENT:    return tcg_assignment(state, exp);
         case EXP_FUNCTION_CALL: return tcg_function_call(state, exp); break; 
-        case EXP_CAST:          ICE_NYI("tcg_expression::cast");
-        case EXP_LONG:          ICE_NYI("tcg_expression::long");
+        case EXP_CAST:          return tcg_cast(state, exp); break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -573,17 +619,18 @@ static void tcg_switch(TacState *state, Statement *stmt)
     StmtSwitch *switch_ = &stmt->switch_;
 
     TacNode *cond = tcg_expression(state, switch_->cond);
+    bool is_long = switch_->cond->type->tag == TT_LONG;
 
     for (ListNode *curr = switch_->cases.head; curr; curr = curr->next) {
         CaseLabel *label = CONTAINER_OF(curr, CaseLabel, list);
 
-        TacNode *cmp = tcg_temporary(stmt->loc);
+        TacNode *cmp = tcg_temporary(state, type_clone(switch_->cond->type), stmt->loc);
         char *case_label = tcg_case_label(switch_->label, label->value);
 
         tcg_append(state, tac_binary(
             BOP_SUBTRACT, 
             tac_clone_operand(cond),
-            tac_const_int(label->value, stmt->loc), 
+            tac_const_int(label->value, is_long, stmt->loc), 
             cmp,
             stmt->loc));
         tcg_append(state, tac_jump_zero(tac_clone_operand(cmp), case_label, stmt->loc));
@@ -696,7 +743,7 @@ static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
     tcg_append(
         &funcstate, 
         tac_return(
-            tac_const_int(0, loc),
+            tac_const_int(0, false, loc),
             loc
         )
     );
@@ -722,10 +769,14 @@ static void tcg_statics(List *code, SymbolTable *stab)
             bool global = sym->stvar.global;
             FileLine loc = sym->stvar.loc;
 
+            StaticVarInit init;
+            init.value = 0;
+            init.is_long = 0;
+
             switch (sym->stvar.siv) {
-                case SIV_INIT:      var = tac_static_var(node->key, global, sym->stvar.initial, loc); break;
+                case SIV_INIT:      var = tac_static_var(node->key, global, type_clone(sym->type), sym->stvar.initial, loc); break;
                 case SIV_NO_INIT:   break;
-                case SIV_TENTATIVE: var = tac_static_var(node->key, global, 0, loc); break;
+                case SIV_TENTATIVE: var = tac_static_var(node->key, global, type_clone(sym->type), init, loc); break;
             }
 
             if (var) {

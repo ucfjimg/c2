@@ -113,6 +113,17 @@ static void asm_alloc_mov(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a MOVSX instruction.
+//
+static void asm_alloc_movsx(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_MOVSX);
+
+    asm_alloc_operand(vartab, &instr->movsx.src);
+    asm_alloc_operand(vartab, &instr->movsx.dst);
+}
+
+//
 // Apply pseudoregister replacement to a unary instruction.
 //
 static void asm_alloc_unary(VarTable *vartab, AsmNode *instr)
@@ -182,6 +193,7 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
     switch (instr->tag) {
         case ASM_PROG:          break;
         case ASM_MOV:           asm_alloc_mov(vartab, instr); break;
+        case ASM_MOVSX:         asm_alloc_movsx(vartab, instr); break;
         case ASM_UNARY:         asm_alloc_unary(vartab, instr); break;
         case ASM_BINARY:        asm_alloc_binary(vartab, instr); break;
         case ASM_CMP:           asm_alloc_cmp(vartab, instr); break;

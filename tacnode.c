@@ -92,11 +92,12 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 //
 // Constructor for a TAC static variable declaration.
 //
-TacNode *tac_static_var(char *name, bool global, unsigned long init, FileLine loc)
+TacNode *tac_static_var(char *name, bool global, Type *type, StaticVarInit init, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_STATIC_VAR, loc);
     tac->static_var.name = safe_strdup(name);
     tac->static_var.global = global;
+    tac->static_var.type = type;
     tac->static_var.init = init;
     return tac;
 }
@@ -294,10 +295,11 @@ static void tac_binary_free(TacBinary *binary)
 //
 // Construct a TAC constant integer.
 //
-TacNode *tac_const_int(unsigned long val, FileLine loc)
+TacNode *tac_const_int(unsigned long val, bool is_long, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_CONST_INT, loc);
     tac->constint.val = val;
+    tac->constint.is_long = is_long;
     return tac;
 }
 
@@ -334,6 +336,32 @@ TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc)
 }
 
 //
+// Constructor for a TAC sign extend operation.
+//
+TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_SIGN_EXTEND, loc);
+
+    tac->sign_extend.src = src;
+    tac->sign_extend.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC truncate operation.
+//
+TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_TRUNCATE, loc);
+
+    tac->truncate.src = src;
+    tac->truncate.dst = dst;
+
+    return tac;
+}
+
+//
 // Free a TAC function call.
 //
 static void tac_function_call_free(TacFunctionCall *call)
@@ -353,6 +381,24 @@ static void tac_function_call_free(TacFunctionCall *call)
 }
 
 //
+// Free a TAC sign extend.
+//
+static void tac_sign_extend_free(TacSignExtend *sext)
+{
+    tac_free(sext->src);
+    tac_free(sext->dst);
+}
+
+//
+// Free a TAC truncate.
+//
+static void tac_truncate_free(TacTruncate *trunc)
+{
+    tac_free(trunc->src);
+    tac_free(trunc->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST_INT.
 //
@@ -362,10 +408,10 @@ TacNode *tac_clone_operand(TacNode *tac)
 
     switch (tac->tag) {
         case TAC_VAR:       return tac_var(tac->var.name, tac->loc);
-        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->loc);
+        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->constint.is_long, tac->loc);
     
         default:
-            return tac_const_int(0, tac->loc);
+            return tac_const_int(0, false, tac->loc);
     }
 }
 
@@ -391,6 +437,8 @@ void tac_free(TacNode *tac)
             case TAC_BINARY:        tac_binary_free(&tac->binary); break;
             case TAC_VAR:           tac_var_free(&tac->var); break;
             case TAC_FUNCTION_CALL: tac_function_call_free(&tac->call); break;
+            case TAC_SIGN_EXTEND:   tac_sign_extend_free(&tac->sign_extend); break;
+            case TAC_TRUNCATE:      tac_truncate_free(&tac->truncate); break;
         }
 
         safe_free(tac);
@@ -454,11 +502,14 @@ static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
 //
 static void tac_print_static_var(TacStaticVar *var, int tab)
 {
-    printf("%*sstatic-var(%s) ", tab, "", var->name);
+    char *desc = type_describe(var->type);
+    printf("%*sstatic-var(%s %s) ", tab, "", desc, var->name);
+    safe_free(desc);
+
     if (var->global) {
         printf("global ");
     }
-    printf("= %lu\n", var->init);
+    printf("= %lu%s\n", var->init.value, var->init.is_long ? "l" : "");
 }
 
 //
@@ -550,7 +601,7 @@ static void tac_print_binary(TacBinary *binary, int tab, bool locs)
 //
 static void tac_print_const_int(TacConstInt *constint, int tab)
 {
-    printf("%*sconst-int(%lu)\n", tab, "", constint->val);
+    printf("%*sconst-int(%s%lu)\n", tab, "", constint->is_long ? "long " : "", constint->val);
 }
 
 //
@@ -583,6 +634,30 @@ static void tac_print_function_call(TacFunctionCall *call, int tab, bool locs)
 }
 
 //
+// Print a TAC sign extend operation.
+//
+static void tac_print_sign_extend(TacSignExtend *sext, int tab, bool locs)
+{
+    printf("%*ssign-extend(", tab, "");
+    tac_print_recurse(sext->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(sext->dst, tab + 2, locs);
+    printf("\n");
+}
+
+//
+// Print a TAC truncate operation.
+//
+static void tac_print_truncate(TacTruncate *trunc, int tab, bool locs)
+{
+    printf("%*struncate(", tab, "");
+    tac_print_recurse(trunc->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(trunc->dst, tab + 2, locs);
+    printf("\n");
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -605,10 +680,8 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_CONST_INT:     tac_print_const_int(&tac->constint, tab); break;
         case TAC_VAR:           tac_print_var(&tac->var, tab); break;
         case TAC_FUNCTION_CALL: tac_print_function_call(&tac->call, tab, locs); break;
-
-        default:
-            printf("%*s<invalid-TAC-tag>();\n", tab, "");
-            break;
+        case TAC_SIGN_EXTEND:   tac_print_sign_extend(&tac->sign_extend, tab, locs); break;
+        case TAC_TRUNCATE:      tac_print_truncate(&tac->truncate, tab, locs); break;
     }
 }
 

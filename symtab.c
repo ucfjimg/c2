@@ -78,7 +78,12 @@ static void stab_print_static_var(SymStaticVar *svar)
     }
 
     char *loc = fileline_describe(&svar->loc);
-    printf("init=%lu global=%d is_long=%d loc=%s\n", svar->initial, svar->global, svar->is_long, loc);
+    printf(
+        "init=%lu%s global=%d loc=%s\n", 
+        svar->initial.value, 
+        svar->initial.is_long ? "l" : "",
+        svar->global, 
+        loc);
     safe_free(loc);
 }
 
@@ -128,7 +133,7 @@ void sym_update_func(Symbol *sym, Type *type, bool defined, bool global)
 //
 // Update the given symbol to be a static variable.
 //
-void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsigned long init, int flags, FileLine loc)
+void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, StaticVarInit init, bool global, FileLine loc)
 {
     sym->tag = ST_STATIC_VAR;
 
@@ -139,8 +144,7 @@ void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, unsi
 
     sym->stvar.initial = init;
     sym->stvar.siv = siv;
-    sym->stvar.is_long = (flags & SUSV_LONG);
-    sym->stvar.global = (flags & SUSV_GLOBAL);
+    sym->stvar.global = global;
     sym->stvar.loc = loc;
 }
 

@@ -3,6 +3,7 @@
 #include "ast.h"
 #include "fileline.h"
 #include "list.h"
+#include "symtab.h"
 
 //
 // Three-address code - intermediate format.
@@ -22,6 +23,8 @@ typedef enum {
     TAC_CONST_INT,
     TAC_VAR,
     TAC_FUNCTION_CALL,
+    TAC_SIGN_EXTEND,
+    TAC_TRUNCATE,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -57,7 +60,8 @@ typedef struct {
 typedef struct {
     char *name;                     // name
     bool global;                    // is the variable globally visible
-    unsigned long init;             // the initial value
+    Type *type;                     // variable type
+    StaticVarInit init;             // the initial value
 } TacStaticVar;
 
 //
@@ -129,6 +133,7 @@ typedef struct {
 //
 typedef struct {
     unsigned long val;              // constant value
+    bool is_long;                   // constant is a long
 } TacConstInt;
 
 //
@@ -139,13 +144,29 @@ typedef struct {
 } TacVar;
 
 //
-// A function call
+// A function call.
 //
 typedef struct {
     char *name;                     // name of function to call
     List args;                      // list <TacNode> of arguments
     TacNode *dst;                   // where to save result
 } TacFunctionCall;
+
+//
+// A sign extend operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacSignExtend;
+
+//
+// A truncate operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacTruncate;
 
 //
 // A TAC node -- discriminated union based on `tag`
@@ -170,12 +191,14 @@ typedef struct TacNode {
         TacConstInt     constint;
         TacVar          var;
         TacFunctionCall call;
+        TacSignExtend   sign_extend;
+        TacTruncate     truncate;
     };
 } TacNode;
 
 extern TacNode *tac_program(List decls, FileLine loc);
 extern TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLine loc);
-extern TacNode *tac_static_var(char *name, bool global, unsigned long init, FileLine loc);
+extern TacNode *tac_static_var(char *name, bool global, Type *type, StaticVarInit init, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_jump(char *target, FileLine loc);
@@ -184,9 +207,11 @@ extern TacNode *tac_jump_not_zero(TacNode *condition, char *target, FileLine loc
 extern TacNode *tac_label(char *name, FileLine loc);
 extern TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc);
-extern TacNode *tac_const_int(unsigned long val, FileLine loc);
+extern TacNode *tac_const_int(unsigned long val, bool is_long, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
 extern TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc);
+extern TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

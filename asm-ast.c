@@ -23,6 +23,7 @@ char *reg_name(Register reg)
         case REG_R9:    return "r9";
         case REG_R10:   return "r10";
         case REG_R11:   return "r11";
+        case REG_RSP:   return "rsp";
     }
 
     return "<invalid-reg>";
@@ -43,6 +44,62 @@ const char *acc_describe(AsmConditionCode cc)
     }
 
     return "<invalid-condition-code>";
+}
+
+//
+// Allocate an assembly type of a longword.
+//
+AsmType *asmtype_long(void)
+{
+    AsmType *at = safe_zalloc(sizeof(AsmType));
+    at->tag = AT_LONGWORD;
+    return at;
+}
+
+//
+// Allocate an assembly type of a quadword.
+//
+AsmType *asmtype_quad(void)
+{
+    AsmType *at = safe_zalloc(sizeof(AsmType));
+    at->tag = AT_QUADWORD;
+    return at;
+}
+
+//
+// Free an assembly type object.
+//
+void asmtype_free(AsmType *type)
+{
+    safe_free(type);
+}
+
+//
+// Clone an assembly type object.
+//
+AsmType *asmtype_clone(AsmType *type)
+{
+    switch (type->tag) {
+        case AT_LONGWORD:       return asmtype_long();
+        case AT_QUADWORD:       return asmtype_quad();
+    }
+
+    ICE_ASSERT(((void)"invalid assembly type in asmtype_clone", false));
+    return asmtype_long();
+}
+
+//
+// Return an allocated string describing an assembly type.
+//
+char *asmtype_describe(AsmType *at)
+{
+    switch (at->tag) {
+        case AT_LONGWORD: return saprintf("longword");
+        case AT_QUADWORD: return saprintf("quadword");
+    }
+
+    ICE_ASSERT(((void)"invalid assembly type in asmtype_describe", false));
+    return safe_strdup("");
 }
 
 //
@@ -202,7 +259,7 @@ AsmNode *asm_func(char *name, List body, bool global, FileLine loc)
 //
 // Construct an assembly static variable.
 //
-AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine loc)
+AsmNode *asm_static_var(char *name, bool global, int alignment, StaticVarInit init, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -210,6 +267,7 @@ AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine lo
     node->loc = loc;
     node->static_var.name = safe_strdup(name);
     node->static_var.global = global;
+    node->static_var.alignment = alignment;
     node->static_var.init = init;
 
     return node;    
@@ -218,7 +276,7 @@ AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine lo
 //
 // Construct an assembly mov instruction.
 //
-AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc)
+AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -226,6 +284,22 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc)
     node->loc = loc;
     node->mov.src = src;
     node->mov.dst = dst;
+    node->mov.type = type;
+
+    return node;
+}
+
+//
+// Construct an assembly movsx instruction.
+//
+AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_MOVSX;
+    node->loc = loc;
+    node->movsx.src = src;
+    node->movsx.dst = dst;
 
     return node;
 }
@@ -233,7 +307,7 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc)
 //
 // Construct an assembly unary operator instruction.
 //
-AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc)
+AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -241,6 +315,7 @@ AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc)
     node->loc = loc;
     node->unary.op = op;
     node->unary.arg = arg;
+    node->unary.type = type;
 
     return node;
 }
@@ -248,7 +323,7 @@ AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc)
 //
 // Construct an assembly binary operator instruction.
 //
-AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc)
+AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -257,6 +332,7 @@ AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc)
     node->binary.op = op;
     node->binary.src = src;
     node->binary.dst = dst;
+    node->binary.type = type;
 
     return node;
 }
@@ -264,7 +340,7 @@ AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc)
 //
 // Construct an assembly compare instruction.
 //
-AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, FileLine loc)
+AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -272,6 +348,7 @@ AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, FileLine loc)
     node->loc = loc;
     node->cmp.left = left;
     node->cmp.right = right;
+    node->cmp.type = type;
 
     return node;
 }
@@ -337,13 +414,14 @@ AsmNode *asm_setcc(AsmOperand *dst, AsmConditionCode cc, FileLine loc)
 //
 // Construct an assembly idiv (signed division) instruction.
 //
-AsmNode *asm_idiv(AsmOperand *arg, FileLine loc)
+AsmNode *asm_idiv(AsmOperand *arg, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_IDIV;
     node->loc = loc;
     node->idiv.arg = arg;
+    node->idiv.type = type;
 
     return node;
 }
@@ -351,12 +429,13 @@ AsmNode *asm_idiv(AsmOperand *arg, FileLine loc)
 //
 // Construct a cdq (convert doubleword to quadword) instruction.
 //
-AsmNode *asm_cdq(FileLine loc)
+AsmNode *asm_cdq(AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_CDQ;
     node->loc = loc;
+    node->cdq.type = type;
 
     return node;
 }
@@ -451,6 +530,16 @@ static void asm_mov_free(AsmMov *mov)
 {
     aoper_free(mov->src);
     aoper_free(mov->dst);
+    asmtype_free(mov->type);
+}
+
+//
+// Free an assembly movsx instruction.
+//
+static void asm_movsx_free(AsmMovsx *movsx)
+{
+    aoper_free(movsx->src);
+    aoper_free(movsx->dst);
 }
 
 //
@@ -459,6 +548,7 @@ static void asm_mov_free(AsmMov *mov)
 static void asm_unary_free(AsmUnary *unary)
 {
     aoper_free(unary->arg);
+    asmtype_free(unary->type);
 }
 
 //
@@ -468,6 +558,7 @@ static void asm_binary_free(AsmBinary *binary)
 {
     aoper_free(binary->src);
     aoper_free(binary->dst);
+    asmtype_free(binary->type);
 }
 
 //
@@ -477,6 +568,7 @@ static void asm_cmp_free(AsmCmp *cmp)
 {
     aoper_free(cmp->left);
     aoper_free(cmp->right);
+    asmtype_free(cmp->type);
 }
 
 //
@@ -517,6 +609,15 @@ static void asm_setcc_free(AsmSetCc *setcc)
 static void asm_idiv_free(AsmIdiv *idiv)
 {
     aoper_free(idiv->arg);
+    asmtype_free(idiv->type);
+}
+
+//
+// Free an assembly cdq instruction.
+//
+static void asm_cdq_free(AsmCdq *cdq)
+{
+    asmtype_free(cdq->type);
 }
 
 //
@@ -568,6 +669,7 @@ void asm_free(AsmNode *node)
         switch (node->tag) {
             case ASM_PROG:          asm_prog_free(&node->prog); break;
             case ASM_MOV:           asm_mov_free(&node->mov); break;
+            case ASM_MOVSX:         asm_movsx_free(&node->movsx); break;
             case ASM_UNARY:         asm_unary_free(&node->unary); break;
             case ASM_BINARY:        asm_binary_free(&node->binary); break;
             case ASM_CMP:           asm_cmp_free(&node->cmp); break;
@@ -576,6 +678,7 @@ void asm_free(AsmNode *node)
             case ASM_LABEL:         asm_label_free(&node->label); break;
             case ASM_SETCC:         asm_setcc_free(&node->setcc); break;
             case ASM_IDIV:          asm_idiv_free(&node->idiv); break;
+            case ASM_CDQ:           asm_cdq_free(&node->cdq); break;
             case ASM_FUNC:          asm_func_free(&node->func); break;
             case ASM_STATIC_VAR:    asm_static_var_free(&node->static_var); break; 
             case ASM_PUSH:          asm_push_free(&node->push); break;
@@ -584,7 +687,6 @@ void asm_free(AsmNode *node)
             case ASM_STACK_RESERVE: break;
             case ASM_STACK_FREE:    break;
             case ASM_RET:           break;
-            case ASM_CDQ:           break;
         }
 
         safe_free(node);
@@ -627,7 +729,24 @@ static void asm_static_var_print(AsmStaticVar *var)
     if (var->global) {
         printf(".global %s\n", var->name);
     }
-    printf("%s: .quad %lu\n", var->name, var->init);
+
+    printf(".align %d\n", var->alignment);
+
+    if (var->init.is_long) {
+        printf("%s: .quad %lu\n", var->name, var->init.value);
+    } else {
+        printf("%s: .long %lu\n", var->name, var->init.value);
+    }
+}
+
+//
+// Print (without a newline) an assembly type.
+//
+static void asmtype_print(AsmType *at)
+{
+    char *desc = asmtype_describe(at);
+    printf("%s", desc);
+    safe_free(desc);
 }
 
 //
@@ -639,6 +758,20 @@ static void asm_mov_print(AsmMov *mov)
     aoper_print(mov->src);
     printf(" => ");
     aoper_print(mov->dst);
+    printf(" # ");
+    asmtype_print(mov->type);
+    printf("\n");
+}
+
+//
+// Print a movsx instruction.
+//
+static void asm_movsx_print(AsmMovsx *movsx)
+{
+    printf("        movsx ");
+    aoper_print(movsx->src);
+    printf(" => ");
+    aoper_print(movsx->dst);
     printf("\n");
 }
 
@@ -649,6 +782,8 @@ static void asm_unary_print(AsmUnary *unary)
 {
     printf("        uop(%s) ", uop_describe(unary->op));
     aoper_print(unary->arg);
+    printf(" # ");
+    asmtype_print(unary->type);
     printf("\n");
 }
 
@@ -661,6 +796,8 @@ static void asm_binary_print(AsmBinary *binary)
     aoper_print(binary->src);
     printf(" => ");
     aoper_print(binary->dst);
+    printf(" # ");
+    asmtype_print(binary->type);
     printf("\n");
 }
 
@@ -673,6 +810,8 @@ static void asm_cmp_print(AsmCmp *cmp)
     aoper_print(cmp->left);
     printf(", ");
     aoper_print(cmp->right);
+    printf(" # ");
+    asmtype_print(cmp->type);
     printf("\n");
 }
 
@@ -717,15 +856,19 @@ static void asm_idiv_print(AsmIdiv *idiv)
 {
     printf("        idiv ");
     aoper_print(idiv->arg);
+    printf(" # ");
+    asmtype_print(idiv->type);
     printf("\n");
 }
 
 //
 // Print a cdq instruction.
 //
-static void asm_cdq_print(void)
+static void asm_cdq_print(AsmCdq *cdq)
 {
-    printf("        cdq\n");
+    printf("        cdq # ");
+    asmtype_print(cdq->type);
+    printf("\n");
 }
 
 //
@@ -789,6 +932,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_FUNC:          asm_func_print(&node->func, loc, locs); break;
         case ASM_STATIC_VAR:    asm_static_var_print(&node->static_var); break;
         case ASM_MOV:           asm_mov_print(&node->mov); break;
+        case ASM_MOVSX:         asm_movsx_print(&node->movsx); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
         case ASM_BINARY:        asm_binary_print(&node->binary); break;
         case ASM_CMP:           asm_cmp_print(&node->cmp); break;
@@ -797,7 +941,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_LABEL:         asm_label_print(&node->label); break;
         case ASM_SETCC:         asm_setcc_print(&node->setcc); break;
         case ASM_IDIV:          asm_idiv_print(&node->idiv); break;
-        case ASM_CDQ:           asm_cdq_print(); break;
+        case ASM_CDQ:           asm_cdq_print(&node->cdq); break;
         case ASM_RET:           asm_ret_print(); break;
         case ASM_STACK_RESERVE: asm_stack_reserve_print(&node->stack_reserve); break;
         case ASM_STACK_FREE:    asm_stack_free_print(&node->stack_free); break;

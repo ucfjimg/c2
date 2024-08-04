@@ -471,7 +471,7 @@ semantic_done:
     //
     // Code generation and assembly transformation passes.
     //
-    asmcode = codegen(taccode);
+    asmcode = codegen(taccode, stab);
     ast_free_program(ast);
     ast = NULL;
 

@@ -3,6 +3,7 @@
 #include "fileline.h"
 #include "list.h"
 #include "operators.h"
+#include "symtab.h"
 
 #include <stdbool.h>
 
@@ -16,9 +17,19 @@ typedef enum {
     REG_R9,
     REG_R10,
     REG_R11,
+    REG_RSP,
 } Register;
 
 extern char *reg_name(Register reg);
+
+typedef enum {
+    AT_LONGWORD,
+    AT_QUADWORD,
+} AsmTypeTag;
+
+typedef struct {
+    AsmTypeTag tag;
+} AsmType;
 
 typedef enum  {
     AOP_IMM,
@@ -27,6 +38,12 @@ typedef enum  {
     AOP_STACK,          // a variable reference to a stack object
     AOP_DATA,           // a variable reference to a static object
 } AsmOperandTag;
+
+extern AsmType *asmtype_long(void);
+extern AsmType *asmtype_quad(void);
+extern AsmType *asmtype_clone(AsmType *type);
+extern void asmtype_free(AsmType *type);
+extern char *asmtype_describe(AsmType *type);
 
 typedef enum {
     ACC_E,
@@ -51,6 +68,7 @@ typedef struct {
     };
 } AsmOperand;
 
+
 extern AsmOperand *aoper_clone(AsmOperand *oper);
 extern AsmOperand *aoper_reg(Register reg);
 extern AsmOperand *aoper_pseudoreg(char *name);
@@ -66,6 +84,7 @@ typedef enum {
     ASM_FUNC,
     ASM_STATIC_VAR,
     ASM_MOV,
+    ASM_MOVSX,
     ASM_UNARY,
     ASM_BINARY,
     ASM_CMP,
@@ -98,33 +117,48 @@ typedef struct {
 typedef struct {
     char *name;             // variable name
     bool global;            // variable is globally visible
-    unsigned long init;     // initial value
+    int alignment;          // required alignment (power of two)
+    StaticVarInit init;     // initial value
 } AsmStaticVar;
 
 typedef struct {
     AsmOperand *src;        // source operand
     AsmOperand *dst;        // destination operand
+    AsmType *type;          // operand size
 } AsmMov;
+
+typedef struct {
+    AsmOperand *src;        // source operand
+    AsmOperand *dst;        // destination operand
+} AsmMovsx;
 
 typedef struct {
     UnaryOp op;             // operator
     AsmOperand *arg;        // argument (src == dst)
+    AsmType *type;          // operand size
 } AsmUnary;
 
 typedef struct {
     BinaryOp op;            // operator
     AsmOperand *src;        // source argument
     AsmOperand *dst;        // destination argument
+    AsmType *type;          // operand size
 } AsmBinary;
 
 typedef struct {
     AsmOperand *left;       // left of comparison
     AsmOperand *right;      // right of comparison
+    AsmType *type;          // operand size
 } AsmCmp;
 
 typedef struct {
     AsmOperand *arg;        // argument 
+    AsmType *type;          // operand size
 } AsmIdiv;
+
+typedef struct {
+    AsmType *type;          // operand size
+} AsmCdq;
 
 typedef struct {
     char *target;           // label to jump to
@@ -170,10 +204,12 @@ struct AsmNode {
         AsmFunction func;               // ASM_FUNC
         AsmStaticVar static_var;        // ASM_STATIC_VAR
         AsmMov mov;                     // ASM_MOV
+        AsmMovsx movsx;                 // ASM_MOVSX
         AsmUnary unary;                 // ASM_UNARY
         AsmBinary binary;               // ASM_BINARY
         AsmCmp cmp;                     // ASM_CMP
         AsmIdiv idiv;                   // ASM_IDIV
+        AsmCdq cdq;                     // ASM_CDQ
         AsmJump jump;                   // ASM_JUMP
         AsmJumpCc jumpcc;               // ASM_JUMPCC
         AsmLabel label;                 // ASM_LABEL
@@ -187,13 +223,14 @@ struct AsmNode {
 
 extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
-extern AsmNode *asm_static_var(char *name, bool global, unsigned long init, FileLine loc);
-extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, FileLine loc);
-extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, FileLine loc);
-extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, FileLine loc);
-extern AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, FileLine loc);
-extern AsmNode *asm_idiv(AsmOperand *arg, FileLine loc);
-extern AsmNode *asm_cdq(FileLine loc);
+extern AsmNode *asm_static_var(char *name, bool global, int alignment, StaticVarInit init, FileLine loc);
+extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
+extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc);
+extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
+extern AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, AsmType *type, FileLine loc);
+extern AsmNode *asm_idiv(AsmOperand *arg, AsmType *type, FileLine loc);
+extern AsmNode *asm_cdq(AsmType *type, FileLine loc);
 extern AsmNode *asm_jump(char *target, FileLine loc);
 extern AsmNode *asm_jumpcc(char *target, AsmConditionCode cc, FileLine loc);
 extern AsmNode *asm_label(char *label, FileLine loc);

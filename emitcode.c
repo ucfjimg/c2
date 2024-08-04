@@ -28,6 +28,7 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
             case REG_R9:  fprintf(out, "%%r9"); break;
             case REG_R10: fprintf(out, "%%r10"); break;
             case REG_R11: fprintf(out, "%%r11"); break;
+            case REG_RSP: fprintf(out, "%%rsp"); break;
         }
     } else if (os == OS_DWORD) {
         switch (reg) {
@@ -40,6 +41,7 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
             case REG_R9:  fprintf(out, "%%r9d"); break;
             case REG_R10: fprintf(out, "%%r10d"); break;
             case REG_R11: fprintf(out, "%%r11d"); break;
+            case REG_RSP: fprintf(out, "%%esp"); break;
         }
     } else if (os == OS_BYTE) {
         switch (reg) {
@@ -52,6 +54,7 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
             case REG_R9:  fprintf(out, "%%r9b"); break;
             case REG_R10: fprintf(out, "%%r10b"); break;
             case REG_R11: fprintf(out, "%%r11b"); break;
+            case REG_RSP: ICE_ASSERT(((void)"cannot byte address rsp in emitcode.", false));
         }
     }
 }
@@ -332,7 +335,7 @@ static void emit_static_var(FILE *out, AsmStaticVar *var)
         fprintf(out, "        .globl %s\n", var->name);        
     }
 
-    if (var->init == 0) {
+    if (var->init.value == 0) {
         fprintf(out, "        .bss\n");
         fprintf(out, "        .balign 4\n");
         fprintf(out, "%s:\n", var->name);
@@ -341,7 +344,7 @@ static void emit_static_var(FILE *out, AsmStaticVar *var)
         fprintf(out, "        .data\n");
         fprintf(out, "        .balign 4\n");
         fprintf(out, "%s:\n", var->name);
-        fprintf(out, "        .long %lu\n", var->init);
+        fprintf(out, "        .long %lu\n", var->init.value);
     }
 }
 
@@ -385,6 +388,7 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
         case ASM_STACK_FREE:    emit_stack_free(out, &node->stack_free); break;
         case ASM_MOV:           emit_mov(out, &node->mov); break;
+        case ASM_MOVSX:         ICE_NYI("emitcode_recurse::ASM_MOVSX"); 
         case ASM_UNARY:         emit_unary(out, &node->unary); break;
         case ASM_BINARY:        emit_binary(out, &node->binary); break;
         case ASM_CMP:           emit_cmp(out, &node->cmp); break;

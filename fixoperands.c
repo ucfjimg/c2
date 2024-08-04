@@ -22,14 +22,29 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
     // MOV cannot have both operands as memory.
     //
     if (aoper_is_mem(mov->src) && aoper_is_mem(mov->dst)) {
-        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), movnode->loc)->list);
-        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst), movnode->loc)->list);
+        AsmType *at = asmtype_clone(mov->type);
+        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), at, movnode->loc)->list);
+
+        at = asmtype_clone(mov->type);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst), at, movnode->loc)->list);
 
         asm_free(movnode);
         return;
     }
 
     list_push_back(code, &movnode->list);
+}
+
+//
+// Fix a MOVSX instruction.
+//
+static void asm_fixop_movsx(List *code, AsmNode *movnode)
+{
+    ICE_ASSERT(movnode->tag == ASM_MOVSX);
+    AsmMovsx *movsx = &movnode->movsx;
+
+    ICE_ASSERT(movsx);
+    ICE_NYI("asm_fixup_movsx");
 }
 
 //
@@ -49,8 +64,10 @@ static void asm_fixop_idiv(List *code, AsmNode *idivnode)
     // IDIV cannot take a constant argument.
     //
     if (idiv->arg->tag == AOP_IMM) {
-        list_push_back(code, &asm_mov(aoper_clone(idiv->arg), aoper_reg(REG_R10), idivnode->loc)->list);
-        list_push_back(code, &asm_idiv(aoper_reg(REG_R10), idivnode->loc)->list);
+        AsmType *at = asmtype_clone(idiv->type);
+        list_push_back(code, &asm_mov(aoper_clone(idiv->arg), aoper_reg(REG_R10), at, idivnode->loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_idiv(aoper_reg(REG_R10), at, idivnode->loc)->list);
 
         asm_free(idivnode);
 
@@ -86,8 +103,10 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
         aoper_is_mem(binop->src) &&
         aoper_is_mem(binop->dst)) {
               
-        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_R10), binopnode->loc)->list);
-        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_R10), aoper_clone(binop->dst), binopnode->loc)->list);
+        AsmType *at = asmtype_clone(binop->type);
+        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_R10), at, binopnode->loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_R10), aoper_clone(binop->dst), at, binopnode->loc)->list);
   
         asm_free(binopnode);
 
@@ -99,10 +118,14 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     //
     if (binop->op == BOP_MULTIPLY && aoper_is_mem(binop->dst)) {
 
-        list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), binopnode->loc)->list);
+        AsmType *at = asmtype_clone(binop->type);
+        list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), at, binopnode->loc)->list);
+        at = asmtype_clone(at);
         list_push_back(code, &asm_binary(
-            BOP_MULTIPLY, aoper_clone(binop->src), aoper_reg(REG_R11), binopnode->loc)->list);
-        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(binop->dst), binopnode->loc)->list);
+            BOP_MULTIPLY, aoper_clone(binop->src), aoper_reg(REG_R11), at, binopnode->loc)->list);
+
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(binop->dst), at, binopnode->loc)->list);
 
         asm_free(binopnode);
 
@@ -114,8 +137,10 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     // a register is needed.
     //
     if ((binop->op == BOP_LSHIFT || binop->op == BOP_RSHIFT) && aoper_is_mem(binop->src)) {
-        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), binopnode->loc)->list);
-        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_RCX), aoper_clone(binop->dst), binopnode->loc)->list);
+        AsmType *at = asmtype_clone(binop->type);
+        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), at, binopnode->loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_RCX), aoper_clone(binop->dst), at, binopnode->loc)->list);
 
         asm_free(binopnode);
 
@@ -141,8 +166,10 @@ static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
     ICE_ASSERT(cmp->right->tag != AOP_PSEUDOREG);
 
     if (aoper_is_mem(cmp->left) && aoper_is_mem(cmp->right)) {
-        list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), loc)->list);
-        list_push_back(code, &asm_cmp(aoper_reg(REG_R10), aoper_clone(cmp->right), loc)->list);
+        AsmType *at = asmtype_clone(cmp->type);
+        list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), at, loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_cmp(aoper_reg(REG_R10), aoper_clone(cmp->right), at, loc)->list);
   
         asm_free(cmpnode);
 
@@ -150,8 +177,10 @@ static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
     }
 
     if (cmp->right->tag == AOP_IMM) {
-        list_push_back(code, &asm_mov(aoper_clone(cmp->right), aoper_reg(REG_R11), loc)->list);
-        list_push_back(code, &asm_cmp(aoper_clone(cmp->left), aoper_reg(REG_R11), loc)->list);
+        AsmType *at = asmtype_clone(cmp->type);
+        list_push_back(code, &asm_mov(aoper_clone(cmp->right), aoper_reg(REG_R11), at, loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_cmp(aoper_clone(cmp->left), aoper_reg(REG_R11), at, loc)->list);
   
         asm_free(cmpnode);
 
@@ -191,6 +220,7 @@ static void asm_fixop_func(AsmNode *func)
         switch (node->tag)
         {
             case ASM_MOV:       asm_fixop_mov(&newcode, node); break;
+            case ASM_MOVSX:     asm_fixop_movsx(&newcode, node); break;
             case ASM_IDIV:      asm_fixop_idiv(&newcode, node); break;
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
             case ASM_CMP:       asm_fixop_cmp(&newcode, node); break;
