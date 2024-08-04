@@ -936,7 +936,9 @@ static char *storage_class_describe(StorageClass sc)
 //
 static void decl_print_variable(DeclVariable *var, int tab, bool locs)
 {
-    printf("%*sdeclare-var(%s%s)", tab, "", storage_class_describe(var->storage_class), var->name);
+    char *type = type_describe(var->type);
+    printf("%*sdeclare-var(%s %s%s)", tab, "", type, storage_class_describe(var->storage_class), var->name);
+    safe_free(type);
     if (var->init) {
         printf(" = {\n");
         exp_print_recurse(var->init, tab + 2, locs);
