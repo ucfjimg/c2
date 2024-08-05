@@ -8,6 +8,7 @@ add_executable(cc
     asm-ast.c
     ast.c
     bitmath.c
+    backsym.c
     codegen.c
     emitcode.c
     errors.c

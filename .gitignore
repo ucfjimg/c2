@@ -1,3 +1,4 @@
+.gdb*
 .vscode/
 build/
 *.i

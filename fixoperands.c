@@ -5,23 +5,45 @@
 #include "codegen.h"
 #include "ice.h"
 
+#include <stdint.h>
+
+//
+// This pass fixs the assembly AST to conform with x64 instruction encoding
+// constraints.
+//
+
+//
+// Returns true if the given immediate value, cast as a signed,
+// fits in the range of 32-bit signed int.
+//
+static bool imm_fits_in_int(unsigned long imm)
+{
+    signed long simm = (signed long)imm;
+
+    return simm >= INT32_MIN && simm <= INT32_MAX;
+}
+
 //
 // Fix a MOV instruction.
+//
+// - cannot have both operands in memory.
+// - if the source is an immediate greater than 32 bits, the destination must be a register.
 //
 static void asm_fixop_mov(List *code, AsmNode *movnode)
 {
     ICE_ASSERT(movnode->tag == ASM_MOV);
     AsmMov *mov = &movnode->mov;
 
+    bool needs_reg = 
+        (aoper_is_mem(mov->src) && aoper_is_mem(mov->dst)) ||
+        (mov->src->tag == AOP_IMM && !imm_fits_in_int(mov->src->imm));
+
     //
     // All pseudo-registers must have been replaced by the previous pass.
     //
     ICE_ASSERT(mov->src->tag != AOP_PSEUDOREG && mov->dst->tag != AOP_PSEUDOREG);
 
-    //
-    // MOV cannot have both operands as memory.
-    //
-    if (aoper_is_mem(mov->src) && aoper_is_mem(mov->dst)) {
+    if (needs_reg) {
         AsmType *at = asmtype_clone(mov->type);
         list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), at, movnode->loc)->list);
 
@@ -38,18 +60,40 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
 //
 // Fix a MOVSX instruction.
 //
+// - source operand cannot be an immdiate.
+// - destination operand cannot be in memory.
+//
 static void asm_fixop_movsx(List *code, AsmNode *movnode)
 {
     ICE_ASSERT(movnode->tag == ASM_MOVSX);
     AsmMovsx *movsx = &movnode->movsx;
+    AsmOperand *dst = NULL;
+    
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(movsx->src->tag != AOP_PSEUDOREG && movsx->dst->tag != AOP_PSEUDOREG);
 
-    ICE_ASSERT(movsx);
-    ICE_NYI("asm_fixup_movsx");
+    if (movsx->src->tag == AOP_IMM) {
+        list_push_back(code, &asm_mov(movsx->src, aoper_reg(REG_R10), asmtype_long(), movnode->loc)->list);
+        movsx->src = aoper_reg(REG_R10);
+    }
+
+    if (aoper_is_mem(movsx->dst)) {
+        dst = movsx->dst;
+        movsx->dst = aoper_reg(REG_R11);
+    }
+
+    list_push_back(code, &movnode->list);
+
+    list_push_back(code, &asm_mov(aoper_reg(REG_R11), dst, asmtype_quad(), movnode->loc)->list);
 }
 
 //
 // Fix an IDIV instruction.
 //
+// - source operand cannot be an immediate. 
+// 
 static void asm_fixop_idiv(List *code, AsmNode *idivnode)
 {
     ICE_ASSERT(idivnode->tag == ASM_IDIV);
@@ -79,6 +123,92 @@ static void asm_fixop_idiv(List *code, AsmNode *idivnode)
 }
 
 //
+// Fix an IMUL instruction.
+//
+// - if source operand is immediate, it must fit in 32 bits.
+// - destinatation operand cannot be memory.
+//
+static void asm_fixop_imul(List *code, AsmNode *binopnode)
+{
+    ICE_ASSERT(binopnode->tag == ASM_BINARY);
+    AsmBinary *binop = &binopnode->binary;
+    ICE_ASSERT(binop->op == BOP_MULTIPLY);
+
+    //
+    // IMUL can't have a memory operand as its destination, nor an immediate value
+    // that won't fit in s32 as a source.
+    //
+    AsmType *at = asmtype_clone(binop->type);
+    
+    if (binop->src->tag == AOP_IMM && !imm_fits_in_int(binop->src->imm)) {
+        list_push_back(code, &asm_mov(binop->src, aoper_reg(REG_R10), asmtype_clone(at), binopnode->loc)->list);
+        binop->src = aoper_reg(REG_R10);
+    }
+    
+    if (aoper_is_mem(binop->dst)) {
+        list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), at, binopnode->loc)->list);
+        list_push_back(code, &asm_binary(
+            BOP_MULTIPLY, aoper_clone(binop->src), aoper_reg(REG_R11), asmtype_clone(at), binopnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(binop->dst), asmtype_clone(at), binopnode->loc)->list);
+
+        asm_free(binopnode);
+    } else {
+        list_push_back(code, &binopnode->list);
+    }
+}
+
+//
+// Fix an arithmetic binary operator. All of these operators have similar
+// encoding constraints.
+//
+// - cannot have two memory operands
+// - an immediate operands must fit in 32 bits.
+//
+static void ast_fixup_binary_arith(List *code, AsmNode *binopnode)
+{
+    ICE_ASSERT(binopnode->tag == ASM_BINARY);
+    AsmBinary *binop = &binopnode->binary;
+    AsmType *at = binop->type;
+    AsmOperand *dst = binop->dst;
+
+    bool both_mem = aoper_is_mem(binop->src) && aoper_is_mem(binop->dst);
+
+    if (both_mem || (binop->src->tag == AOP_IMM && !imm_fits_in_int(binop->src->imm))) {
+        list_push_back(code, &asm_mov(binop->src, aoper_reg(REG_R10), asmtype_clone(at), binopnode->loc)->list);
+        binop->src = aoper_reg(REG_R10);
+    }
+
+    if (both_mem) {
+        list_push_back(code, &asm_mov(dst, aoper_reg(REG_R11), asmtype_clone(at), binopnode->loc)->list);
+        binop->dst = aoper_reg(REG_R11);
+    }
+
+    list_push_back(code, &binopnode->list);
+
+    if (both_mem) {
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(dst), asmtype_clone(at), binopnode->loc)->list);
+        binop->dst = aoper_reg(REG_R11);
+    }
+}
+
+//
+// Fix a shift operator.
+//
+// - shift count must be in CL register.
+//
+static void asm_fixop_shift(List *code, AsmNode *binopnode)
+{
+    ICE_ASSERT(binopnode->tag == ASM_BINARY);
+    AsmBinary *binop = &binopnode->binary;
+
+    AsmType *at = asmtype_clone(binop->type);
+    list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), at, binopnode->loc)->list);
+
+    binop->src = aoper_reg(REG_RCX);
+    list_push_back(code, &binopnode->list);
+}
+
+//
 // Fix operators for a binary operator instruction.
 //
 static void asm_fixop_binary(List *code, AsmNode *binopnode)
@@ -92,101 +222,60 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     ICE_ASSERT(binop->src->tag != AOP_PSEUDOREG);
     ICE_ASSERT(binop->dst->tag != AOP_PSEUDOREG);
 
-    //
-    // ADD, SUB, XOR, AND, OR cannot have both instructions as memory operands.
-    //
-    if ((binop->op == BOP_ADD || 
-         binop->op == BOP_SUBTRACT || 
-         binop->op == BOP_BITAND || 
-         binop->op == BOP_BITOR ||
-         binop->op == BOP_BITXOR) &&
-        aoper_is_mem(binop->src) &&
-        aoper_is_mem(binop->dst)) {
-              
-        AsmType *at = asmtype_clone(binop->type);
-        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_R10), at, binopnode->loc)->list);
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_R10), aoper_clone(binop->dst), at, binopnode->loc)->list);
-  
-        asm_free(binopnode);
+    switch (binop->op) {
+        case BOP_ADD:
+        case BOP_SUBTRACT: 
+        case BOP_BITAND: 
+        case BOP_BITOR:
+        case BOP_BITXOR:
+            ast_fixup_binary_arith(code, binopnode);
+            break;
 
-        return;
+        case BOP_MULTIPLY:
+            asm_fixop_imul(code, binopnode);
+            break;
+
+        case BOP_LSHIFT:
+        case BOP_RSHIFT:
+            asm_fixop_shift(code, binopnode);
+            break;
+
+        default:
+            //
+            // Most operations need no fixup.
+            //
+            list_push_back(code, &binopnode->list);
     }
-
-    //
-    // IMUL can't have a memory operand as its destination
-    //
-    if (binop->op == BOP_MULTIPLY && aoper_is_mem(binop->dst)) {
-
-        AsmType *at = asmtype_clone(binop->type);
-        list_push_back(code, &asm_mov(aoper_clone(binop->dst), aoper_reg(REG_R11), at, binopnode->loc)->list);
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_binary(
-            BOP_MULTIPLY, aoper_clone(binop->src), aoper_reg(REG_R11), at, binopnode->loc)->list);
-
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_mov(aoper_reg(REG_R11), aoper_clone(binop->dst), at, binopnode->loc)->list);
-
-        asm_free(binopnode);
-
-        return;
-    }
-
-    //
-    // SHR/SAR/SHL can't have a memory shift count, and the shift count must be in CL if
-    // a register is needed.
-    //
-    if ((binop->op == BOP_LSHIFT || binop->op == BOP_RSHIFT) && aoper_is_mem(binop->src)) {
-        AsmType *at = asmtype_clone(binop->type);
-        list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), at, binopnode->loc)->list);
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_binary(binop->op, aoper_reg(REG_RCX), aoper_clone(binop->dst), at, binopnode->loc)->list);
-
-        asm_free(binopnode);
-
-        return;
-    }
-
-    list_push_back(code, &binopnode->list);
 }
 
 //
 // Fix up a compare intruction.
 //
+// - Left and right may not both be memory operands.
+// - If left is immediate, it must fit in 32 bits.
+// - Right may not be immediate.
+//
 static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
 {
     ICE_ASSERT(cmpnode->tag == ASM_CMP);
     AsmCmp *cmp = &cmpnode->cmp;
+    AsmType *at = cmp->type;
     FileLine loc = cmpnode->loc;
 
-    //
-    // All pseudo-registers must have been replaced by the previous pass.
-    //
-    ICE_ASSERT(cmp->left->tag != AOP_PSEUDOREG);
-    ICE_ASSERT(cmp->right->tag != AOP_PSEUDOREG);
+    bool both_mem = aoper_is_mem(cmp->left) && aoper_is_mem(cmp->right);
+    bool left_imm = cmp->left->tag == AOP_IMM && !imm_fits_in_int(cmp->left->imm);
+    bool right_imm = cmp->right->tag == AOP_IMM;
 
-    if (aoper_is_mem(cmp->left) && aoper_is_mem(cmp->right)) {
-        AsmType *at = asmtype_clone(cmp->type);
-        list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), at, loc)->list);
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_cmp(aoper_reg(REG_R10), aoper_clone(cmp->right), at, loc)->list);
-  
-        asm_free(cmpnode);
-
-        return;
+    if (both_mem || left_imm) {
+        list_push_back(code, &asm_mov(aoper_clone(cmp->left), aoper_reg(REG_R10), asmtype_clone(at), loc)->list);
+        cmp->left = aoper_reg(REG_R10);
     }
 
-    if (cmp->right->tag == AOP_IMM) {
-        AsmType *at = asmtype_clone(cmp->type);
-        list_push_back(code, &asm_mov(aoper_clone(cmp->right), aoper_reg(REG_R11), at, loc)->list);
-        at = asmtype_clone(at);
-        list_push_back(code, &asm_cmp(aoper_clone(cmp->left), aoper_reg(REG_R11), at, loc)->list);
-  
-        asm_free(cmpnode);
-
-        return;
+    if (both_mem || right_imm) {
+        list_push_back(code, &asm_mov(aoper_clone(cmp->right), aoper_reg(REG_R11), asmtype_clone(at), loc)->list);
+        cmp->right = aoper_reg(REG_R11);
     }
-
+    
     list_push_back(code, &cmpnode->list);
 }
 

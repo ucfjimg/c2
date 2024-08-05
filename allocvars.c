@@ -4,7 +4,6 @@
 #include "ice.h"
 #include "list.h"
 #include "safemem.h"
-#include "symtab.h"
 
 #include <stdbool.h>
 
@@ -12,7 +11,7 @@ typedef struct
 {
     HashTable *vars;
     int next_offset;
-    SymbolTable *stab;
+    BackEndSymbolTable *bstab;
 } VarTable;
 
 typedef struct 
@@ -42,11 +41,11 @@ static void vartab_free_varnode(HashNode *node)
 //
 // Initialize variable table.
 //
-static void vartab_init(VarTable *table, SymbolTable *stab)
+static void vartab_init(VarTable *table, BackEndSymbolTable *bstab)
 {
     table->vars = hashtab_alloc(vartab_alloc_varnode, vartab_free_varnode);
     table->next_offset = 0;
-    table->stab = stab;
+    table->bstab = bstab;
 }
 
 //
@@ -77,18 +76,24 @@ static void asm_alloc_operand(VarTable *vartab, AsmOperand **oper)
 
         VarTableNode *var = vartab_get(vartab, (*oper)->pseudoreg);
         if (!var->allocated) {
-            Symbol *sym = stab_lookup(vartab->stab, name);
-            if (sym->tag == ST_STATIC_VAR) {
+            BackEndSymbol *sym = bstab_lookup(vartab->bstab, name);
+
+            ICE_ASSERT(sym->tag == BST_OBJECT);
+            if (sym->object.is_static) {
                 AsmOperand *old = *oper;
                 *oper = aoper_data(name);
                 aoper_free(old);
                 return;
             }
 
-            //
-            // TODO 4 because right now, all variables are integers.
-            //
-            vartab->next_offset -= 4;
+            int size = asmtype_size(sym->object.type);
+            int align = asmtype_alignment(sym->object.type);
+
+            vartab->next_offset -= size;
+            
+            int pad = (-vartab->next_offset) % align;
+
+            vartab->next_offset -= pad;
             var->allocated = true;
             var->offset = vartab->next_offset;
         }
@@ -236,7 +241,7 @@ static void asm_alloc_func(VarTable *vartab, AsmNode *func)
 //
 // Allocate pseudoregisters in a function's stack frame. 
 //
-void asm_allocate_vars(AsmNode *prog, SymbolTable *stab)
+void asm_allocate_vars(AsmNode *prog, BackEndSymbolTable *bstab)
 {
     ICE_ASSERT(prog->tag == ASM_PROG);
 
@@ -244,7 +249,7 @@ void asm_allocate_vars(AsmNode *prog, SymbolTable *stab)
         AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
         if (func->tag ==  ASM_FUNC) {
             VarTable vartab;
-            vartab_init(&vartab, stab);
+            vartab_init(&vartab, bstab);
             asm_alloc_func(&vartab, func);
             vartab_free(&vartab);
         }

@@ -332,6 +332,8 @@ static Expression *ast_check_function_call(TypeCheckState *state, Expression *ex
         parmcurr = parmcurr->next;
     }
 
+    call->args = new_args;
+
     if (argcurr || parmcurr) {
         err_report(EC_ERROR, &exp->loc, "incorrect number of arguments for function `%s`.",
             call->name);
@@ -568,17 +570,23 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
     state->func_type = sym->type;
 
     if (func->func.has_body) {
-        for (ListNode *curr = func->func.parms.head; curr; curr = curr->next) {
-            FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
+        ICE_ASSERT(func->func.type->tag == TT_FUNC);
+
+        ListNode *pcurr = func->func.parms.head;
+        ListNode *tcurr = func->func.type->func.parms.head;
+
+        for (; pcurr && tcurr; pcurr = pcurr->next, tcurr = tcurr->next) {
+            FuncParameter *parm = CONTAINER_OF(pcurr, FuncParameter, list);
+            TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
+
             Symbol *sym = stab_lookup(state->stab, parm->name);
-            //
-            // if type is already not NULL, it means a duplicate identifier in the parm
-            // list, which we will have already reported in the resolve pass.
-            //
+
             if (sym->type == NULL) {
-                sym_update_local(sym, type_int());
+                sym_update_local(sym, type_clone(ptype->parmtype));
             }
         }
+
+        ICE_ASSERT(pcurr == NULL && tcurr == NULL);
 
         ast_check_block(state, func->func.body);
     }
@@ -718,6 +726,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         sym_update_local(sym, type);
         if (var->init) {
             ast_check_expression(state, var->init);
+            var->init = convert_to(var->init, var->type);
         }
     }
 }

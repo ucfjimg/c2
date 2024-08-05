@@ -6,6 +6,7 @@
 
 #include "allocvars.h"
 #include "asm-ast.h"
+#include "backsym.h"
 #include "codegen.h"
 #include "emitcode.h"
 #include "errors.h"
@@ -405,6 +406,7 @@ static int compile(Args *args)
     AsmNode *asmcode = NULL;
     TacNode *taccode = NULL;
     SymbolTable *stab = NULL;
+    BackEndSymbolTable *bstab = NULL;
     FILE *asmfile;
 
     Lexer *lex = lexer_open(args->prefile);
@@ -468,6 +470,7 @@ semantic_done:
         goto done;
     }
 
+
     //
     // Code generation and assembly transformation passes.
     //
@@ -475,7 +478,9 @@ semantic_done:
     ast_free_program(ast);
     ast = NULL;
 
-    asm_allocate_vars(asmcode, stab);
+    bstab = codegen_sym_to_backsym(stab);
+
+    asm_allocate_vars(asmcode, bstab);
     asm_fix_operands(asmcode);
 
     if (args->stage == STAGE_CODEGEN) {
@@ -493,7 +498,7 @@ semantic_done:
         goto done; 
     }
 
-    emitcode(asmfile, asmcode);
+    emitcode(asmfile, asmcode, bstab);
 
     fclose(asmfile);
 
@@ -501,8 +506,13 @@ done:
     if (stab && args->print_stab) {
         printf("\n=== symbol table ===\n");
         stab_print(stab);
+        if (bstab) {
+            printf("\n=== back end symbol table ===\n");
+            bstab_print(bstab);
+        }
     }
 
+    bstab_free(bstab);
     stab_free(stab);
     tac_free(taccode);
     asm_free(asmcode);

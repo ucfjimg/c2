@@ -4,7 +4,6 @@
 #include "ice.h"
 #include "safemem.h"
 
-static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc);
 
 typedef enum {
     OS_BYTE = 1,
@@ -12,48 +11,81 @@ typedef enum {
     OS_QWORD = 8,
 } OperandSize;
 
+typedef struct {
+    char *suffix;               // suffix for instructions
+    OperandSize size;           // size of object
+} OperandSpec;
+
+typedef struct {
+    FILE *out;
+    BackEndSymbolTable *bstab;
+} EmitState;
+
+static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc);
+
+//
+// Fill in an operand spec for the given assembly type.
+//
+static void type_to_operand_spec(AsmType *type, OperandSpec *spec)
+{
+    spec->suffix = "";
+    spec->size = OS_DWORD;
+
+    switch (type->tag) {
+        case AT_LONGWORD:
+            spec->suffix = "l";
+            spec->size = OS_DWORD;
+            break;
+
+        case AT_QUADWORD:
+            spec->suffix = "q";
+            spec->size = OS_QWORD;
+            break;
+    }
+}
+
 //
 // Emit a register value.
 //
-static void emit_reg(FILE *out, Register reg, OperandSize os)
+static void emit_reg(EmitState *state, Register reg, OperandSize os)
 {
     if (os == OS_QWORD) {
         switch (reg) {
-            case REG_RAX: fprintf(out, "%%rax"); break;
-            case REG_RCX: fprintf(out, "%%rcx"); break;
-            case REG_RDX: fprintf(out, "%%rdx"); break;
-            case REG_RDI: fprintf(out, "%%rdi"); break;
-            case REG_RSI: fprintf(out, "%%rsi"); break;
-            case REG_R8:  fprintf(out, "%%r8"); break;
-            case REG_R9:  fprintf(out, "%%r9"); break;
-            case REG_R10: fprintf(out, "%%r10"); break;
-            case REG_R11: fprintf(out, "%%r11"); break;
-            case REG_RSP: fprintf(out, "%%rsp"); break;
+            case REG_RAX: fprintf(state->out, "%%rax"); break;
+            case REG_RCX: fprintf(state->out, "%%rcx"); break;
+            case REG_RDX: fprintf(state->out, "%%rdx"); break;
+            case REG_RDI: fprintf(state->out, "%%rdi"); break;
+            case REG_RSI: fprintf(state->out, "%%rsi"); break;
+            case REG_R8:  fprintf(state->out, "%%r8"); break;
+            case REG_R9:  fprintf(state->out, "%%r9"); break;
+            case REG_R10: fprintf(state->out, "%%r10"); break;
+            case REG_R11: fprintf(state->out, "%%r11"); break;
+            case REG_RSP: fprintf(state->out, "%%rsp"); break;
         }
     } else if (os == OS_DWORD) {
         switch (reg) {
-            case REG_RAX: fprintf(out, "%%eax"); break;
-            case REG_RCX: fprintf(out, "%%ecx"); break;
-            case REG_RDX: fprintf(out, "%%edx"); break;
-            case REG_RDI: fprintf(out, "%%edi"); break;
-            case REG_RSI: fprintf(out, "%%esi"); break;
-            case REG_R8:  fprintf(out, "%%r8d"); break;
-            case REG_R9:  fprintf(out, "%%r9d"); break;
-            case REG_R10: fprintf(out, "%%r10d"); break;
-            case REG_R11: fprintf(out, "%%r11d"); break;
-            case REG_RSP: fprintf(out, "%%esp"); break;
+            case REG_RAX: fprintf(state->out, "%%eax"); break;
+            case REG_RCX: fprintf(state->out, "%%ecx"); break;
+            case REG_RDX: fprintf(state->out, "%%edx"); break;
+            case REG_RDI: fprintf(state->out, "%%edi"); break;
+            case REG_RSI: fprintf(state->out, "%%esi"); break;
+            case REG_R8:  fprintf(state->out, "%%r8d"); break;
+            case REG_R9:  fprintf(state->out, "%%r9d"); break;
+            case REG_R10: fprintf(state->out, "%%r10d"); break;
+            case REG_R11: fprintf(state->out, "%%r11d"); break;
+            case REG_RSP: fprintf(state->out, "%%esp"); break;
         }
     } else if (os == OS_BYTE) {
         switch (reg) {
-            case REG_RAX: fprintf(out, "%%al"); break;
-            case REG_RCX: fprintf(out, "%%cl"); break;
-            case REG_RDX: fprintf(out, "%%dl"); break;
-            case REG_RDI: fprintf(out, "%%dil"); break;
-            case REG_RSI: fprintf(out, "%%sil"); break;
-            case REG_R8:  fprintf(out, "%%r8b"); break;
-            case REG_R9:  fprintf(out, "%%r9b"); break;
-            case REG_R10: fprintf(out, "%%r10b"); break;
-            case REG_R11: fprintf(out, "%%r11b"); break;
+            case REG_RAX: fprintf(state->out, "%%al"); break;
+            case REG_RCX: fprintf(state->out, "%%cl"); break;
+            case REG_RDX: fprintf(state->out, "%%dl"); break;
+            case REG_RDI: fprintf(state->out, "%%dil"); break;
+            case REG_RSI: fprintf(state->out, "%%sil"); break;
+            case REG_R8:  fprintf(state->out, "%%r8b"); break;
+            case REG_R9:  fprintf(state->out, "%%r9b"); break;
+            case REG_R10: fprintf(state->out, "%%r10b"); break;
+            case REG_R11: fprintf(state->out, "%%r11b"); break;
             case REG_RSP: ICE_ASSERT(((void)"cannot byte address rsp in emitcode.", false));
         }
     }
@@ -62,37 +94,37 @@ static void emit_reg(FILE *out, Register reg, OperandSize os)
 //
 // Emit an immediate value.
 //
-static void emit_imm(FILE *out, unsigned long val)
+static void emit_imm(EmitState *state, unsigned long val)
 {
-    fprintf(out, "$%lu", val);
+    fprintf(state->out, "$%lu", val);
 }
 
 //
 // Emit a stack frame reference.
 //
-static void emit_stack(FILE *out, int offset)
+static void emit_stack(EmitState *state, int offset)
 {
-    fprintf(out, "%d(%%rbp)", offset);
+    fprintf(state->out, "%d(%%rbp)", offset);
 }
 
 //
 // Emit a data reference.
 //
-static void emit_data(FILE *out, char *name)
+static void emit_data(EmitState *state, char *name)
 {
-    fprintf(out, "%s(%%rip)", name);
+    fprintf(state->out, "%s(%%rip)", name);
 }
 
 //
 // Emit an assembly operand.
 //
-static void emit_asmoper(FILE *out, AsmOperand *oper, OperandSize os)
+static void emit_asmoper(EmitState *state, AsmOperand *oper, OperandSize os)
 {
     switch (oper->tag) {
-        case AOP_IMM:   emit_imm(out, oper->imm); break;
-        case AOP_REG:   emit_reg(out, oper->reg, os); break;
-        case AOP_STACK: emit_stack(out, oper->stack_offset); break;
-        case AOP_DATA:  emit_data(out, oper->data); break;
+        case AOP_IMM:   emit_imm(state, oper->imm); break;
+        case AOP_REG:   emit_reg(state, oper->reg, os); break;
+        case AOP_STACK: emit_stack(state, oper->stack_offset); break;
+        case AOP_DATA:  emit_data(state, oper->data); break;
         
         case AOP_PSEUDOREG:
             ICE_ASSERT(((void)"pseuedoreg operand found at code emission time.", false));
@@ -102,12 +134,12 @@ static void emit_asmoper(FILE *out, AsmOperand *oper, OperandSize os)
 //
 // Emit a label.
 // 
-static void emit_label(FILE *out, const char *label)
+static void emit_label(EmitState *state, const char *label)
 {
 #ifndef __APPLE__
-    fprintf(out, ".L%s", label);
+    fprintf(state->out, ".L%s", label);
 #else
-    fprintf(out, "L%s", label);
+    fprintf(state->out, "L%s", label);
 #endif
 
 }
@@ -115,39 +147,64 @@ static void emit_label(FILE *out, const char *label)
 //
 // Emit a return instruction.
 //
-static void emit_ret(FILE *out)
+static void emit_ret(EmitState *state)
 {
-    fprintf(out, "        movq %%rbp, %%rsp\n");
-    fprintf(out, "        popq %%rbp\n");
-    fprintf(out, "        ret\n");
+    fprintf(state->out, "        movq %%rbp, %%rsp\n");
+    fprintf(state->out, "        popq %%rbp\n");
+    fprintf(state->out, "        ret\n");
 }
 
 //
 // Emit a CDQ instruction.
 //
-static void emit_cdq(FILE *out)
+static void emit_cdq(EmitState *state, AsmCdq *cdq)
 {
-    fprintf(out, "        cdq\n");
+    OperandSpec spec;
+    type_to_operand_spec(cdq->type, &spec);
+
+    switch (spec.size) {
+        case OS_DWORD:  fprintf(state->out, "        cdq\n"); break;
+        case OS_QWORD:  fprintf(state->out, "        cqo\n"); break;
+        case OS_BYTE:   ICE_ASSERT(((void)"invalid size for emit_cdq", false));
+    }
 }
 
 //
 // Emit a mov instruction.
 //
-static void emit_mov(FILE *out, AsmMov *mov)
+static void emit_mov(EmitState *state, AsmMov *mov)
 {
-    fprintf(out, "        movl ");
-    emit_asmoper(out, mov->src, OS_DWORD);
-    fprintf(out, ", ");
-    emit_asmoper(out, mov->dst, OS_DWORD);
-    fprintf(out, "\n");
+    OperandSpec spec;
+    type_to_operand_spec(mov->type, &spec);
+    
+    fprintf(state->out, "        mov%s ", spec.suffix);
+    emit_asmoper(state, mov->src, spec.size);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, mov->dst, spec.size);
+    fprintf(state->out, "\n");
+}
+
+//
+// Emit a movsx instruction.
+//
+static void emit_movsx(EmitState *state, AsmMovsx *movsx)
+{
+    fprintf(state->out, "        movslq ");
+    emit_asmoper(state, movsx->src, OS_DWORD);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, movsx->dst, OS_QWORD);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a unary instruction.
 //
-static void emit_unary(FILE *out, AsmUnary *unary)
+static void emit_unary(EmitState *state, AsmUnary *unary)
 {
     char *opcode = "???";
+
+    OperandSpec spec;
+    type_to_operand_spec(unary->type, &spec);
 
     switch (unary->op) {
         case UOP_PLUS:          return;
@@ -158,17 +215,20 @@ static void emit_unary(FILE *out, AsmUnary *unary)
             ICE_ASSERT(((void)"invalid unary opcode in emit_unary", false));
     }
 
-    fprintf(out, "        %sl ", opcode);
-    emit_asmoper(out, unary->arg, OS_DWORD);
-    fprintf(out, "\n");
+    fprintf(state->out, "        %s%s ", opcode, spec.suffix);
+    emit_asmoper(state, unary->arg, spec.size);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a binary instruction.
 //
-static void emit_binary(FILE *out, AsmBinary *binary)
+static void emit_binary(EmitState *state, AsmBinary *binary)
 {
     char *opcode = "???";
+
+    OperandSpec spec;
+    type_to_operand_spec(binary->type, &spec);
 
     switch (binary->op) {
         case BOP_ADD:           opcode = "add"; break;
@@ -187,114 +247,120 @@ static void emit_binary(FILE *out, AsmBinary *binary)
             ICE_ASSERT(((void)"invalid binary opcode in emit_binary", false));
     }
 
-    fprintf(out, "        %sl ", opcode);
+    fprintf(state->out, "        %s%s ", opcode, spec.suffix);
 
     if (binary->op == BOP_RSHIFT || binary->op == BOP_LSHIFT) {
-        emit_asmoper(out, binary->src, OS_BYTE);
+        emit_asmoper(state, binary->src, OS_BYTE);
     } else {
-        emit_asmoper(out, binary->src, OS_DWORD);
+        emit_asmoper(state, binary->src, spec.size);
     }
-    fprintf(out, ", ");
-    emit_asmoper(out, binary->dst, OS_DWORD);
-    fprintf(out, "\n");
+    fprintf(state->out, ", ");
+    emit_asmoper(state, binary->dst, spec.size);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit an IDIV instruction.
 //
-static void emit_idiv(FILE *out, AsmIdiv *idiv)
+static void emit_idiv(EmitState *state, AsmIdiv *idiv)
 {
-    fprintf(out, "        idivl ");
-    emit_asmoper(out, idiv->arg, OS_DWORD);
-    fprintf(out, "\n");
+    OperandSpec spec;
+    type_to_operand_spec(idiv->type, &spec);
+
+    fprintf(state->out, "        idiv%s ", spec.suffix);
+    emit_asmoper(state, idiv->arg, spec.size);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a CMP instruction.
 //
-static void emit_cmp(FILE *out, AsmCmp *cmp)
+static void emit_cmp(EmitState *state, AsmCmp *cmp)
 {
-    fprintf(out, "        cmpl ");
-    emit_asmoper(out, cmp->left, OS_DWORD);
-    fprintf(out, ", ");
-    emit_asmoper(out, cmp->right, OS_DWORD);
-    fprintf(out, "\n");
+    OperandSpec spec;
+    type_to_operand_spec(cmp->type, &spec);
+
+    fprintf(state->out, "        cmp%s ", spec.suffix);
+    emit_asmoper(state, cmp->left, spec.size);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, cmp->right, spec.size);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a JMP instruction.
 //
-static void emit_jump(FILE *out, AsmJump *jump)
+static void emit_jump(EmitState *state, AsmJump *jump)
 {
-    fprintf(out, "        jmp ");
-    emit_label(out, jump->target);
-    fprintf(out, "\n");
+    fprintf(state->out, "        jmp ");
+    emit_label(state, jump->target);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a JMPCC instruction.
 //
-static void emit_jumpcc(FILE *out, AsmJumpCc *jumpcc)
+static void emit_jumpcc(EmitState *state, AsmJumpCc *jumpcc)
 {
-    fprintf(out, "        j%s ", acc_describe(jumpcc->cc));
-    emit_label(out, jumpcc->target);
-    fprintf(out, "\n");
+    fprintf(state->out, "        j%s ", acc_describe(jumpcc->cc));
+    emit_label(state, jumpcc->target);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a SETCC instruction.
 //
-static void emit_setcc(FILE *out, AsmSetCc *setcc)
+static void emit_setcc(EmitState *state, AsmSetCc *setcc)
 {
-    fprintf(out, "        set%s ", acc_describe(setcc->cc));
-    emit_asmoper(out, setcc->dst, OS_BYTE);
-    fprintf(out, "\n");
+    fprintf(state->out, "        set%s ", acc_describe(setcc->cc));
+    emit_asmoper(state, setcc->dst, OS_BYTE);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a label.
 //
-static void emit_label_instr(FILE *out, AsmLabel *label)
+static void emit_label_instr(EmitState *state, AsmLabel *label)
 {
-    emit_label(out, label->label);
-    fprintf(out, ":\n");
+    emit_label(state, label->label);
+    fprintf(state->out, ":\n");
 }
 
 //
 // Emit code to reserve locals on the stack.
 //
-static void emit_stack_reserve(FILE *out, AsmStackReserve *reserve)
+static void emit_stack_reserve(EmitState *state, AsmStackReserve *reserve)
 {
-    fprintf(out, "        subq $%d, %%rsp\n", reserve->bytes);
+    fprintf(state->out, "        subq $%d, %%rsp\n", reserve->bytes);
 }
 
 //
 // Emit code to free locals on the stack.
 //
-static void emit_stack_free(FILE *out, AsmStackFree *reserve)
+static void emit_stack_free(EmitState *state, AsmStackFree *reserve)
 {
-    fprintf(out, "        addq $%d, %%rsp\n", reserve->bytes);
+    fprintf(state->out, "        addq $%d, %%rsp\n", reserve->bytes);
 }
 
 //
 // Emit a push.
 //
-static void emit_push(FILE *out, AsmPush *push)
+static void emit_push(EmitState *state, AsmPush *push)
 {
-    fprintf(out, "        push ");
-    emit_asmoper(out, push->value, OS_QWORD);
-    fprintf(out, "\n");
+    fprintf(state->out, "        push ");
+    emit_asmoper(state, push->value, OS_QWORD);
+    fprintf(state->out, "\n");
 }
 
 //
 // Emit a call.
 //
-static void emit_call(FILE *out, AsmCall *call)
+static void emit_call(EmitState *state, AsmCall *call)
 {
 #ifdef __APPLE__
-    fprintf(out, "        call _%s\n", call->id);
+    fprintf(state->out, "        call _%s\n", call->id);
 #else
-    fprintf(out, "        call %s\n", call->id);
+    fprintf(state->out, "        call %s\n", call->id);
 #endif
 }
 
@@ -302,71 +368,78 @@ static void emit_call(FILE *out, AsmCall *call)
 //
 // Emit a function.
 //
-static void emit_function(FILE *out, AsmFunction *func, FileLine *loc)
+static void emit_function(EmitState *state, AsmFunction *func, FileLine *loc)
 {
 #ifdef __APPLE__
     if (func->global) {
-        fprintf(out, "        .globl _%s\n", func->name);
+        fprintf(state->out, "        .globl _%s\n", func->name);
     }
-    fprintf(out, "        .text\n");
-    fprintf(out, "_%s:\n", func->name);
+    fprintf(state->out, "        .text\n");
+    fprintf(state->out, "_%s:\n", func->name);
 #else
     if (func->global) {   
-        fprintf(out, "        .globl %s\n", func->name);
+        fprintf(state->out, "        .globl %s\n", func->name);
     }
-    fprintf(out, "        .text\n");
-    fprintf(out, "%s:\n", func->name);
+    fprintf(state->out, "        .text\n");
+    fprintf(state->out, "%s:\n", func->name);
 #endif
-    fprintf(out, "        pushq %%rbp\n");
-    fprintf(out, "        movq %%rsp, %%rbp\n");
+    fprintf(state->out, "        pushq %%rbp\n");
+    fprintf(state->out, "        movq %%rsp, %%rbp\n");
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
-        emitcode_recurse(out, node, loc);
+        emitcode_recurse(state, node, loc);
     }    
 }
 
 //
 // Emit a static variable.
 //
-static void emit_static_var(FILE *out, AsmStaticVar *var)
+static void emit_static_var(EmitState *state, AsmStaticVar *var)
 {
+    BackEndSymbol *sym = bstab_lookup(state->bstab, var->name);
+    ICE_ASSERT(sym->tag == BST_OBJECT);
+    int size = asmtype_size(sym->object.type);
+    unsigned long val = var->init.value;
+
     if (var->global) {
-        fprintf(out, "        .globl %s\n", var->name);        
+        fprintf(state->out, "        .globl %s\n", var->name);        
     }
 
-    if (var->init.value == 0) {
-        fprintf(out, "        .bss\n");
-        fprintf(out, "        .balign 4\n");
-        fprintf(out, "%s:\n", var->name);
-        fprintf(out, "        .zero 4\n");
+    if (val == 0) {
+        fprintf(state->out, "        .bss\n");
+        fprintf(state->out, "        .balign %d\n", var->alignment);
+        fprintf(state->out, "%s:\n", var->name);
+        fprintf(state->out, "        .zero %d\n", size);
     } else {
-        fprintf(out, "        .data\n");
-        fprintf(out, "        .balign 4\n");
-        fprintf(out, "%s:\n", var->name);
-        fprintf(out, "        .long %lu\n", var->init.value);
+        fprintf(state->out, "        .data\n");
+        fprintf(state->out, "        .balign %d\n", var->alignment);
+        fprintf(state->out, "%s:\n", var->name);
+        fprintf(state->out, "        .%s %lu\n", 
+            (sym->object.type->tag == AT_QUADWORD) ? "quad" : "long",
+            var->init.value);
     }
 }
 
 //
 // emit a top-level program.
 // 
-static void emit_program(FILE *out, AsmProgram *prog)
+static void emit_program(EmitState *state, AsmProgram *prog)
 {
     for (ListNode *curr = prog->funcs.head; curr; curr = curr->next) {
         AsmNode *func = CONTAINER_OF(curr, AsmNode, list);
-        emitcode_recurse(out, func, &func->loc);        
+        emitcode_recurse(state, func, &func->loc);        
     }
 
 #ifndef __APPLE__
-    fprintf(out, "        .section .note.GNU-stack,\"\",@progbits\n");
+    fprintf(state->out, "        .section .note.GNU-stack,\"\",@progbits\n");
 #endif
 }
 
 //
 // Write actual assembly code out.
 //
-static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
+static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
 {
     if (node->loc.fname != loc->fname || node->loc.line != loc->line) {
         *loc = node->loc;
@@ -376,39 +449,41 @@ static void emitcode_recurse(FILE *out, AsmNode *node, FileLine *loc)
         // TODO figure out why Mac assembler doesn't like this
         // line number format.
         //
-        fprintf(out, "# %s\n", sloc);
+        fprintf(state->out, "# %s\n", sloc);
 #endif
         safe_free(sloc);
     }
 
     switch (node->tag) {
-        case ASM_PROG:          emit_program(out, &node->prog); break;
-        case ASM_FUNC:          emit_function(out, &node->func, loc); break;
-        case ASM_STATIC_VAR:    emit_static_var(out, &node->static_var); break;
-        case ASM_STACK_RESERVE: emit_stack_reserve(out, &node->stack_reserve); break;
-        case ASM_STACK_FREE:    emit_stack_free(out, &node->stack_free); break;
-        case ASM_MOV:           emit_mov(out, &node->mov); break;
-        case ASM_MOVSX:         ICE_NYI("emitcode_recurse::ASM_MOVSX"); 
-        case ASM_UNARY:         emit_unary(out, &node->unary); break;
-        case ASM_BINARY:        emit_binary(out, &node->binary); break;
-        case ASM_CMP:           emit_cmp(out, &node->cmp); break;
-        case ASM_JUMP:          emit_jump(out, &node->jump); break;
-        case ASM_JUMPCC:        emit_jumpcc(out, &node->jumpcc); break;
-        case ASM_SETCC:         emit_setcc(out, &node->setcc); break;
-        case ASM_LABEL:         emit_label_instr(out, &node->label); break;
-        case ASM_RET:           emit_ret(out); break;
-        case ASM_CDQ:           emit_cdq(out); break;
-        case ASM_IDIV:          emit_idiv(out, &node->idiv); break;
-        case ASM_PUSH:          emit_push(out, &node->push); break;
-        case ASM_CALL:          emit_call(out, &node->call); break;
+        case ASM_PROG:          emit_program(state, &node->prog); break;
+        case ASM_FUNC:          emit_function(state, &node->func, loc); break;
+        case ASM_STATIC_VAR:    emit_static_var(state, &node->static_var); break;
+        case ASM_STACK_RESERVE: emit_stack_reserve(state, &node->stack_reserve); break;
+        case ASM_STACK_FREE:    emit_stack_free(state, &node->stack_free); break;
+        case ASM_MOV:           emit_mov(state, &node->mov); break;
+        case ASM_MOVSX:         emit_movsx(state, &node->movsx); break;
+        case ASM_UNARY:         emit_unary(state, &node->unary); break;
+        case ASM_BINARY:        emit_binary(state, &node->binary); break;
+        case ASM_CMP:           emit_cmp(state, &node->cmp); break;
+        case ASM_JUMP:          emit_jump(state, &node->jump); break;
+        case ASM_JUMPCC:        emit_jumpcc(state, &node->jumpcc); break;
+        case ASM_SETCC:         emit_setcc(state, &node->setcc); break;
+        case ASM_LABEL:         emit_label_instr(state, &node->label); break;
+        case ASM_RET:           emit_ret(state); break;
+        case ASM_CDQ:           emit_cdq(state, &node->cdq); break;
+        case ASM_IDIV:          emit_idiv(state, &node->idiv); break;
+        case ASM_PUSH:          emit_push(state, &node->push); break;
+        case ASM_CALL:          emit_call(state, &node->call); break;
     }
 }
 
 //
 // Top level entry to emit code.
 //
-void emitcode(FILE *out, AsmNode *prog)
+void emitcode(FILE *out, AsmNode *prog, BackEndSymbolTable *bstab)
 {
     FileLine loc = { NULL, 0 };
-    emitcode_recurse(out, prog, &loc);
+    EmitState state = { out, bstab };
+
+    emitcode_recurse(&state, prog, &loc);
 }

@@ -953,21 +953,33 @@ static void decl_print_variable(DeclVariable *var, int tab, bool locs)
 static void decl_print_function(DeclFunction *func, int tab, bool locs)
 {
     printf("%*sdeclare-func(%s%s) (", tab, "", storage_class_describe(func->storage_class), func->name);
-    
-    for (ListNode *curr = func->parms.head; curr; curr = curr->next) {
-        FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
-        printf("%s", parm->name);
-        if (curr->next) {
+
+    ListNode *pcurr = func->parms.head;
+    ListNode *tcurr = func->type->func.parms.head;
+
+    for (; pcurr && tcurr; pcurr = pcurr->next, tcurr = tcurr->next) {
+        FuncParameter *parm = CONTAINER_OF(pcurr, FuncParameter, list);
+        TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
+        
+        char *type = type_describe(ptype->parmtype);
+        printf("%s %s", type, parm->name);
+        safe_free(type);
+
+        if (pcurr->next) {
             printf(", ");
         }
     }
     
-    printf(")");
+    char *type = type_describe(func->type->func.ret);
+    printf(") -> %s", type);
+    safe_free(type);
 
     if (func->body.head) {
         printf(" {\n");
         ast_print_blockitem_list(func->body, tab + 2, locs);
         printf("%*s}", tab, "");
+    } else {
+        printf(";");
     }
 
     printf("\n");

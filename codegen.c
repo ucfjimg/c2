@@ -53,6 +53,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
     }
     
+    ICE_ASSERT(false);
     return asmtype_long();
 }
 
@@ -388,6 +389,53 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
 }
 
 //
+// Geneate code for a static variable.
+//
+static void codegen_static_var(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
+
+    codegen_push_instr(state, 
+        asm_static_var(
+            decl->static_var.name, 
+            decl->static_var.global, 
+            codegen_align(&decl->static_var.init),
+            decl->static_var.init, 
+            decl->loc));
+}
+
+//
+// Generate code for a sign extend operation.
+//
+static void codegen_sign_extend(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_SIGN_EXTEND);
+
+    codegen_push_instr(state,
+        asm_movsx(
+            codegen_expression(state, decl->sign_extend.src),
+            codegen_expression(state, decl->sign_extend.dst),
+            decl->loc)
+    );
+}
+
+//
+// Generate code for a truncate operation.
+//
+static void codegen_truncate(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_TRUNCATE);
+
+    codegen_push_instr(state,
+        asm_mov(
+            codegen_expression(state, decl->truncate.src),
+            codegen_expression(state, decl->truncate.dst),
+            asmtype_long(),
+            decl->loc)
+    );
+}
+
+//
 // Generate code for a single instruction.
 //
 static void codegen_single(CodegenState *state, TacNode *tac)
@@ -403,9 +451,9 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_LABEL:             codegen_label(state, tac); break;
         case TAC_FUNCTION_CALL:     codegen_function_call(state, tac); break;
 
-        case TAC_STATIC_VAR:        ICE_NYI("codegen_single::static-var");
-        case TAC_SIGN_EXTEND:       ICE_NYI("codegen_single::sign-extend");
-        case TAC_TRUNCATE:          ICE_NYI("codegen_single::truncate");
+        case TAC_STATIC_VAR:        codegen_static_var(state, tac); break; 
+        case TAC_SIGN_EXTEND:       codegen_sign_extend(state, tac); break;
+        case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
 
         case TAC_PROGRAM:           break;
         case TAC_CONST_INT:         break;
@@ -484,7 +532,6 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
         offset += 8;
     }
 
-
     //
     // Statements.
     //
@@ -494,19 +541,6 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
     }
 
     codegen_push_instr(state, asm_func(tac->funcdef.name, funcstate.code, func->global, tac->loc));
-}
-
-static void codegen_static_var(CodegenState *state, TacNode *decl)
-{
-    ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
-
-    codegen_push_instr(state, 
-        asm_static_var(
-            decl->static_var.name, 
-            decl->static_var.global, 
-            codegen_align(&decl->static_var.init),
-            decl->static_var.init, 
-            decl->loc));
 }
 
 //
@@ -533,3 +567,63 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab)
 
     return asm_prog(state.code, tac->loc);
 }
+
+//
+// Convert a function symbol to a back end symbol.
+//
+void codegen_func_sym_to_backsym(SymFunction *func, BackEndSymbol *bsym)
+{
+    bsym->tag = BST_FUNCTION;
+    bsym->func.is_defined = func->defined; 
+}
+
+//
+// Convert a static variable symbol to a back end symbol.
+//
+void codegen_static_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+{
+    ICE_ASSERT(sym->tag == ST_STATIC_VAR);
+
+    bsym->tag = BST_OBJECT;
+    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.is_static = true;
+}
+
+//
+// Convert a local variable symbol to a back end symbol.
+//
+void codegen_local_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+{
+    ICE_ASSERT(sym->tag == ST_LOCAL_VAR);
+
+    bsym->tag = BST_OBJECT;
+    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.is_static = false;
+}
+
+//
+// Allocate a back end symbol table an populate it from the front end
+// symbol table.
+// 
+BackEndSymbolTable *codegen_sym_to_backsym(SymbolTable *stab)
+{
+    HashIterator iter;
+
+    BackEndSymbolTable *bstab = bstab_alloc();
+
+    for (HashNode *curr = hashtab_first(stab->hashtab, &iter); curr; curr = hashtab_next(&iter)) {
+        Symbol *sym = CONTAINER_OF(curr, Symbol, hash);        
+        BackEndSymbol *bsym = bstab_lookup(bstab, curr->key);
+        
+        switch (sym->tag) {
+            case ST_FUNCTION:   codegen_func_sym_to_backsym(&sym->func, bsym); break;
+            case ST_STATIC_VAR: codegen_static_sym_to_backsym(sym, bsym); break;
+            case ST_LOCAL_VAR:  codegen_local_sym_to_backsym(sym, bsym); break;
+                break;
+        }
+
+    }
+
+    return bstab;
+}
+

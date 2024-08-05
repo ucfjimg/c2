@@ -44,6 +44,9 @@ extern AsmType *asmtype_quad(void);
 extern AsmType *asmtype_clone(AsmType *type);
 extern void asmtype_free(AsmType *type);
 extern char *asmtype_describe(AsmType *type);
+extern int asmtype_size(AsmType *type);
+extern int asmtype_alignment(AsmType *type);
+
 
 typedef enum {
     ACC_E,

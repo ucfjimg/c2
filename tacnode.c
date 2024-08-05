@@ -477,7 +477,7 @@ static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
     if (funcdef->global) {
         printf("global ");
     }
-    printf("(\n");
+    printf("(");
 
     for (ListNode *curr = funcdef->parms.head; curr; curr = curr->next) {
         TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
@@ -638,11 +638,11 @@ static void tac_print_function_call(TacFunctionCall *call, int tab, bool locs)
 //
 static void tac_print_sign_extend(TacSignExtend *sext, int tab, bool locs)
 {
-    printf("%*ssign-extend(", tab, "");
+    printf("%*ssign-extend(\n", tab, "");
     tac_print_recurse(sext->src, tab + 2, locs);
     printf("%*s=>\n", tab, "");
     tac_print_recurse(sext->dst, tab + 2, locs);
-    printf("\n");
+    printf("%*s)\n", tab, "");
 }
 
 //
@@ -650,11 +650,11 @@ static void tac_print_sign_extend(TacSignExtend *sext, int tab, bool locs)
 //
 static void tac_print_truncate(TacTruncate *trunc, int tab, bool locs)
 {
-    printf("%*struncate(", tab, "");
+    printf("%*struncate(\n", tab, "");
     tac_print_recurse(trunc->src, tab + 2, locs);
     printf("%*s=>\n", tab, "");
     tac_print_recurse(trunc->dst, tab + 2, locs);
-    printf("\n");
+    printf("%*s)\n", tab, "");
 }
 
 //

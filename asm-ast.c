@@ -103,6 +103,34 @@ char *asmtype_describe(AsmType *at)
 }
 
 //
+// Return the size of an assembly type. 
+//
+int asmtype_size(AsmType *type)
+{
+    switch (type->tag) {
+        case AT_LONGWORD: return 4;
+        case AT_QUADWORD: return 8;
+    }
+
+    ICE_ASSERT(((void)"invalid assembly type in asmtype_size", false));
+    return 1;
+}
+
+//
+// Return the alignment of an assembly type. 
+//
+int asmtype_alignment(AsmType *type)
+{
+    switch (type->tag) {
+        case AT_LONGWORD: return 4;
+        case AT_QUADWORD: return 8;
+    }
+
+    ICE_ASSERT(((void)"invalid assembly type in asmtype_alignment", false));
+    return 1;
+}
+
+//
 // Clone an assembly operand.
 //
 AsmOperand *aoper_clone(AsmOperand *oper)
