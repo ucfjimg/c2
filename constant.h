@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 //
 // A constant value can only hold a small subset of types.
 //
@@ -35,3 +37,5 @@ typedef struct {
 
 extern void const_make_int(Const *cn, ConstIntSize size, ConstIntSign sign, unsigned long value);
 extern void const_make_double(Const *cn, double value);
+extern char *const_describe(Const *cn);
+extern bool const_unsigned(Const *cn);

@@ -117,7 +117,7 @@ static void tac_static_var_free(TacStaticVar *var)
 //
 TacNode *tac_return(TacNode *val, FileLine loc)
 {
-    ICE_ASSERT(val == NULL || (val->tag == TAC_CONST_INT || val->tag == TAC_VAR));
+    ICE_ASSERT(val == NULL || (val->tag == TAC_CONST || val->tag == TAC_VAR));
 
     TacNode *tac = tac_alloc(TAC_RETURN, loc);
     tac->ret.val = val;
@@ -140,7 +140,7 @@ static void tac_return_free(TacReturn *ret)
 //
 TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc)
 {
-    ICE_ASSERT(src->tag == TAC_CONST_INT || src->tag == TAC_VAR);
+    ICE_ASSERT(src->tag == TAC_CONST || src->tag == TAC_VAR);
     ICE_ASSERT(dst->tag == TAC_VAR);
 
     TacNode *tac = tac_alloc(TAC_COPY, loc);
@@ -243,7 +243,7 @@ static void tac_label_free(TacLabel *label)
 //
 TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc)
 {
-    ICE_ASSERT(src->tag == TAC_CONST_INT || src->tag == TAC_VAR);
+    ICE_ASSERT(src->tag == TAC_CONST || src->tag == TAC_VAR);
     ICE_ASSERT(dst->tag == TAC_VAR);
 
     TacNode *tac = tac_alloc(TAC_UNARY, loc);
@@ -270,8 +270,8 @@ static void tac_unary_free(TacUnary *unary)
 //
 TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc)
 {
-    ICE_ASSERT(left->tag == TAC_CONST_INT || left->tag == TAC_VAR);
-    ICE_ASSERT(right->tag == TAC_CONST_INT || right->tag == TAC_VAR);
+    ICE_ASSERT(left->tag == TAC_CONST || left->tag == TAC_VAR);
+    ICE_ASSERT(right->tag == TAC_CONST || right->tag == TAC_VAR);
     ICE_ASSERT(dst->tag == TAC_VAR);
 
     TacNode *tac = tac_alloc(TAC_BINARY, loc);
@@ -293,14 +293,12 @@ static void tac_binary_free(TacBinary *binary)
 }
 
 //
-// Construct a TAC constant integer.
+// Construct a TAC constant.
 //
-TacNode *tac_const_int(unsigned long val, bool is_long, bool is_unsigned, FileLine loc)
+TacNode *tac_const(Const cn, FileLine loc)
 {
-    TacNode *tac = tac_alloc(TAC_CONST_INT, loc);
-    tac->constint.val = val;
-    tac->constint.is_long = is_long;
-    tac->constint.is_unsigned = is_unsigned;
+    TacNode *tac = tac_alloc(TAC_CONST, loc);
+    tac->constant = cn;
     return tac;
 }
 
@@ -423,18 +421,21 @@ static void tac_truncate_free(TacTruncate *trunc)
 
 //
 // Clone and operand node. The operand must be of type
-// TAC_VAR or TAC_CONST_INT.
+// TAC_VAR or TAC_CONST.
 //
 TacNode *tac_clone_operand(TacNode *tac)
 {
-    ICE_ASSERT(tac->tag == TAC_VAR || tac->tag == TAC_CONST_INT);
+    ICE_ASSERT(tac->tag == TAC_VAR || tac->tag == TAC_CONST);
+
+    Const cn;
 
     switch (tac->tag) {
         case TAC_VAR:       return tac_var(tac->var.name, tac->loc);
-        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->constint.is_long, tac->constint.is_unsigned, tac->loc);
+        case TAC_CONST:     return tac_const(tac->constant, tac->loc);
     
         default:
-            return tac_const_int(0, false, false, tac->loc);
+            const_make_int(&cn, CIS_INT, CIS_SIGNED, 0);
+            return tac_const(cn, tac->loc);
     }
 }
 
@@ -449,7 +450,7 @@ void tac_free(TacNode *tac)
             case TAC_PROGRAM:       tac_program_free(&tac->prog); break;
             case TAC_FUNCDEF:       tac_function_def_free(&tac->funcdef); break;
             case TAC_STATIC_VAR:    tac_static_var_free(&tac->static_var); break;
-            case TAC_CONST_INT:     break;
+            case TAC_CONST:         break;
             case TAC_RETURN:        tac_return_free(&tac->ret); break;
             case TAC_COPY:          tac_copy_free(&tac->copy); break;
             case TAC_JUMP:          tac_jump_free(&tac->jump); break;
@@ -628,14 +629,13 @@ static void tac_print_binary(TacBinary *binary, int tab, bool locs)
 }
 
 //
-// Print a TAC integer constant.
+// Print a TAC constant.
 //
-static void tac_print_const_int(TacConstInt *constint, int tab)
+static void tac_print_const(Const *constant, int tab)
 {
-    printf("%*sconst-int%s%s%lu)\n", tab, "", 
-        constint->is_unsigned ? "unsigned " : "",
-        constint->is_long ? "long " : "", 
-        constint->val);
+    char *desc = const_describe(constant);
+    printf("%*sconst(%s)\n", tab, "", desc);
+    safe_free(desc);
 }
 
 //
@@ -723,7 +723,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_LABEL:         tac_print_label(&tac->label, tab); break;
         case TAC_UNARY:         tac_print_unary(&tac->unary, tab, locs); break;
         case TAC_BINARY:        tac_print_binary(&tac->binary, tab, locs); break;
-        case TAC_CONST_INT:     tac_print_const_int(&tac->constint, tab); break;
+        case TAC_CONST:         tac_print_const(&tac->constant, tab); break;
         case TAC_VAR:           tac_print_var(&tac->var, tab); break;
         case TAC_FUNCTION_CALL: tac_print_function_call(&tac->call, tab, locs); break;
         case TAC_SIGN_EXTEND:   tac_print_sign_extend(&tac->sign_extend, tab, locs); break;

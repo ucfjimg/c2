@@ -21,7 +21,7 @@ typedef enum {
     TAC_LABEL,
     TAC_UNARY,
     TAC_BINARY,
-    TAC_CONST_INT,
+    TAC_CONST,
     TAC_VAR,
     TAC_FUNCTION_CALL,
     TAC_SIGN_EXTEND,
@@ -131,15 +131,6 @@ typedef struct {
 } TacBinary;
 
 //
-// An integer constant.
-//
-typedef struct {
-    unsigned long val;              // constant value
-    bool is_long;                   // constant is a long
-    bool is_unsigned;               // constant is an unsigned
-} TacConstInt;
-
-//
 // A variable (program defined or temporary).
 //
 typedef struct {
@@ -199,7 +190,7 @@ typedef struct TacNode {
         TacLabel        label;
         TacUnary        unary;
         TacBinary       binary;
-        TacConstInt     constint;
+        Const           constant;
         TacVar          var;
         TacFunctionCall call;
         TacSignExtend   sign_extend;
@@ -219,7 +210,7 @@ extern TacNode *tac_jump_not_zero(TacNode *condition, char *target, FileLine loc
 extern TacNode *tac_label(char *name, FileLine loc);
 extern TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc);
-extern TacNode *tac_const_int(unsigned long val, bool is_long, bool is_unsigned, FileLine loc);
+extern TacNode *tac_const(Const cn, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
 extern TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc);
 extern TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc);

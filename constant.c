@@ -1,5 +1,7 @@
 #include "constant.h"
 
+#include "safemem.h"
+
 //
 // Construct in place an integral constant.
 //
@@ -18,4 +20,36 @@ void const_make_double(Const *cn, double value)
 {
     cn->tag = CON_FLOAT;
     cn->floatval = value;
+}
+
+//
+// Return a description, in an allocated string, of an integral constant.
+//
+static char *const_describe_int(ConstInt *cn)
+{
+    return saprintf("%lu%s%s",
+        cn->value,
+        cn->size == CIS_LONG ? "l" : "",
+        cn->sign == CIS_UNSIGNED ? "u" : "");
+}
+
+//
+// Return a description, in an allocated string, of the given constant.
+//
+char *const_describe(Const *cn)
+{
+    switch (cn->tag) {
+        case CON_INTEGRAL:      return const_describe_int(&cn->intval);
+        case CON_FLOAT:         return saprintf("%g", cn->floatval);
+    }
+
+    return saprintf("<invalid-constant>");
+}
+
+//
+// Return true if the constant represents an unsigned integer of any size.
+//
+bool const_unsigned(Const *cn)
+{
+    return cn->tag == CON_INTEGRAL && cn->intval.sign == CIS_UNSIGNED;
 }

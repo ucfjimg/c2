@@ -37,8 +37,8 @@ static CodegenState nested_state(CodegenState *outer)
 //
 static bool codegen_operand_unsigned(CodegenState *state, TacNode *tac)
 {
-    if (tac->tag == TAC_CONST_INT) {
-        return tac->constint.is_unsigned;
+    if (tac->tag == TAC_CONST) {
+        return const_unsigned(&tac->constant);
     }
     
     if (tac->tag == TAC_VAR) {
@@ -89,11 +89,17 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
     //
     // If it's a constant, the size is specified.
     //
-    if (tac->tag == TAC_CONST_INT) {
-        if (tac->constint.is_long) {
-            return asmtype_quad();
-        } else {
-            return asmtype_long();
+    if (tac->tag == TAC_CONST) {
+        switch (tac->constant.tag) {
+            case CON_INTEGRAL:
+                if (tac->constant.intval.size == CIS_LONG) {
+                    return asmtype_quad();
+                } else {
+                    return asmtype_long();
+                }
+                break;
+
+            case CON_FLOAT: ICE_NYI("codegen_type_to_asmtype::CON_FLOAT");
         }
     }
 
@@ -130,12 +136,12 @@ static int codegen_align(Const *init)
 }
 
 //
-// Generate code for a const int.
+// Generate code for a constant.
 //
-static AsmOperand *codegen_const_int(CodegenState *state, TacNode *tac)
+static AsmOperand *codegen_constant(CodegenState *state, TacNode *tac)
 {
-    ICE_ASSERT(tac->tag == TAC_CONST_INT);
-    return aoper_imm(tac->constint.val);
+    ICE_ASSERT(tac->tag == TAC_CONST);
+    return aoper_imm(tac->constant.intval.value);
 }
 
 //
@@ -155,7 +161,7 @@ static AsmOperand *codegen_var(CodegenState *state, TacNode *tac)
 static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
 {
     switch (tac->tag) {
-        case TAC_CONST_INT: return codegen_const_int(state, tac);
+        case TAC_CONST:     return codegen_constant(state, tac);
         case TAC_VAR:       return codegen_var(state, tac);
 
         default:
@@ -530,7 +536,7 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
 
         case TAC_PROGRAM:           break;
-        case TAC_CONST_INT:         break;
+        case TAC_CONST:             break;
         case TAC_VAR:               break;
         case TAC_FUNCDEF:           break;
     }
