@@ -12,6 +12,8 @@
 
 extern bool tgt_signed_fits_in_int(uint64_t val);
 extern bool tgt_signed_fits_in_long(uint64_t val);
+extern bool tgt_unsigned_fits_in_int(uint64_t val);
+extern bool tgt_unsigned_fits_in_long(uint64_t val);
 
 
 

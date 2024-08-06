@@ -295,11 +295,12 @@ static void tac_binary_free(TacBinary *binary)
 //
 // Construct a TAC constant integer.
 //
-TacNode *tac_const_int(unsigned long val, bool is_long, FileLine loc)
+TacNode *tac_const_int(unsigned long val, bool is_long, bool is_unsigned, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_CONST_INT, loc);
     tac->constint.val = val;
     tac->constint.is_long = is_long;
+    tac->constint.is_unsigned = is_unsigned;
     return tac;
 }
 
@@ -349,6 +350,19 @@ TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc)
 }
 
 //
+// Constructor for a TAC zero extend operation.
+//
+TacNode *tac_zero_extend(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_ZERO_EXTEND, loc);
+
+    tac->zero_extend.src = src;
+    tac->zero_extend.dst = dst;
+
+    return tac;
+}
+
+//
 // Constructor for a TAC truncate operation.
 //
 TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc)
@@ -390,6 +404,15 @@ static void tac_sign_extend_free(TacSignExtend *sext)
 }
 
 //
+// Free a TAC zero extend.
+//
+static void tac_zero_extend_free(TacZeroExtend *zext)
+{
+    tac_free(zext->src);
+    tac_free(zext->dst);
+}
+
+//
 // Free a TAC truncate.
 //
 static void tac_truncate_free(TacTruncate *trunc)
@@ -408,10 +431,10 @@ TacNode *tac_clone_operand(TacNode *tac)
 
     switch (tac->tag) {
         case TAC_VAR:       return tac_var(tac->var.name, tac->loc);
-        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->constint.is_long, tac->loc);
+        case TAC_CONST_INT: return tac_const_int(tac->constint.val, tac->constint.is_long, tac->constint.is_unsigned, tac->loc);
     
         default:
-            return tac_const_int(0, false, tac->loc);
+            return tac_const_int(0, false, false, tac->loc);
     }
 }
 
@@ -438,6 +461,7 @@ void tac_free(TacNode *tac)
             case TAC_VAR:           tac_var_free(&tac->var); break;
             case TAC_FUNCTION_CALL: tac_function_call_free(&tac->call); break;
             case TAC_SIGN_EXTEND:   tac_sign_extend_free(&tac->sign_extend); break;
+            case TAC_ZERO_EXTEND:   tac_zero_extend_free(&tac->zero_extend); break;
             case TAC_TRUNCATE:      tac_truncate_free(&tac->truncate); break;
         }
 
@@ -601,7 +625,10 @@ static void tac_print_binary(TacBinary *binary, int tab, bool locs)
 //
 static void tac_print_const_int(TacConstInt *constint, int tab)
 {
-    printf("%*sconst-int(%s%lu)\n", tab, "", constint->is_long ? "long " : "", constint->val);
+    printf("%*sconst-int%s%s%lu)\n", tab, "", 
+        constint->is_unsigned ? "unsigned " : "",
+        constint->is_long ? "long " : "", 
+        constint->val);
 }
 
 //
@@ -646,6 +673,18 @@ static void tac_print_sign_extend(TacSignExtend *sext, int tab, bool locs)
 }
 
 //
+// Print a TAC zero extend operation.
+//
+static void tac_print_zero_extend(TacZeroExtend *zext, int tab, bool locs)
+{
+    printf("%*szero-extend(\n", tab, "");
+    tac_print_recurse(zext->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(zext->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
 // Print a TAC truncate operation.
 //
 static void tac_print_truncate(TacTruncate *trunc, int tab, bool locs)
@@ -681,6 +720,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_VAR:           tac_print_var(&tac->var, tab); break;
         case TAC_FUNCTION_CALL: tac_print_function_call(&tac->call, tab, locs); break;
         case TAC_SIGN_EXTEND:   tac_print_sign_extend(&tac->sign_extend, tab, locs); break;
+        case TAC_ZERO_EXTEND:   tac_print_zero_extend(&tac->zero_extend, tab, locs); break;
         case TAC_TRUNCATE:      tac_print_truncate(&tac->truncate, tab, locs); break;
     }
 }

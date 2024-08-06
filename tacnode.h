@@ -24,6 +24,7 @@ typedef enum {
     TAC_VAR,
     TAC_FUNCTION_CALL,
     TAC_SIGN_EXTEND,
+    TAC_ZERO_EXTEND,
     TAC_TRUNCATE,
 } TacTag;
 
@@ -134,6 +135,7 @@ typedef struct {
 typedef struct {
     unsigned long val;              // constant value
     bool is_long;                   // constant is a long
+    bool is_unsigned;               // constant is an unsigned
 } TacConstInt;
 
 //
@@ -159,6 +161,14 @@ typedef struct {
     TacNode *src;
     TacNode *dst;
 } TacSignExtend;
+
+//
+// A zero extend operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacZeroExtend;
 
 //
 // A truncate operation.
@@ -192,6 +202,7 @@ typedef struct TacNode {
         TacVar          var;
         TacFunctionCall call;
         TacSignExtend   sign_extend;
+        TacZeroExtend   zero_extend;
         TacTruncate     truncate;
     };
 } TacNode;
@@ -207,10 +218,11 @@ extern TacNode *tac_jump_not_zero(TacNode *condition, char *target, FileLine loc
 extern TacNode *tac_label(char *name, FileLine loc);
 extern TacNode *tac_unary(UnaryOp op, TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_binary(BinaryOp op, TacNode *left, TacNode *right, TacNode *dst, FileLine loc);
-extern TacNode *tac_const_int(unsigned long val, bool is_long, FileLine loc);
+extern TacNode *tac_const_int(unsigned long val, bool is_long, bool is_unsigned, FileLine loc);
 extern TacNode *tac_var(char *name, FileLine loc);
 extern TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine loc);
 extern TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_zero_extend(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);

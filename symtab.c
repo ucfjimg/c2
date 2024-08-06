@@ -79,9 +79,10 @@ static void stab_print_static_var(SymStaticVar *svar)
 
     char *loc = fileline_describe(&svar->loc);
     printf(
-        "init=%lu%s global=%d loc=%s\n", 
+        "init=%lu%s%s global=%d loc=%s\n", 
         svar->initial.value, 
         svar->initial.is_long ? "l" : "",
+        svar->initial.is_unsigned ? "u" : "",
         svar->global, 
         loc);
     safe_free(loc);

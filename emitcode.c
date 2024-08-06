@@ -273,6 +273,19 @@ static void emit_idiv(EmitState *state, AsmIdiv *idiv)
 }
 
 //
+// Emit a DIV instruction.
+//
+static void emit_div(EmitState *state, AsmDiv *div)
+{
+    OperandSpec spec;
+    type_to_operand_spec(div->type, &spec);
+
+    fprintf(state->out, "        div%s ", spec.suffix);
+    emit_asmoper(state, div->arg, spec.size);
+    fprintf(state->out, "\n");
+}
+
+//
 // Emit a CMP instruction.
 //
 static void emit_cmp(EmitState *state, AsmCmp *cmp)
@@ -402,6 +415,8 @@ static void emit_static_var(EmitState *state, AsmStaticVar *var)
     int size = asmtype_size(sym->object.type);
     unsigned long val = var->init.value;
 
+    bool is_quad = sym->object.type->tag == AT_QUADWORD;
+
     if (var->global) {
         fprintf(state->out, "        .globl %s\n", var->name);        
     }
@@ -416,8 +431,8 @@ static void emit_static_var(EmitState *state, AsmStaticVar *var)
         fprintf(state->out, "        .balign %d\n", var->alignment);
         fprintf(state->out, "%s:\n", var->name);
         fprintf(state->out, "        .%s %lu\n", 
-            (sym->object.type->tag == AT_QUADWORD) ? "quad" : "long",
-            var->init.value);
+            is_quad ? "quad" : "long",
+            is_quad ? var->init.value : (var->init.value & 0xffffffff));
     }
 }
 
@@ -462,6 +477,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_STACK_FREE:    emit_stack_free(state, &node->stack_free); break;
         case ASM_MOV:           emit_mov(state, &node->mov); break;
         case ASM_MOVSX:         emit_movsx(state, &node->movsx); break;
+        case ASM_MOVZX:         ICE_ASSERT(((void)"untranslated movzx in emitcode", false));
         case ASM_UNARY:         emit_unary(state, &node->unary); break;
         case ASM_BINARY:        emit_binary(state, &node->binary); break;
         case ASM_CMP:           emit_cmp(state, &node->cmp); break;
@@ -472,6 +488,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_RET:           emit_ret(state); break;
         case ASM_CDQ:           emit_cdq(state, &node->cdq); break;
         case ASM_IDIV:          emit_idiv(state, &node->idiv); break;
+        case ASM_DIV:           emit_div(state, &node->div); break;
         case ASM_PUSH:          emit_push(state, &node->push); break;
         case ASM_CALL:          emit_call(state, &node->call); break;
     }

@@ -9,6 +9,8 @@ typedef struct Type Type;
 typedef enum {
     TT_INT,
     TT_LONG,
+    TT_UINT,
+    TT_ULONG,
     TT_FUNC,
 } TypeTag;
 
@@ -43,10 +45,15 @@ typedef struct {
 
 extern Type *type_int(void);
 extern Type *type_long(void);
+extern Type *type_uint(void);
+extern Type *type_ulong(void);
 extern TypeFuncParam *type_func_param(Type *type);
 extern Type *type_function(Type *ret, List parms);
 extern Type *type_clone(Type *type);
 extern bool types_equal(Type *left, Type *right);
+extern bool types_same_size(Type *left, Type *right);
+extern bool type_unsigned(Type *type);
+extern int type_rank(Type *type);
 extern void type_free(Type *type);
 extern char *type_describe(Type *type);
 

@@ -33,6 +33,22 @@ Type *type_long(void)
 }
 
 //
+// Constructor for an unsigned integer type.
+//
+Type *type_uint(void)
+{
+    return type_alloc(TT_UINT);
+}
+
+//
+// Constructor for an unsigned long type.
+//
+Type *type_ulong(void)
+{
+    return type_alloc(TT_ULONG);
+}
+
+//
 // Constructor for a type parameter.
 //
 TypeFuncParam *type_func_param(Type *type)
@@ -88,6 +104,8 @@ Type *type_clone(Type *type)
     switch (type->tag) {
         case TT_INT:    return type_int();
         case TT_LONG:   return type_long();
+        case TT_UINT:   return type_uint();
+        case TT_ULONG:  return type_ulong();
         case TT_FUNC:   return type_clone_func(&type->func);
     }
 
@@ -138,11 +156,57 @@ bool types_equal(Type *left, Type *right)
     switch (left->tag) {
         case TT_INT:    return true;
         case TT_LONG:   return true;
+        case TT_UINT:   return true;
+        case TT_ULONG:  return true;
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
     }
 
     ICE_ASSERT(((void)"invalid type tag in types_equal", false));
     return false;
+}
+
+//
+// Return true if two types are the same size, regardless of sign.
+//
+bool types_same_size(Type *left, Type *right)
+{
+    bool left_long = left->tag == TT_LONG || left->tag == TT_ULONG;
+    bool right_long = right->tag == TT_LONG || right->tag == TT_ULONG;
+
+    return left_long == right_long;
+}
+
+//
+// Return true if the given type is an unsigned integral type.
+//
+bool type_unsigned(Type *type)
+{
+    switch (type->tag) {
+        case TT_UINT:
+        case TT_ULONG:  return true;
+
+        case TT_INT:
+        case TT_LONG:
+        case TT_FUNC:   return false;
+    }
+
+    return false;
+}
+
+//
+// Return the rank of a base type.
+//
+int type_rank(Type *type)
+{
+    switch (type->tag) {
+        case TT_ULONG:  return 4;
+        case TT_LONG:   return 3;
+        case TT_UINT:   return 2;
+        case TT_INT:    return 1;
+        case TT_FUNC:   ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
+    }
+
+    return 0;
 }
 
 //
@@ -199,6 +263,8 @@ char *type_describe(Type *type)
     switch (type->tag) {
         case TT_INT:    return saprintf("int");
         case TT_LONG:   return saprintf("long");
+        case TT_UINT:   return saprintf("unsigned int");
+        case TT_ULONG:  return saprintf("unsigned long");
         case TT_FUNC:   return type_describe_func(&type->func); break;
     }
 

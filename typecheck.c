@@ -27,7 +27,10 @@ static Type *types_common(Type *left, Type *right)
         return type_clone(left);
     }
 
-    return type_clone(type_long());
+    int lrank = type_rank(left);
+    int rrank = type_rank(right);
+
+    return type_clone(lrank > rrank ? left : right);
 }
 
 //
@@ -74,6 +77,24 @@ static Expression *ast_check_int(TypeCheckState *state, Expression *exp)
 static Expression *ast_check_long(TypeCheckState *state, Expression *exp)
 {
     exp_set_type(exp, type_long());
+    return exp;
+}
+
+//
+// Type check an unsgined integer constant.
+//
+static Expression *ast_check_uint(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_uint());
+    return exp;
+}
+
+//
+// Type check an unsigned long constant.
+//
+static Expression *ast_check_ulong(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_ulong());
     return exp;
 }
 
@@ -351,6 +372,8 @@ static Expression *ast_check_cast(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_CAST);
     ExpCast *cast = &exp->cast;
 
+    exp_replace(&cast->exp, ast_check_expression(state, cast->exp));
+
     exp_set_type(exp, type_clone(cast->type));
     return exp;
 }
@@ -364,6 +387,8 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
     switch (exp->tag) {
         case EXP_INT:           return ast_check_int(state, exp); break;
         case EXP_LONG:          return ast_check_long(state, exp); break;
+        case EXP_UINT:          return ast_check_uint(state, exp); break;
+        case EXP_ULONG:         return ast_check_ulong(state, exp); break;
         case EXP_VAR:           return ast_check_var(state, exp); break;
         case EXP_UNARY:         return ast_check_unary(state, exp); break;
         case EXP_BINARY:        return ast_check_binary(state, exp); break;
@@ -614,10 +639,17 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         } else {
             siv = SIV_TENTATIVE;
         }
-    } else if (var->init->tag == EXP_INT || var->init->tag == EXP_LONG) {
+    } else if (var->init->tag == EXP_INT || var->init->tag == EXP_LONG || var->init->tag == EXP_UINT || var->init->tag == EXP_ULONG) {
         siv = SIV_INIT;
-        init.value = var->init->intval;
-        init.is_long = (var->init->tag == EXP_LONG);
+        init.is_long = (var->init->tag == EXP_LONG || var->init->tag == EXP_ULONG);
+        init.is_unsigned = (var->init->tag == EXP_UINT || var->init->tag == EXP_ULONG);
+        if (init.is_long) {
+            init.value = var->init->intval;
+        } else if (init.is_unsigned) {
+            init.value = (unsigned)var->init->intval;
+        } else {
+            init.value = (int)var->init->intval;
+        }
     } else {
         err_report(EC_ERROR, &decl->loc, "non-constant initializer not allowed for static `%s`.", var->name);
     }
@@ -708,13 +740,24 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         if (var->init == NULL) {
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else if (var->init->tag == EXP_INT) {
-            init.value = var->init->intval;
+            init.value = (int)var->init->intval;
             init.is_long = false;
+            init.is_unsigned = false;
+            sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
+        } else if (var->init->tag == EXP_UINT) {
+            init.value = (unsigned)var->init->intval;
+            init.is_long = false;
+            init.is_unsigned = true;
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else if (var->init->tag == EXP_LONG) {
             init.value = var->init->intval;
             init.is_long = true;
+            init.is_unsigned = false;
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
+        } else if (var->init->tag == EXP_ULONG) {
+            init.value = var->init->intval;
+            init.is_long = true;
+                init.is_unsigned = true;
         } else {
             err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);

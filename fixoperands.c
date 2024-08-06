@@ -90,6 +90,33 @@ static void asm_fixop_movsx(List *code, AsmNode *movnode)
 }
 
 //
+// Fix a MOVZX instruction.
+//
+// This just uses the inherent behavior of the `mov` instruction to zero pad the
+// top bits of 64-bit register when loaded from a 32-bit quantity. 
+//
+static void asm_fixop_movzx(List *code, AsmNode *movnode)
+{
+    ICE_ASSERT(movnode->tag == ASM_MOVZX);
+    AsmMovzx *movzx = &movnode->movzx;
+    
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(movzx->src->tag != AOP_PSEUDOREG && movzx->dst->tag != AOP_PSEUDOREG);
+
+    if (movzx->dst->tag == AOP_REG) {
+        list_push_back(code, &asm_mov(aoper_clone(movzx->src), aoper_clone(movzx->dst), asmtype_long(), movnode->loc)->list);
+    } else {
+        list_push_back(code, &asm_mov(aoper_clone(movzx->src), aoper_reg(REG_R10), asmtype_long(), movnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(movzx->dst), asmtype_quad(), movnode->loc)->list);
+
+    }
+
+    asm_free(movnode);
+}
+
+//
 // Fix an IDIV instruction.
 //
 // - source operand cannot be an immediate. 
@@ -122,6 +149,38 @@ static void asm_fixop_idiv(List *code, AsmNode *idivnode)
     list_push_back(code, &idivnode->list);
 }
 
+//
+// Fix a DIV instruction.
+//
+// - source operand cannot be an immediate. 
+// 
+static void asm_fixop_div(List *code, AsmNode *divnode)
+{
+    ICE_ASSERT(divnode->tag == ASM_DIV);
+    AsmDiv *div = &divnode->div;
+
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(div->arg->tag != AOP_PSEUDOREG);
+
+    //
+    // IDIV cannot take a constant argument.
+    //
+    if (div->arg->tag == AOP_IMM) {
+        AsmType *at = asmtype_clone(div->type);
+        list_push_back(code, &asm_mov(aoper_clone(div->arg), aoper_reg(REG_R10), at, divnode->loc)->list);
+        at = asmtype_clone(at);
+        list_push_back(code, &asm_idiv(aoper_reg(REG_R10), at, divnode->loc)->list);
+
+        asm_free(divnode);
+
+        return;
+    }
+    
+
+    list_push_back(code, &divnode->list);
+}
 //
 // Fix an IMUL instruction.
 //
@@ -310,7 +369,9 @@ static void asm_fixop_func(AsmNode *func)
         {
             case ASM_MOV:       asm_fixop_mov(&newcode, node); break;
             case ASM_MOVSX:     asm_fixop_movsx(&newcode, node); break;
+            case ASM_MOVZX:     asm_fixop_movzx(&newcode, node); break;
             case ASM_IDIV:      asm_fixop_idiv(&newcode, node); break;
+            case ASM_DIV:       asm_fixop_div(&newcode, node); break;
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
             case ASM_CMP:       asm_fixop_cmp(&newcode, node); break;
 

@@ -92,11 +92,14 @@ typedef enum {
     TOK_STATIC,
     TOK_EXTERN,
     TOK_LONG,
+    TOK_SIGNED,
+    TOK_UNSIGNED,
 } TokenType;
 
 typedef struct {
     unsigned long intval;       // the bit pattern
     bool is_long;               // a long constant
+    bool is_unsigned;           // an unsigned constant
 } TokIntConst;
 
 typedef struct {

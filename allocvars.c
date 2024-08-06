@@ -129,6 +129,17 @@ static void asm_alloc_movsx(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a MOVZX instruction.
+//
+static void asm_alloc_movzx(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_MOVZX);
+
+    asm_alloc_operand(vartab, &instr->movzx.src);
+    asm_alloc_operand(vartab, &instr->movzx.dst);
+}
+
+//
 // Apply pseudoregister replacement to a unary instruction.
 //
 static void asm_alloc_unary(VarTable *vartab, AsmNode *instr)
@@ -171,6 +182,16 @@ static void asm_alloc_idiv(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a div instruction.
+//
+static void asm_alloc_div(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_DIV);
+
+    asm_alloc_operand(vartab, &instr->div.arg);
+}
+
+//
 // Apply pseudoregister replacement to a setcc instruction.
 //
 static void asm_alloc_setcc(VarTable *vartab, AsmNode *instr)
@@ -199,10 +220,12 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_PROG:          break;
         case ASM_MOV:           asm_alloc_mov(vartab, instr); break;
         case ASM_MOVSX:         asm_alloc_movsx(vartab, instr); break;
+        case ASM_MOVZX:         asm_alloc_movzx(vartab, instr); break;
         case ASM_UNARY:         asm_alloc_unary(vartab, instr); break;
         case ASM_BINARY:        asm_alloc_binary(vartab, instr); break;
         case ASM_CMP:           asm_alloc_cmp(vartab, instr); break;
         case ASM_IDIV:          asm_alloc_idiv(vartab, instr); break;
+        case ASM_DIV:           asm_alloc_div(vartab, instr); break;
         case ASM_CDQ:           break;
         case ASM_JUMP:          break;
         case ASM_JUMPCC:        break;

@@ -174,13 +174,17 @@ static Expression *parse_primary(Parser *parser)
     FileLine loc = parser->tok.loc;
 
     //
-    // <primary> := <int> | <long>
+    // <primary> := <int> | <long> | <uint> | <ulong>
     //
     if (parser->tok.type == TOK_INT_CONST) {
         Expression *exp;
         
-        if (parser->tok.int_const.is_long) {
+        if (parser->tok.int_const.is_long && parser->tok.int_const.is_unsigned) {
+            exp = exp_ulong(parser->tok.int_const.intval, loc);
+        } else if (parser->tok.int_const.is_long) {
             exp = exp_long(parser->tok.int_const.intval, loc);
+        } else if (parser->tok.int_const.is_unsigned) {
+            exp = exp_uint(parser->tok.int_const.intval, loc);
         } else {
             exp = exp_int(parser->tok.int_const.intval, loc);
         }
@@ -456,6 +460,8 @@ static bool is_type_specifier(Parser *parser)
     return
         tt == TOK_INT ||
         tt == TOK_LONG ||
+        tt == TOK_SIGNED ||
+        tt == TOK_UNSIGNED ||
         tt == TOK_EXTERN ||
         tt == TOK_STATIC;
 }
@@ -470,6 +476,8 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
     enum {
         TOK_INT_INDEX,
         TOK_LONG_INDEX,
+        TOK_SIGNED_INDEX,
+        TOK_UNSIGNED_INDEX,
         TOK_EXTERN_INDEX,
         TOK_STATIC_INDEX
     };
@@ -480,6 +488,8 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
     } spec_tokens[] = {
         { TOK_INT, 0 },
         { TOK_LONG, 0 },
+        { TOK_SIGNED, 0 },
+        { TOK_UNSIGNED, 0 },
         { TOK_EXTERN, 0 },
         { TOK_STATIC, 0 },
     };
@@ -517,7 +527,15 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         err_report(EC_ERROR, &loc, "`static` and `extern` are mutually exclusive.");
     }
 
-    if (spec_tokens[TOK_INT_INDEX].count == 0 && spec_tokens[TOK_LONG_INDEX].count == 0) {
+    if (spec_tokens[TOK_SIGNED_INDEX].count && spec_tokens[TOK_UNSIGNED_INDEX].count) {
+        err_report(EC_ERROR, &loc, "`signed` and `unsigned` are mutually exclusive.");
+    }
+
+    if (
+        spec_tokens[TOK_INT_INDEX].count == 0 && 
+        spec_tokens[TOK_LONG_INDEX].count == 0 && 
+        spec_tokens[TOK_SIGNED_INDEX].count == 0 &&
+        spec_tokens[TOK_UNSIGNED_INDEX].count == 0) {
         err_report(EC_ERROR, &loc, "missing type specifier.");
     }
 
@@ -528,7 +546,14 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         sc = SC_EXTERN;
     }
 
-    if (spec_tokens[TOK_LONG_INDEX].count) {
+    bool is_unsigned = spec_tokens[TOK_UNSIGNED_INDEX].count;
+    bool is_long = spec_tokens[TOK_LONG_INDEX].count;
+
+    if (is_unsigned && is_long) {
+        return typespec_alloc(sc, type_ulong());
+    } else if (is_unsigned) {
+        return typespec_alloc(sc, type_uint());
+    } else if (is_long) {
         return typespec_alloc(sc, type_long());
     }
 

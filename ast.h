@@ -18,6 +18,8 @@ typedef struct BlockItem BlockItem;
 typedef enum { 
     EXP_INT,
     EXP_LONG,
+    EXP_UINT,
+    EXP_ULONG,
     EXP_VAR,
     EXP_UNARY,
     EXP_BINARY,
@@ -73,6 +75,8 @@ struct Expression {
     union {
         unsigned long intval;
         unsigned long longval;
+        unsigned long uintval;
+        unsigned long ulongval;
         ExpVar var;
         ExpUnary unary;
         ExpBinary binary;
@@ -85,6 +89,8 @@ struct Expression {
 
 extern Expression *exp_int(unsigned long intval, FileLine loc);
 extern Expression *exp_long(unsigned long intval, FileLine loc);
+extern Expression *exp_uint(unsigned long intval, FileLine loc);
+extern Expression *exp_ulong(unsigned long intval, FileLine loc);
 extern Expression *exp_var(char *name, FileLine loc);
 extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);

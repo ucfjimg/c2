@@ -31,6 +31,26 @@ static CodegenState nested_state(CodegenState *outer)
 }
 
 //
+// Return true if the given TAC operand is unsigned.
+//
+// The TAC node must be either a constant or a variable.
+//
+static bool codegen_operand_unsigned(CodegenState *state, TacNode *tac)
+{
+    if (tac->tag == TAC_CONST_INT) {
+        return tac->constint.is_unsigned;
+    }
+    
+    if (tac->tag == TAC_VAR) {
+        Symbol *sym = stab_lookup(state->stab, tac->var.name);
+        return type_unsigned(sym->type);
+    }
+
+    ICE_ASSERT(((void)"invalid TAC tag in codegen_operand_unsigned", false));
+    return false;
+}
+
+//
 // Push an assembly instruction onto a code list.
 //
 static void codegen_push_instr(CodegenState *state, AsmNode *instr)
@@ -49,7 +69,9 @@ static AsmType *codegen_type_to_asmtype(Type *type)
 
     switch (type->tag) {
         case TT_INT:        return asmtype_long();
+        case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
+        case TT_ULONG:      return asmtype_quad();
         case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
     }
     
@@ -170,16 +192,32 @@ static void codegen_relational(CodegenState *state, TacNode *tac)
 {
     AsmConditionCode cc = ACC_E;
 
-    switch (tac->binary.op) {
-        case BOP_EQUALITY:      cc = ACC_E; break;
-        case BOP_NOTEQUAL:      cc = ACC_NE; break;
-        case BOP_LESSTHAN:      cc = ACC_L; break;
-        case BOP_GREATERTHAN:   cc = ACC_G; break;
-        case BOP_LESSEQUAL:     cc = ACC_LE; break;
-        case BOP_GREATEREQUAL:  cc = ACC_GE; break;
-        
-        default:
-            ICE_ASSERT(((void)"invalid binary op in codegen_relational", false));
+    bool is_unsigned = codegen_operand_unsigned(state, tac->binary.left);
+
+    if (is_unsigned) {
+        switch (tac->binary.op) {
+            case BOP_EQUALITY:      cc = ACC_E; break;
+            case BOP_NOTEQUAL:      cc = ACC_NE; break;
+            case BOP_LESSTHAN:      cc = ACC_B; break;
+            case BOP_GREATERTHAN:   cc = ACC_A; break;
+            case BOP_LESSEQUAL:     cc = ACC_BE; break;
+            case BOP_GREATEREQUAL:  cc = ACC_AE; break;
+            
+            default:
+                ICE_ASSERT(((void)"invalid binary op in codegen_relational", false));
+        }
+    } else {
+        switch (tac->binary.op) {
+            case BOP_EQUALITY:      cc = ACC_E; break;
+            case BOP_NOTEQUAL:      cc = ACC_NE; break;
+            case BOP_LESSTHAN:      cc = ACC_L; break;
+            case BOP_GREATERTHAN:   cc = ACC_G; break;
+            case BOP_LESSEQUAL:     cc = ACC_LE; break;
+            case BOP_GREATEREQUAL:  cc = ACC_GE; break;
+            
+            default:
+                ICE_ASSERT(((void)"invalid binary op in codegen_relational", false));
+        }
     }
 
     AsmOperand *left = codegen_expression(state, tac->binary.left);
@@ -211,15 +249,24 @@ static void codegen_binary(CodegenState *state, TacNode *tac)
     AsmOperand *dst = codegen_expression(state, tac->binary.dst);
 
     if (tac->binary.op == BOP_DIVIDE || tac->binary.op == BOP_MODULO) {
+        bool is_unsigned = codegen_operand_unsigned(state, tac->binary.left);
         AsmType *lefttype = codegen_tac_to_asmtype(state, tac->binary.left);
+
         codegen_push_instr(state, asm_mov(left, aoper_reg(REG_RAX), lefttype, tac->loc));
-        lefttype = asmtype_clone(lefttype);
-        codegen_push_instr(state, asm_cdq(lefttype, tac->loc));
-        lefttype = asmtype_clone(lefttype);
-        codegen_push_instr(state, asm_idiv(right, lefttype, tac->loc));
+        if (is_unsigned) {
+            lefttype = asmtype_clone(lefttype);
+            codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_RDX), aoper_reg(REG_RDX), lefttype, tac->loc));
+            lefttype = asmtype_clone(lefttype);
+            codegen_push_instr(state, asm_div(right, lefttype, tac->loc));
+        } else {
+            lefttype = asmtype_clone(lefttype);
+            codegen_push_instr(state, asm_cdq(lefttype, tac->loc));
+            lefttype = asmtype_clone(lefttype);
+            codegen_push_instr(state, asm_idiv(right, lefttype, tac->loc));
+        }
 
         //
-        // idiv returns quotient in AX, remainder in DX
+        // div/idiv return quotient in AX, remainder in DX
         //
         Register dstreg = tac->binary.op == BOP_DIVIDE ? REG_RAX : REG_RDX;
         AsmType *dsttype = codegen_tac_to_asmtype(state, tac->binary.left);
@@ -420,6 +467,21 @@ static void codegen_sign_extend(CodegenState *state, TacNode *decl)
 }
 
 //
+// Generate code for a zero extend operation.
+//
+static void codegen_zero_extend(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_ZERO_EXTEND);
+
+    codegen_push_instr(state,
+        asm_movzx(
+            codegen_expression(state, decl->zero_extend.src),
+            codegen_expression(state, decl->zero_extend.dst),
+            decl->loc)
+    );
+}
+
+//
 // Generate code for a truncate operation.
 //
 static void codegen_truncate(CodegenState *state, TacNode *decl)
@@ -453,6 +515,7 @@ static void codegen_single(CodegenState *state, TacNode *tac)
 
         case TAC_STATIC_VAR:        codegen_static_var(state, tac); break; 
         case TAC_SIGN_EXTEND:       codegen_sign_extend(state, tac); break;
+        case TAC_ZERO_EXTEND:       codegen_zero_extend(state, tac); break;
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
 
         case TAC_PROGRAM:           break;

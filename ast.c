@@ -42,6 +42,26 @@ Expression *exp_long(unsigned long longval, FileLine loc)
 }
 
 //
+// Construct an unsigned integer constant expression.
+//
+Expression *exp_uint(unsigned long intval, FileLine loc)
+{
+    Expression *exp = exp_alloc(EXP_UINT, loc);
+    exp->intval = intval;
+    return exp;
+}
+
+//
+// Construct an unsinged long constant expression.
+//
+Expression *exp_ulong(unsigned long longval, FileLine loc)
+{
+    Expression *exp = exp_alloc(EXP_ULONG, loc);
+    exp->longval = longval;
+    return exp;
+}
+
+//
 // Construct a variable reference expression.
 //
 Expression *exp_var(char *name, FileLine loc)
@@ -802,6 +822,22 @@ static void print_exp_const_long(unsigned long val, int tab)
 }
 
 //
+// Print an unsigned integer constant expression.
+//
+static void print_exp_const_uint(unsigned long val, int tab)
+{
+    printf("const-uint(%lu);\n", val);
+}
+
+//
+// Print an unsgined long constant expression.
+//
+static void print_exp_const_ulong(unsigned long val, int tab)
+{
+    printf("const-ulong(%lu);\n", val);
+}
+
+//
 // Print an variable reference expression.
 //
 static void print_exp_var(char *name, int tab)
@@ -907,6 +943,8 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
     switch (exp->tag) {
         case EXP_INT:           print_exp_const_int(exp->intval, tab); break;
         case EXP_LONG:          print_exp_const_long(exp->longval, tab); break;
+        case EXP_UINT:          print_exp_const_uint(exp->intval, tab); break;
+        case EXP_ULONG:         print_exp_const_ulong(exp->longval, tab); break;
         case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
         case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;

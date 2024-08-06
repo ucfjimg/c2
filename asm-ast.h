@@ -54,7 +54,11 @@ typedef enum {
     ACC_G,
     ACC_GE,
     ACC_L,
-    ACC_LE
+    ACC_LE,
+    ACC_A,
+    ACC_AE,
+    ACC_B,
+    ACC_BE,
 } AsmConditionCode;
 
 extern const char *acc_describe(AsmConditionCode cc);
@@ -88,10 +92,12 @@ typedef enum {
     ASM_STATIC_VAR,
     ASM_MOV,
     ASM_MOVSX,
+    ASM_MOVZX,
     ASM_UNARY,
     ASM_BINARY,
     ASM_CMP,
     ASM_IDIV,
+    ASM_DIV,
     ASM_CDQ,
     ASM_JUMP,
     ASM_JUMPCC,
@@ -136,6 +142,11 @@ typedef struct {
 } AsmMovsx;
 
 typedef struct {
+    AsmOperand *src;        // source operand
+    AsmOperand *dst;        // destination operand
+} AsmMovzx;
+
+typedef struct {
     UnaryOp op;             // operator
     AsmOperand *arg;        // argument (src == dst)
     AsmType *type;          // operand size
@@ -158,6 +169,11 @@ typedef struct {
     AsmOperand *arg;        // argument 
     AsmType *type;          // operand size
 } AsmIdiv;
+
+typedef struct {
+    AsmOperand *arg;        // argument 
+    AsmType *type;          // operand size
+} AsmDiv;
 
 typedef struct {
     AsmType *type;          // operand size
@@ -203,24 +219,26 @@ struct AsmNode {
     FileLine loc;           // location in original source
 
     union {
-        AsmProgram prog;                // ASM_PROG
-        AsmFunction func;               // ASM_FUNC
-        AsmStaticVar static_var;        // ASM_STATIC_VAR
-        AsmMov mov;                     // ASM_MOV
-        AsmMovsx movsx;                 // ASM_MOVSX
-        AsmUnary unary;                 // ASM_UNARY
-        AsmBinary binary;               // ASM_BINARY
-        AsmCmp cmp;                     // ASM_CMP
-        AsmIdiv idiv;                   // ASM_IDIV
-        AsmCdq cdq;                     // ASM_CDQ
-        AsmJump jump;                   // ASM_JUMP
-        AsmJumpCc jumpcc;               // ASM_JUMPCC
-        AsmLabel label;                 // ASM_LABEL
-        AsmSetCc setcc;                 // ASM_SETCC
-        AsmStackReserve stack_reserve;  // ASM_STACK_RESERVE
-        AsmStackFree stack_free;        // ASM_STACK_FREE
-        AsmPush push;                   // ASM_PUSH
-        AsmCall call;                   // ASM_CALL
+        AsmProgram          prog;               // ASM_PROG
+        AsmFunction         func;               // ASM_FUNC
+        AsmStaticVar        static_var;         // ASM_STATIC_VAR
+        AsmMov              mov;                // ASM_MOV
+        AsmMovsx            movsx;              // ASM_MOVSX
+        AsmMovzx            movzx;              // ASM_MOVZX
+        AsmUnary            unary;              // ASM_UNARY
+        AsmBinary           binary;             // ASM_BINARY
+        AsmCmp              cmp;                // ASM_CMP
+        AsmIdiv             idiv;               // ASM_IDIV
+        AsmDiv              div;                // ASM_DIV
+        AsmCdq              cdq;                // ASM_CDQ
+        AsmJump             jump;               // ASM_JUMP
+        AsmJumpCc           jumpcc;             // ASM_JUMPCC
+        AsmLabel            label;              // ASM_LABEL
+        AsmSetCc            setcc;              // ASM_SETCC
+        AsmStackReserve     stack_reserve;      // ASM_STACK_RESERVE
+        AsmStackFree        stack_free;         // ASM_STACK_FREE
+        AsmPush             push;               // ASM_PUSH
+        AsmCall             call;               // ASM_CALL
     };
 };
 
@@ -229,10 +247,12 @@ extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
 extern AsmNode *asm_static_var(char *name, bool global, int alignment, StaticVarInit init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc);
 extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, AsmType *type, FileLine loc);
 extern AsmNode *asm_idiv(AsmOperand *arg, AsmType *type, FileLine loc);
+extern AsmNode *asm_div(AsmOperand *arg, AsmType *type, FileLine loc);
 extern AsmNode *asm_cdq(AsmType *type, FileLine loc);
 extern AsmNode *asm_jump(char *target, FileLine loc);
 extern AsmNode *asm_jumpcc(char *target, AsmConditionCode cc, FileLine loc);

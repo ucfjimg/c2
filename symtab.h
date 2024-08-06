@@ -26,6 +26,7 @@ typedef enum {
 typedef struct {
     unsigned long value;            // initializer value
     bool is_long;                   // initializer is long
+    bool is_unsigned;               // initializer is unsigned
 } StaticVarInit;
 
 typedef struct {

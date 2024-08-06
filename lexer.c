@@ -33,6 +33,8 @@ static Keyword keywords[] = {
     { "default",    TOK_DEFAULT },
     { "static",     TOK_STATIC },
     { "extern",     TOK_EXTERN },
+    { "signed",     TOK_SIGNED },
+    { "unsigned",   TOK_UNSIGNED },
     { NULL,         TOK_EOF }
 };
 
@@ -240,6 +242,7 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
 {
     StrBuilder *integer = stb_alloc();
     bool long_suffix = false;
+    bool unsigned_suffix = false;
 
     int base = 10;
     
@@ -274,7 +277,6 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
             err_report(EC_ERROR, &tok->loc, "invalid octal digit `%c`.", ch);
         }
 
-
         stb_push_char(integer, ch);
         lexer_next_char(lex);
     }
@@ -282,11 +284,31 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
     //
     // Parse supported suffix characters.
     // 
-    if (lex->ch == 'l' || lex->ch == 'L') {
-        long_suffix = true;
+    int ucount = 0;
+    int lcount = 0;
+
+    while (true) {
+        char ch = toupper(lex->ch);
+        if (ch != 'L' && ch != 'U') {
+            break;
+        }
+
+        if (ch == 'L') {
+            lcount++;
+        } else {
+            ucount++;
+        }
+
         lexer_next_char(lex);
     }
-    
+
+    if (lcount > 1 || ucount > 1) {
+        err_report(EC_ERROR, &tok->loc, "invalid intger type suffix.");
+    }
+
+    long_suffix = lcount != 0;
+    unsigned_suffix = ucount != 0;
+
     if (integer->length == 0) {
         err_report(EC_ERROR, &tok->loc, "invalid integer constant.");
 
@@ -313,7 +335,13 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
             
             tok->type = TOK_INT_CONST;
             tok->int_const.intval = val;
-            tok->int_const.is_long = long_suffix || !tgt_signed_fits_in_int(val);
+
+            if (unsigned_suffix) {
+                tok->int_const.is_long = long_suffix || !tgt_unsigned_fits_in_int(val);
+            } else {
+                tok->int_const.is_long = long_suffix || !tgt_signed_fits_in_int(val);
+            }
+            tok->int_const.is_unsigned = unsigned_suffix;
         }
     }
 

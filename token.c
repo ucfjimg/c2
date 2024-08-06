@@ -122,6 +122,8 @@ char *token_type_describe(TokenType tt)
         case TOK_DEFAULT:           return saprintf("default");
         case TOK_STATIC:            return saprintf("static");
         case TOK_EXTERN:            return saprintf("extern");
+        case TOK_SIGNED:            return saprintf("signed");
+        case TOK_UNSIGNED:          return saprintf("unsigned");
 
         //
         // All of these are handled by the single-character case.

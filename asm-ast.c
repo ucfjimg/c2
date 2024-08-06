@@ -41,6 +41,10 @@ const char *acc_describe(AsmConditionCode cc)
         case ACC_GE:    return "GE";
         case ACC_L:     return "L";
         case ACC_LE:    return "LE";
+        case ACC_A:     return "A";
+        case ACC_AE:    return "AE";
+        case ACC_B:     return "B";
+        case ACC_BE:    return "BE";
     }
 
     return "<invalid-condition-code>";
@@ -333,6 +337,21 @@ AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc)
 }
 
 //
+// Construct an assembly movzx instruction.
+//
+AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_MOVZX;
+    node->loc = loc;
+    node->movzx.src = src;
+    node->movzx.dst = dst;
+
+    return node;
+}
+
+//
 // Construct an assembly unary operator instruction.
 //
 AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc)
@@ -455,6 +474,21 @@ AsmNode *asm_idiv(AsmOperand *arg, AsmType *type, FileLine loc)
 }
 
 //
+// Construct an assembly div (unsigned division) instruction.
+//
+AsmNode *asm_div(AsmOperand *arg, AsmType *type, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_DIV;
+    node->loc = loc;
+    node->div.arg = arg;
+    node->div.type = type;
+
+    return node;
+}
+
+//
 // Construct a cdq (convert doubleword to quadword) instruction.
 //
 AsmNode *asm_cdq(AsmType *type, FileLine loc)
@@ -571,6 +605,15 @@ static void asm_movsx_free(AsmMovsx *movsx)
 }
 
 //
+// Free an assembly movzx instruction.
+//
+static void asm_movzx_free(AsmMovsx *movzx)
+{
+    aoper_free(movzx->src);
+    aoper_free(movzx->dst);
+}
+
+//
 // Free an assembly unary instruction.
 //
 static void asm_unary_free(AsmUnary *unary)
@@ -641,6 +684,15 @@ static void asm_idiv_free(AsmIdiv *idiv)
 }
 
 //
+// Free an assembly div instruction.
+//
+static void asm_div_free(AsmDiv *div)
+{
+    aoper_free(div->arg);
+    asmtype_free(div->type);
+}
+
+//
 // Free an assembly cdq instruction.
 //
 static void asm_cdq_free(AsmCdq *cdq)
@@ -698,6 +750,7 @@ void asm_free(AsmNode *node)
             case ASM_PROG:          asm_prog_free(&node->prog); break;
             case ASM_MOV:           asm_mov_free(&node->mov); break;
             case ASM_MOVSX:         asm_movsx_free(&node->movsx); break;
+            case ASM_MOVZX:         asm_movzx_free(&node->movsx); break;
             case ASM_UNARY:         asm_unary_free(&node->unary); break;
             case ASM_BINARY:        asm_binary_free(&node->binary); break;
             case ASM_CMP:           asm_cmp_free(&node->cmp); break;
@@ -706,6 +759,7 @@ void asm_free(AsmNode *node)
             case ASM_LABEL:         asm_label_free(&node->label); break;
             case ASM_SETCC:         asm_setcc_free(&node->setcc); break;
             case ASM_IDIV:          asm_idiv_free(&node->idiv); break;
+            case ASM_DIV:           asm_div_free(&node->div); break;
             case ASM_CDQ:           asm_cdq_free(&node->cdq); break;
             case ASM_FUNC:          asm_func_free(&node->func); break;
             case ASM_STATIC_VAR:    asm_static_var_free(&node->static_var); break; 
@@ -804,6 +858,18 @@ static void asm_movsx_print(AsmMovsx *movsx)
 }
 
 //
+// Print a movzx instruction.
+//
+static void asm_movzx_print(AsmMovzx *movzx)
+{
+    printf("        movzx ");
+    aoper_print(movzx->src);
+    printf(" => ");
+    aoper_print(movzx->dst);
+    printf("\n");
+}
+
+//
 // Print a unary operator instruction.
 //
 static void asm_unary_print(AsmUnary *unary)
@@ -890,6 +956,18 @@ static void asm_idiv_print(AsmIdiv *idiv)
 }
 
 //
+// Print a div instruction.
+//
+static void asm_div_print(AsmDiv *div)
+{
+    printf("        div ");
+    aoper_print(div->arg);
+    printf(" # ");
+    asmtype_print(div->type);
+    printf("\n");
+}
+
+//
 // Print a cdq instruction.
 //
 static void asm_cdq_print(AsmCdq *cdq)
@@ -961,6 +1039,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_STATIC_VAR:    asm_static_var_print(&node->static_var); break;
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_MOVSX:         asm_movsx_print(&node->movsx); break;
+        case ASM_MOVZX:         asm_movzx_print(&node->movzx); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
         case ASM_BINARY:        asm_binary_print(&node->binary); break;
         case ASM_CMP:           asm_cmp_print(&node->cmp); break;
@@ -969,6 +1048,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_LABEL:         asm_label_print(&node->label); break;
         case ASM_SETCC:         asm_setcc_print(&node->setcc); break;
         case ASM_IDIV:          asm_idiv_print(&node->idiv); break;
+        case ASM_DIV:           asm_div_print(&node->div); break;
         case ASM_CDQ:           asm_cdq_print(&node->cdq); break;
         case ASM_RET:           asm_ret_print(); break;
         case ASM_STACK_RESERVE: asm_stack_reserve_print(&node->stack_reserve); break;

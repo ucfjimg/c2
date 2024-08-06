@@ -291,6 +291,8 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
         case EXP_INT:           break;
         case EXP_LONG:          break;
+        case EXP_UINT:          break;
+        case EXP_ULONG:         break;
     }
 }
 
