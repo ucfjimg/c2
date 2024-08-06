@@ -1,5 +1,6 @@
 #pragma once
 
+#include "constant.h"
 #include "fileline.h"
 #include "list.h"
 #include "operators.h"
@@ -127,7 +128,7 @@ typedef struct {
     char *name;             // variable name
     bool global;            // variable is globally visible
     int alignment;          // required alignment (power of two)
-    StaticVarInit init;     // initial value
+    Const init;             // initial value
 } AsmStaticVar;
 
 typedef struct {
@@ -244,7 +245,7 @@ struct AsmNode {
 
 extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
-extern AsmNode *asm_static_var(char *name, bool global, int alignment, StaticVarInit init, FileLine loc);
+extern AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc);

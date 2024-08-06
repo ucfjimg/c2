@@ -628,10 +628,9 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
     DeclVariable *var = &decl->var;
 
     StaticInitialValue siv = SIV_NO_INIT;
-    StaticVarInit init;
+    Const init;
 
-    init.value = 0;
-    init.is_long = false;
+    const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
 
     if (var->init == NULL) {
         if (var->storage_class == SC_EXTERN) {
@@ -641,14 +640,18 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         }
     } else if (var->init->tag == EXP_INT || var->init->tag == EXP_LONG || var->init->tag == EXP_UINT || var->init->tag == EXP_ULONG) {
         siv = SIV_INIT;
-        init.is_long = (var->init->tag == EXP_LONG || var->init->tag == EXP_ULONG);
-        init.is_unsigned = (var->init->tag == EXP_UINT || var->init->tag == EXP_ULONG);
-        if (init.is_long) {
-            init.value = var->init->intval;
-        } else if (init.is_unsigned) {
-            init.value = (unsigned)var->init->intval;
-        } else {
-            init.value = (int)var->init->intval;
+
+        switch (var->init->tag) {
+            case EXP_INT:       const_make_int(&init, CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
+            case EXP_UINT:      const_make_int(&init, CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
+            case EXP_LONG:      const_make_int(&init, CIS_LONG, CIS_SIGNED, var->init->intval); break;
+            case EXP_ULONG:     const_make_int(&init, CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+
+            //
+            // Checked above
+            //
+            default:
+                break;
         }
     } else {
         err_report(EC_ERROR, &decl->loc, "non-constant initializer not allowed for static `%s`.", var->name);
@@ -718,11 +721,10 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
 
     Type *type = type_clone(var->type);
 
-    StaticVarInit init;
-    
-    init.value = 0;
-    init.is_long = false;
+    Const init;
 
+    const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
+    
     if (var->storage_class == SC_EXTERN) {
         if (var->init != NULL) {
             err_report(EC_ERROR, &decl->loc, "local extern variable `%s` may not have an initializer.", var->name);
@@ -739,27 +741,16 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
-        } else if (var->init->tag == EXP_INT) {
-            init.value = (int)var->init->intval;
-            init.is_long = false;
-            init.is_unsigned = false;
-            sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
-        } else if (var->init->tag == EXP_UINT) {
-            init.value = (unsigned)var->init->intval;
-            init.is_long = false;
-            init.is_unsigned = true;
-            sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
-        } else if (var->init->tag == EXP_LONG) {
-            init.value = var->init->intval;
-            init.is_long = true;
-            init.is_unsigned = false;
-            sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
-        } else if (var->init->tag == EXP_ULONG) {
-            init.value = var->init->intval;
-            init.is_long = true;
-                init.is_unsigned = true;
         } else {
-            err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
+            switch (var->init->tag) {
+                case EXP_INT:   const_make_int(&init, CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
+                case EXP_UINT:  const_make_int(&init, CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
+                case EXP_LONG:  const_make_int(&init, CIS_LONG, CIS_SIGNED, var->init->intval); break;
+                case EXP_ULONG:  const_make_int(&init, CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+
+                default:
+                    err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
+            }
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }
     } else {

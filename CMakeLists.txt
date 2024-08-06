@@ -10,6 +10,7 @@ add_executable(cc
     bitmath.c
     backsym.c
     codegen.c
+    constant.c
     emitcode.c
     errors.c
     fileline.c

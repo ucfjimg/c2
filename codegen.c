@@ -113,9 +113,20 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
 //
 // Return the alignment for a static variable.
 //
-static int codegen_align(StaticVarInit *init)
+static int codegen_align(Const *init)
 {
-    return init->is_long ? 8 : 4;
+    if (init->tag == CON_FLOAT) {
+        return 8;
+    }
+
+    if (init->tag == CON_INTEGRAL) {
+        switch (init->intval.size) {
+            case CIS_INT:       return 4;
+            case CIS_LONG:      return 8;
+        }
+    }
+
+    return 1;
 }
 
 //

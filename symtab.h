@@ -1,5 +1,6 @@
 #pragma once
 
+#include "constant.h"
 #include "hashtab.h"
 #include "fileline.h"
 #include "type.h"
@@ -24,14 +25,8 @@ typedef enum {
 } StaticInitialValue;
 
 typedef struct {
-    unsigned long value;            // initializer value
-    bool is_long;                   // initializer is long
-    bool is_unsigned;               // initializer is unsigned
-} StaticVarInit;
-
-typedef struct {
     StaticInitialValue siv;         // initializer type
-    StaticVarInit initial;          // if SIV_INIT, the initial value
+    Const initial;                  // if SIV_INIT, the initial value
     bool global;                    // variable is globally visible
     FileLine loc;                   // where declared
 } SymStaticVar;
@@ -58,8 +53,7 @@ extern void stab_print(SymbolTable *stab);
 
 extern void sym_update_func(Symbol *sym, Type *type, bool defined, bool global);
 
-
-extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, StaticVarInit init, bool global, FileLine loc);
+extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, Const init, bool global, FileLine loc);
 extern void sym_update_local(Symbol *sym, Type *type);
 
 

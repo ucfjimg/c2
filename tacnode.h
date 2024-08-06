@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ast.h"
+#include "constant.h"
 #include "fileline.h"
 #include "list.h"
 #include "symtab.h"
@@ -62,7 +63,7 @@ typedef struct {
     char *name;                     // name
     bool global;                    // is the variable globally visible
     Type *type;                     // variable type
-    StaticVarInit init;             // the initial value
+    Const init;                     // the initial value
 } TacStaticVar;
 
 //
@@ -209,7 +210,7 @@ typedef struct TacNode {
 
 extern TacNode *tac_program(List decls, FileLine loc);
 extern TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLine loc);
-extern TacNode *tac_static_var(char *name, bool global, Type *type, StaticVarInit init, FileLine loc);
+extern TacNode *tac_static_var(char *name, bool global, Type *type, Const init, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_jump(char *target, FileLine loc);

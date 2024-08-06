@@ -92,7 +92,7 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 //
 // Constructor for a TAC static variable declaration.
 //
-TacNode *tac_static_var(char *name, bool global, Type *type, StaticVarInit init, FileLine loc)
+TacNode *tac_static_var(char *name, bool global, Type *type, Const init, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_STATIC_VAR, loc);
     tac->static_var.name = safe_strdup(name);
@@ -533,7 +533,14 @@ static void tac_print_static_var(TacStaticVar *var, int tab)
     if (var->global) {
         printf("global ");
     }
-    printf("= %lu%s\n", var->init.value, var->init.is_long ? "l" : "");
+    printf("= %lu", var->init.intval.value);
+    if (var->init.intval.size == CIS_LONG) {
+        printf("l");
+    }
+    if (var->init.intval.sign == CIS_UNSIGNED) {
+        printf("u");
+    }
+    printf("\n");
 }
 
 //

@@ -408,14 +408,14 @@ static void emit_function(EmitState *state, AsmFunction *func, FileLine *loc)
 //
 // Emit a static variable.
 //
-static void emit_static_var(EmitState *state, AsmStaticVar *var)
+void emit_static_var(EmitState *state, AsmStaticVar *var)
 {
     BackEndSymbol *sym = bstab_lookup(state->bstab, var->name);
     ICE_ASSERT(sym->tag == BST_OBJECT);
     int size = asmtype_size(sym->object.type);
-    unsigned long val = var->init.value;
+    unsigned long val = var->init.intval.value;
 
-    bool is_quad = sym->object.type->tag == AT_QUADWORD;
+    bool is_quad = size == 8;
 
     if (var->global) {
         fprintf(state->out, "        .globl %s\n", var->name);        
@@ -432,7 +432,7 @@ static void emit_static_var(EmitState *state, AsmStaticVar *var)
         fprintf(state->out, "%s:\n", var->name);
         fprintf(state->out, "        .%s %lu\n", 
             is_quad ? "quad" : "long",
-            is_quad ? var->init.value : (var->init.value & 0xffffffff));
+            is_quad ? var->init.intval.value : (var->init.intval.value & 0xffffffff));
     }
 }
 

@@ -794,9 +794,8 @@ static void tcg_statics(List *code, SymbolTable *stab)
             bool global = sym->stvar.global;
             FileLine loc = sym->stvar.loc;
 
-            StaticVarInit init;
-            init.value = 0;
-            init.is_long = 0;
+            Const init;
+            const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
 
             switch (sym->stvar.siv) {
                 case SIV_INIT:      var = tac_static_var(node->key, global, type_clone(sym->type), sym->stvar.initial, loc); break;

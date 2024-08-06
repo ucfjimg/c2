@@ -291,7 +291,7 @@ AsmNode *asm_func(char *name, List body, bool global, FileLine loc)
 //
 // Construct an assembly static variable.
 //
-AsmNode *asm_static_var(char *name, bool global, int alignment, StaticVarInit init, FileLine loc)
+AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -814,10 +814,10 @@ static void asm_static_var_print(AsmStaticVar *var)
 
     printf(".align %d\n", var->alignment);
 
-    if (var->init.is_long) {
-        printf("%s: .quad %lu\n", var->name, var->init.value);
+    if (var->init.intval.size == CIS_LONG) {
+        printf("%s: .quad %lu\n", var->name, var->init.intval.value);
     } else {
-        printf("%s: .long %lu\n", var->name, var->init.value);
+        printf("%s: .long %lu\n", var->name, var->init.intval.value);
     }
 }
 

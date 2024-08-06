@@ -78,13 +78,26 @@ static void stab_print_static_var(SymStaticVar *svar)
     }
 
     char *loc = fileline_describe(&svar->loc);
-    printf(
-        "init=%lu%s%s global=%d loc=%s\n", 
-        svar->initial.value, 
-        svar->initial.is_long ? "l" : "",
-        svar->initial.is_unsigned ? "u" : "",
-        svar->global, 
-        loc);
+
+    switch (svar->initial.tag) {
+        case CON_INTEGRAL:
+            printf(
+                "init=%lu%s%s global=%d loc=%s\n", 
+                svar->initial.intval.value, 
+                svar->initial.intval.size == CIS_LONG ? "l" : "",
+                svar->initial.intval.sign == CIS_UNSIGNED ? "u" : "",
+                svar->global, 
+                loc);
+            break;
+
+        case CON_FLOAT:
+            printf(
+                "init=%g global=%d loc=%s\n", 
+                svar->initial.floatval, 
+                svar->global, 
+                loc);
+            break;
+    }
     safe_free(loc);
 }
 
@@ -134,7 +147,7 @@ void sym_update_func(Symbol *sym, Type *type, bool defined, bool global)
 //
 // Update the given symbol to be a static variable.
 //
-void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, StaticVarInit init, bool global, FileLine loc)
+void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, Const init, bool global, FileLine loc)
 {
     sym->tag = ST_STATIC_VAR;
 
