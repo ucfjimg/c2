@@ -52,12 +52,22 @@ Expression *exp_uint(unsigned long intval, FileLine loc)
 }
 
 //
-// Construct an unsinged long constant expression.
+// Construct an unsigned long constant expression.
 //
 Expression *exp_ulong(unsigned long longval, FileLine loc)
 {
     Expression *exp = exp_alloc(EXP_ULONG, loc);
     exp->longval = longval;
+    return exp;
+}
+
+//
+// Construct a floating point constant expression.
+//
+Expression *exp_float(double floatval, FileLine loc)
+{
+    Expression *exp = exp_alloc(EXP_FLOAT, loc);
+    exp->floatval = floatval;
     return exp;
 }
 
@@ -230,7 +240,12 @@ void exp_free(Expression *exp)
             case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
             case EXP_FUNCTION_CALL: exp_function_call_free(&exp->call); break;
             case EXP_CAST:          exp_cast_free(&exp->cast); break;
-            default:                break;
+
+            case EXP_INT:
+            case EXP_UINT:
+            case EXP_LONG:
+            case EXP_ULONG:
+            case EXP_FLOAT:         break;
         }
 
         type_free(exp->type);
@@ -838,6 +853,14 @@ static void print_exp_const_ulong(unsigned long val, int tab)
 }
 
 //
+// Print a floating point constant expression.
+//
+static void print_exp_const_float(double val, int tab)
+{
+    printf("const-float(%g);\n", val);
+}
+
+//
 // Print an variable reference expression.
 //
 static void print_exp_var(char *name, int tab)
@@ -945,6 +968,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_LONG:          print_exp_const_long(exp->longval, tab); break;
         case EXP_UINT:          print_exp_const_uint(exp->intval, tab); break;
         case EXP_ULONG:         print_exp_const_ulong(exp->longval, tab); break;
+        case EXP_FLOAT:         print_exp_const_float(exp->floatval, tab); break;
         case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
         case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;

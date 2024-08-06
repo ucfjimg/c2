@@ -167,7 +167,7 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 
 //
 // Parse a primary expression.
-// <primary> := <int> | <identifier> | "(" <exp> ")"
+// <primary> := <int> | <long> | <uint> | <ulong> | <float> | <identifier> | "(" <exp> ")"
 //
 static Expression *parse_primary(Parser *parser)
 {
@@ -188,6 +188,15 @@ static Expression *parse_primary(Parser *parser)
         } else {
             exp = exp_int(parser->tok.int_const.intval, loc);
         }
+        parse_next_token(parser);
+        return exp;
+    }
+    
+    //
+    // <primary> := <float>
+    //
+    if (parser->tok.type == TOK_FLOAT_CONST) {
+        Expression *exp = exp_float(parser->tok.float_const, loc);
         parse_next_token(parser);
         return exp;
     }
@@ -462,6 +471,7 @@ static bool is_type_specifier(Parser *parser)
         tt == TOK_LONG ||
         tt == TOK_SIGNED ||
         tt == TOK_UNSIGNED ||
+        tt == TOK_DOUBLE ||
         tt == TOK_EXTERN ||
         tt == TOK_STATIC;
 }
@@ -469,7 +479,7 @@ static bool is_type_specifier(Parser *parser)
 //
 // Parse the type specifiers of a declaration:
 //
-// <specifiers> := { "int" | "long" | "extern" | "static" }
+// <specifiers> := { "int" | "long" | "signed" | "unsigned" | "double" |"extern" | "static" }
 //
 static TypeSpecifier *parse_type_specifier(Parser *parser)
 {
@@ -478,6 +488,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         TOK_LONG_INDEX,
         TOK_SIGNED_INDEX,
         TOK_UNSIGNED_INDEX,
+        TOK_DOUBLE_INDEX,
         TOK_EXTERN_INDEX,
         TOK_STATIC_INDEX
     };
@@ -490,6 +501,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         { TOK_LONG, 0 },
         { TOK_SIGNED, 0 },
         { TOK_UNSIGNED, 0 },
+        { TOK_DOUBLE, 0 },
         { TOK_EXTERN, 0 },
         { TOK_STATIC, 0 },
     };
@@ -531,12 +543,20 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         err_report(EC_ERROR, &loc, "`signed` and `unsigned` are mutually exclusive.");
     }
 
-    if (
-        spec_tokens[TOK_INT_INDEX].count == 0 && 
-        spec_tokens[TOK_LONG_INDEX].count == 0 && 
-        spec_tokens[TOK_SIGNED_INDEX].count == 0 &&
-        spec_tokens[TOK_UNSIGNED_INDEX].count == 0) {
+    bool has_int = 
+        spec_tokens[TOK_INT_INDEX].count || 
+        spec_tokens[TOK_LONG_INDEX].count ||
+        spec_tokens[TOK_SIGNED_INDEX].count ||
+        spec_tokens[TOK_UNSIGNED_INDEX].count;
+
+    bool has_double = spec_tokens[TOK_DOUBLE_INDEX].count;
+
+    if (!(has_int || spec_tokens[TOK_DOUBLE_INDEX].count)) {
         err_report(EC_ERROR, &loc, "missing type specifier.");
+    }
+
+    if (has_double && has_int) {
+        err_report(EC_ERROR, &loc, "`double` may not be combined with integral type specifiers.");
     }
 
     StorageClass sc = SC_NONE;
@@ -544,6 +564,10 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         sc = SC_STATIC;
     } else if (spec_tokens[TOK_EXTERN_INDEX].count) {
         sc = SC_EXTERN;
+    }
+
+    if (has_double) {
+        return typespec_alloc(sc, type_double());
     }
 
     bool is_unsigned = spec_tokens[TOK_UNSIGNED_INDEX].count;

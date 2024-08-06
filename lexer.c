@@ -35,6 +35,7 @@ static Keyword keywords[] = {
     { "extern",     TOK_EXTERN },
     { "signed",     TOK_SIGNED },
     { "unsigned",   TOK_UNSIGNED },
+    { "double",     TOK_DOUBLE },
     { NULL,         TOK_EOF }
 };
 
@@ -236,16 +237,90 @@ static void lexer_scan_id_or_keyword(Lexer *lex, Token *tok)
 }
 
 //
-// Scan an integer constant
+// Scan a floating point constant. The numeric lex routing has already scanned
+// any leading digits into `str`, and lex->ch is at `.` or `e`/`E`.
 //
-static void lexer_scan_int_const(Lexer *lex, Token *tok)
+static void lexer_scan_float_const(Lexer *lex, Token *tok, StrBuilder *str)
+{
+    //
+    // If a '.', scan over any fractional part.
+    //
+    if (lex->ch == '.') {
+        stb_push_char(str, '.');
+        lexer_next_char(lex);
+    
+        while (isdigit(lex->ch)) {
+            stb_push_char(str, lex->ch);
+            lexer_next_char(lex);
+        }
+    }
+
+    //
+    // Exponent part.
+    //
+    if (lex->ch == 'e' || lex->ch == 'E') {
+        stb_push_char(str, lex->ch);
+        lexer_next_char(lex);
+
+        if (lex->ch == '-' || lex->ch == '+') {
+            stb_push_char(str, lex->ch);
+            lexer_next_char(lex);
+        }
+
+        //
+        // Exponent must be followed by at least one digit. For the sake of continued
+        // parsing, assume an exponent of zero.
+        //
+        if (!isdigit(lex->ch)) {
+            err_report(EC_ERROR, &tok->loc, "invalid floating point constant `%s`; no value for exponent.", str->str);
+            stb_push_char(str, '0');
+        } else {
+            while (isdigit(lex->ch)) {
+                stb_push_char(str, lex->ch);
+                lexer_next_char(lex);
+            }
+        }
+    }
+
+    if (isalpha(lex->ch) || lex->ch == '_' || lex->ch == '.') {
+        if (lex->ch != '.') {
+            do {
+                stb_push_char(str, lex->ch);
+                lexer_next_char(lex);
+            } while (isalnum(lex->ch) || lex->ch == '_');
+        } else {
+            stb_push_char(str, lex->ch);
+        }
+
+        tok->type = TOK_ERROR;
+        tok->err = stb_take(str);
+
+        err_report(EC_ERROR, &tok->loc, "invalid token `%s`", tok->err);
+    } else {
+        tok->type = TOK_FLOAT_CONST;
+        tok->float_const = strtod(str->str, NULL);
+    }
+
+    stb_free(str);
+}
+
+//
+// Scan a numeric constant.
+//
+static void lexer_scan_numeric_const(Lexer *lex, Token *tok)
 {
     StrBuilder *integer = stb_alloc();
     bool long_suffix = false;
     bool unsigned_suffix = false;
 
+    //
+    // Parse the base of an integer.
+    // 0   - octal
+    // 0x  - hex
+    // 1-9 - decimal 
+    //
     int base = 10;
-    
+
     if (lex->ch == '0') {
         base = 8;
         lexer_next_char(lex);
@@ -256,7 +331,10 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
             stb_push_char(integer, '0');
         }
     }
-
+    
+    //
+    // Scan all digits of an integer, or the leading digits of a float. 
+    //
     while (true) {
         bool valid = false;
         char ch = lex->ch;
@@ -273,12 +351,33 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
             break;
         }
         
-        if (base == 8 && (ch == '8' || ch == '9')) {
-            err_report(EC_ERROR, &tok->loc, "invalid octal digit `%c`.", ch);
-        }
-
         stb_push_char(integer, ch);
         lexer_next_char(lex);
+    }
+
+    //
+    // Check for a floating point constant. If we have a '.' or 'e'/'E', then
+    // defer to the float parser.
+    //
+    if (base != 16) {
+        if (lex->ch == '.' || lex->ch == 'e' || lex->ch == 'E') {
+            lexer_scan_float_const(lex, tok, integer);
+            return;
+        }
+    }
+
+    //
+    // If we are still parsing an integer, and it is octal, go back and 
+    // check for invalid digits; these were valid if we had a float like
+    // "09e-10".
+    //
+    if (base == 8) {
+        char ch;
+        for (int i = 0; (ch = integer->str[i]) != '\0'; i++) {
+            if (ch == '8' || ch == '9') {    
+                err_report(EC_ERROR, &tok->loc, "invalid octal digit `%c`.", ch);
+            }
+        }
     }
 
     //
@@ -317,14 +416,18 @@ static void lexer_scan_int_const(Lexer *lex, Token *tok)
         tok->int_const.is_long = false;
     } else {
         //
-        // Value cannot be immediately followed by an identifier without intervening
+        // Value cannot be immediately followed by an identifier or '.' without intervening
         // whitespace or an operator.
         //
-        if (isalpha(lex->ch) || lex->ch == '_') {
-            do {
+        if (isalpha(lex->ch) || lex->ch == '_' || lex->ch == '.') {
+            if (lex->ch != '.') {
+                do {
+                    stb_push_char(integer, lex->ch);
+                    lexer_next_char(lex);
+                } while (isalnum(lex->ch) || lex->ch == '_');
+            } else {
                 stb_push_char(integer, lex->ch);
-                lexer_next_char(lex);
-            } while (isalnum(lex->ch) || lex->ch == '_');
+            }
 
             tok->type = TOK_ERROR;
             tok->err = stb_take(integer);
@@ -556,8 +659,13 @@ void lexer_token(Lexer *lex, Token *tok)
         return;
     }
 
+    if (lex->ch == '.') {
+        lexer_scan_float_const(lex, tok, stb_alloc());
+        return;
+    }
+
     if (isdigit(lex->ch)) {
-        lexer_scan_int_const(lex, tok);
+        lexer_scan_numeric_const(lex, tok);
         return;
     }
 

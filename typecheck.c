@@ -99,6 +99,15 @@ static Expression *ast_check_ulong(TypeCheckState *state, Expression *exp)
 }
 
 //
+// Type check a floating point constant.
+//
+static Expression *ast_check_float(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_double());
+    return exp;
+}
+
+//
 // Type check a variable reference.
 //
 static Expression *ast_check_var(TypeCheckState *state, Expression *exp)
@@ -129,6 +138,10 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
     ExpUnary *unary = &exp->unary;
 
     exp_replace(&unary->exp, ast_check_expression(state, unary->exp));
+
+    if (unary->op == UOP_COMPLEMENT && unary->exp->type->tag == TT_DOUBLE) {
+        err_report(EC_ERROR, &exp->loc, "can only apply `~` to integers.");
+    }
     
     //
     // The NOT operator returns an int of 0 or 1. All the other 
@@ -389,6 +402,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_LONG:          return ast_check_long(state, exp); break;
         case EXP_UINT:          return ast_check_uint(state, exp); break;
         case EXP_ULONG:         return ast_check_ulong(state, exp); break;
+        case EXP_FLOAT:         return ast_check_float(state, exp); break;
         case EXP_VAR:           return ast_check_var(state, exp); break;
         case EXP_UNARY:         return ast_check_unary(state, exp); break;
         case EXP_BINARY:        return ast_check_binary(state, exp); break;
@@ -757,7 +771,11 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         } else if (var->init->tag == EXP_ULONG) {
             init.value = var->init->intval;
             init.is_long = true;
-                init.is_unsigned = true;
+        } else if (var->init->tag == EXP_FLOAT) {
+            init.value = var->init->intval;
+            init.is_long = true;
+            init.is_unsigned = true;
+            init.is_unsigned = true;
         } else {
             err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);

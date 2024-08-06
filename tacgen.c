@@ -368,6 +368,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_INT:           return tcg_const_int(state, exp);
         case EXP_LONG:          return tcg_const_long(state, exp);
         case EXP_UINT:          return tcg_const_uint(state, exp);
+        case EXP_FLOAT:         ICE_NYI("tcg_expression::EXP_FLOAT");
         case EXP_ULONG:         return tcg_const_ulong(state, exp);
         case EXP_VAR:           return tac_var(exp->var.name, exp->loc);
         case EXP_UNARY:         return tcg_unary_op(state, exp);

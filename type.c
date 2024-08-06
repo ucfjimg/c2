@@ -49,6 +49,14 @@ Type *type_ulong(void)
 }
 
 //
+// Constructor for a double type.
+//
+Type *type_double(void)
+{
+    return type_alloc(TT_DOUBLE);
+}
+
+//
 // Constructor for a type parameter.
 //
 TypeFuncParam *type_func_param(Type *type)
@@ -106,6 +114,7 @@ Type *type_clone(Type *type)
         case TT_LONG:   return type_long();
         case TT_UINT:   return type_uint();
         case TT_ULONG:  return type_ulong();
+        case TT_DOUBLE: return type_double();
         case TT_FUNC:   return type_clone_func(&type->func);
     }
 
@@ -158,6 +167,7 @@ bool types_equal(Type *left, Type *right)
         case TT_LONG:   return true;
         case TT_UINT:   return true;
         case TT_ULONG:  return true;
+        case TT_DOUBLE: return true;
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
     }
 
@@ -187,6 +197,7 @@ bool type_unsigned(Type *type)
 
         case TT_INT:
         case TT_LONG:
+        case TT_DOUBLE:
         case TT_FUNC:   return false;
     }
 
@@ -199,6 +210,7 @@ bool type_unsigned(Type *type)
 int type_rank(Type *type)
 {
     switch (type->tag) {
+        case TT_DOUBLE: return 5;
         case TT_ULONG:  return 4;
         case TT_LONG:   return 3;
         case TT_UINT:   return 2;
@@ -265,6 +277,7 @@ char *type_describe(Type *type)
         case TT_LONG:   return saprintf("long");
         case TT_UINT:   return saprintf("unsigned int");
         case TT_ULONG:  return saprintf("unsigned long");
+        case TT_DOUBLE: return saprintf("double");
         case TT_FUNC:   return type_describe_func(&type->func); break;
     }
 

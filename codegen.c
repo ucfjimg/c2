@@ -72,6 +72,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();
+        case TT_DOUBLE:     ICE_NYI("codegen_type_to_asmtype::TT_DOUBLE");
         case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
     }
     
