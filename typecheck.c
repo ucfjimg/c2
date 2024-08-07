@@ -628,9 +628,8 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
     DeclVariable *var = &decl->var;
 
     StaticInitialValue siv = SIV_NO_INIT;
-    Const init;
 
-    const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
+    Const init = const_make_int(CIS_INT, CIS_SIGNED, 0);
 
     if (var->init == NULL) {
         if (var->storage_class == SC_EXTERN) {
@@ -642,10 +641,10 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         siv = SIV_INIT;
 
         switch (var->init->tag) {
-            case EXP_INT:       const_make_int(&init, CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
-            case EXP_UINT:      const_make_int(&init, CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
-            case EXP_LONG:      const_make_int(&init, CIS_LONG, CIS_SIGNED, var->init->intval); break;
-            case EXP_ULONG:     const_make_int(&init, CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+            case EXP_INT:       init = const_make_int(CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
+            case EXP_UINT:      init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
+            case EXP_LONG:      init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
+            case EXP_ULONG:     init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
 
             //
             // Checked above
@@ -721,9 +720,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
 
     Type *type = type_clone(var->type);
 
-    Const init;
-
-    const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
+    Const init = const_make_zero();
     
     if (var->storage_class == SC_EXTERN) {
         if (var->init != NULL) {
@@ -743,10 +740,10 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
             switch (var->init->tag) {
-                case EXP_INT:   const_make_int(&init, CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
-                case EXP_UINT:  const_make_int(&init, CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
-                case EXP_LONG:  const_make_int(&init, CIS_LONG, CIS_SIGNED, var->init->intval); break;
-                case EXP_ULONG:  const_make_int(&init, CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+                case EXP_INT:   init = const_make_int(CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
+                case EXP_UINT:  init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
+                case EXP_LONG:  init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
+                case EXP_ULONG: init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
 
                 default:
                     err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);

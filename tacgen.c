@@ -128,8 +128,7 @@ static TacNode *tcg_unary_op(TacState *state, Expression *unary)
     TacNode *src = tcg_expression(state, unary->unary.exp);
     TacNode *dst = tcg_temporary(state, type_clone(unary->type), loc);
 
-    Const one;
-    const_make_int(&one, CIS_INT, CIS_SIGNED, 1);
+    Const one = const_make_int(CIS_INT, CIS_SIGNED, 1);
 
     if (unary->unary.op == UOP_PREDECREMENT || unary->unary.op == UOP_PREINCREMENT) {
         TacNode *tmp = tcg_temporary(state, type_clone(unary->type), loc);
@@ -180,11 +179,8 @@ static TacNode *tcg_short_circuit_op(TacState *state, Expression *binary)
     FileLine loc = binary->loc;
     
     bool is_and = binary->binary.op == BOP_LOGAND;
-    Const success_val;
-    const_make_int(&success_val, CIS_INT, CIS_SIGNED, is_and ? 1 : 0);
-    Const fail_val;
-    const_make_int(&fail_val, CIS_INT, CIS_SIGNED, is_and ? 0 : 1);
-
+    Const success_val = const_make_int(CIS_INT, CIS_SIGNED, is_and ? 1 : 0);
+    Const fail_val = const_make_int(CIS_INT, CIS_SIGNED, is_and ? 0 : 1);
 
     TacNode *(*tac_sc_jump)(TacNode *, char *, FileLine) = is_and ? tac_jump_zero : tac_jump_not_zero;
 
@@ -310,8 +306,7 @@ static TacNode *tcg_const_int(TacState *state, Expression *exp)
 {
     ICE_ASSERT(exp->tag == EXP_INT);
 
-    Const cn;
-    const_make_int(&cn, CIS_INT, CIS_SIGNED, exp->intval);
+    Const cn = const_make_int(CIS_INT, CIS_SIGNED, exp->intval);
     return tac_const(cn, exp->loc);
 }
 
@@ -322,8 +317,7 @@ static TacNode *tcg_const_long(TacState *state, Expression *exp)
 {
     ICE_ASSERT(exp->tag == EXP_LONG);
 
-    Const cn;
-    const_make_int(&cn, CIS_LONG, CIS_SIGNED, exp->intval);
+    Const cn = const_make_int(CIS_LONG, CIS_SIGNED, exp->intval); 
     return tac_const(cn, exp->loc);
 }
 
@@ -334,8 +328,7 @@ static TacNode *tcg_const_uint(TacState *state, Expression *exp)
 {
     ICE_ASSERT(exp->tag == EXP_UINT);
 
-    Const cn;
-    const_make_int(&cn, CIS_INT, CIS_UNSIGNED, exp->intval);
+    Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, exp->intval);
     return tac_const(cn, exp->loc);
 }
 
@@ -346,8 +339,7 @@ static TacNode *tcg_const_ulong(TacState *state, Expression *exp)
 {
     ICE_ASSERT(exp->tag == EXP_ULONG);
 
-    Const cn;
-    const_make_int(&cn, CIS_LONG, CIS_UNSIGNED, exp->intval);
+    Const cn = const_make_int(CIS_LONG, CIS_UNSIGNED, exp->intval);
     return tac_const(cn, exp->loc);
 }
 
@@ -672,8 +664,7 @@ static void tcg_switch(TacState *state, Statement *stmt)
         TacNode *cmp = tcg_temporary(state, type_clone(switch_->cond->type), stmt->loc);
         char *case_label = tcg_case_label(switch_->label, label->value);
 
-        Const caseval;
-        const_make_int(&caseval, size, sign, label->value);
+        Const caseval = const_make_int(size, sign, label->value);
 
         tcg_append(state, tac_binary(
             BOP_SUBTRACT, 
@@ -788,8 +779,7 @@ static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
     // Put a `return 0;` at the end of all functions. This gives the 
     // correct behavior for main().
     //
-    Const zero;
-    const_make_int(&zero, CIS_INT, CIS_SIGNED, 0);
+    Const zero = const_make_zero();
 
     tcg_append(
         &funcstate, 
@@ -820,13 +810,12 @@ static void tcg_statics(List *code, SymbolTable *stab)
             bool global = sym->stvar.global;
             FileLine loc = sym->stvar.loc;
 
-            Const init;
-            const_make_int(&init, CIS_INT, CIS_SIGNED, 0);
+            Const zero = const_make_zero();
 
             switch (sym->stvar.siv) {
                 case SIV_INIT:      var = tac_static_var(node->key, global, type_clone(sym->type), sym->stvar.initial, loc); break;
                 case SIV_NO_INIT:   break;
-                case SIV_TENTATIVE: var = tac_static_var(node->key, global, type_clone(sym->type), init, loc); break;
+                case SIV_TENTATIVE: var = tac_static_var(node->key, global, type_clone(sym->type), zero, loc); break;
             }
 
             if (var) {

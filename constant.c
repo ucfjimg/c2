@@ -3,14 +3,26 @@
 #include "safemem.h"
 
 //
-// Construct in place an integral constant.
+// Construct an integral constant.
 //
-void const_make_int(Const *cn, ConstIntSize size, ConstIntSign sign, unsigned long value)
+Const const_make_int(ConstIntSize size, ConstIntSign sign, unsigned long value)
 {
-    cn->tag = CON_INTEGRAL;
-    cn->intval.size = size;
-    cn->intval.sign = sign;
-    cn->intval.value = value;
+    Const cn;
+
+    cn.tag = CON_INTEGRAL;
+    cn.intval.size = size;
+    cn.intval.sign = sign;
+    cn.intval.value = value;
+
+    return cn;
+}
+
+//
+// Construct a zero int constant.
+//
+Const const_make_zero(void)
+{
+    return const_make_int(CIS_INT, CIS_SIGNED, 0);
 }
 
 //

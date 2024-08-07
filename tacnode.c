@@ -427,15 +427,12 @@ TacNode *tac_clone_operand(TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_VAR || tac->tag == TAC_CONST);
 
-    Const cn;
-
     switch (tac->tag) {
         case TAC_VAR:       return tac_var(tac->var.name, tac->loc);
         case TAC_CONST:     return tac_const(tac->constant, tac->loc);
     
         default:
-            const_make_int(&cn, CIS_INT, CIS_SIGNED, 0);
-            return tac_const(cn, tac->loc);
+            return tac_const(const_make_zero(), tac->loc);
     }
 }
 

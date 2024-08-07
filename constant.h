@@ -35,7 +35,8 @@ typedef struct {
     };
 } Const;
 
-extern void const_make_int(Const *cn, ConstIntSize size, ConstIntSign sign, unsigned long value);
+extern Const const_make_int(ConstIntSize size, ConstIntSign sign, unsigned long value);
+extern Const const_make_zero(void);
 extern void const_make_double(Const *cn, double value);
 extern char *const_describe(Const *cn);
 extern bool const_unsigned(Const *cn);
