@@ -38,6 +38,16 @@ static char *token_describe_int_const(Token *tok)
 }
 
 //
+// Format a float constant into an allocated string.
+//
+static char *token_describe_float_const(Token *tok)
+{
+    ICE_ASSERT(tok->type == TOK_FLOAT_CONST);
+
+    return saprintf("float-const(%g)", tok->float_const);
+}
+
+//
 // Return a description of a token for debug output or error message. 
 // Returns an allocated string which must be free'd.
 //
@@ -56,6 +66,7 @@ char *token_describe(Token *tok)
 
         case TOK_ID:                return saprintf("id(%s)", tok->id);
         case TOK_INT_CONST:         return token_describe_int_const(tok); break;
+        case TOK_FLOAT_CONST:       return token_describe_float_const(tok); break;
 
         default:                    break;
     }
@@ -82,6 +93,7 @@ char *token_type_describe(TokenType tt)
 
         case TOK_ID:                return saprintf("<id>");
         case TOK_INT_CONST:         return saprintf("<int-const>");
+        case TOK_FLOAT_CONST:       return saprintf("<float-const>");
 
         case TOK_INCREMENT:         return saprintf("++");
         case TOK_DECREMENT:         return saprintf("--");
@@ -124,6 +136,7 @@ char *token_type_describe(TokenType tt)
         case TOK_EXTERN:            return saprintf("extern");
         case TOK_SIGNED:            return saprintf("signed");
         case TOK_UNSIGNED:          return saprintf("unsigned");
+        case TOK_DOUBLE:            return saprintf("double");
 
         //
         // All of these are handled by the single-character case.

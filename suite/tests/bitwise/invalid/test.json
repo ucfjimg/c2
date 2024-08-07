@@ -1,0 +1,4 @@
+{
+    "shift-double.c": "validate:fail",
+    "xor-double.c": "validate:fail"
+}

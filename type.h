@@ -11,6 +11,7 @@ typedef enum {
     TT_LONG,
     TT_UINT,
     TT_ULONG,
+    TT_DOUBLE,
     TT_FUNC,
 } TypeTag;
 
@@ -47,6 +48,7 @@ extern Type *type_int(void);
 extern Type *type_long(void);
 extern Type *type_uint(void);
 extern Type *type_ulong(void);
+extern Type *type_double(void);
 extern TypeFuncParam *type_func_param(Type *type);
 extern Type *type_function(Type *ret, List parms);
 extern Type *type_clone(Type *type);

@@ -27,6 +27,10 @@ typedef enum {
     TAC_SIGN_EXTEND,
     TAC_ZERO_EXTEND,
     TAC_TRUNCATE,
+    TAC_DOUBLE_TO_INT,
+    TAC_DOUBLE_TO_UINT,
+    TAC_INT_TO_DOUBLE,
+    TAC_UINT_TO_DOUBLE,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -171,6 +175,38 @@ typedef struct {
 } TacTruncate;
 
 //
+// A double to int operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacDoubleToInt;
+
+//
+// A double to unsigned int operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacDoubleToUInt;
+
+//
+// An int to double operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacIntToDouble;
+
+//
+// An unsigned int to double operation.
+//
+typedef struct {
+    TacNode *src;
+    TacNode *dst;
+} TacUIntToDouble;
+
+//
 // A TAC node -- discriminated union based on `tag`
 //
 typedef struct TacNode {
@@ -196,6 +232,10 @@ typedef struct TacNode {
         TacSignExtend   sign_extend;
         TacZeroExtend   zero_extend;
         TacTruncate     truncate;
+        TacDoubleToInt  dbl_to_int;
+        TacDoubleToUInt dbl_to_uint;
+        TacIntToDouble  int_to_dbl;
+        TacUIntToDouble uint_to_dbl;
     };
 } TacNode;
 
@@ -216,6 +256,10 @@ extern TacNode *tac_function_call(char *name, List args, TacNode *dst, FileLine 
 extern TacNode *tac_sign_extend(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_zero_extend(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_double_to_int(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_double_to_uint(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_int_to_double(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_uint_to_double(TacNode *src, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

@@ -344,6 +344,17 @@ static TacNode *tcg_const_ulong(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for a constant float.
+//
+static TacNode *tcg_const_float(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_FLOAT);
+
+    Const cn = const_make_double(exp->floatval);
+    return tac_const(cn, exp->loc);
+}
+
+//
 // Generate TAC for cast.
 //
 static TacNode *tcg_cast(TacState *state, Expression *exp)
@@ -358,7 +369,19 @@ static TacNode *tcg_cast(TacState *state, Expression *exp)
 
     TacNode *tmp = tcg_temporary(state, type_clone(cast->type), exp->loc);
 
-    if (types_same_size(cast->exp->type, cast->type)) {
+    if (cast->type->tag == TT_DOUBLE) {
+        if (type_unsigned(cast->exp->type)) {
+            tcg_append(state, tac_uint_to_double(inner, tmp, exp->loc));
+        } else {
+            tcg_append(state, tac_int_to_double(inner, tmp, exp->loc));
+        }
+    } else if (cast->exp->type->tag == TT_DOUBLE) {
+        if (type_unsigned(cast->type)) {
+            tcg_append(state, tac_double_to_uint(inner, tmp, exp->loc));
+        } else {
+            tcg_append(state, tac_double_to_int(inner, tmp, exp->loc));
+        }
+    } else if (types_same_size(cast->exp->type, cast->type)) {
         tcg_append(state, tac_copy(inner, tmp, exp->loc));
     } else if (type_rank(cast->type) < type_rank(cast->exp->type)) {
         tcg_append(state, tac_truncate(inner, tmp, exp->loc));
@@ -381,6 +404,7 @@ static TacNode *tcg_expression(TacState *state, Expression *exp)
         case EXP_LONG:          return tcg_const_long(state, exp);
         case EXP_UINT:          return tcg_const_uint(state, exp);
         case EXP_ULONG:         return tcg_const_ulong(state, exp);
+        case EXP_FLOAT:         return tcg_const_float(state, exp);
         case EXP_VAR:           return tac_var(exp->var.name, exp->loc);
         case EXP_UNARY:         return tcg_unary_op(state, exp);
         case EXP_BINARY:        return tcg_binary_op(state, exp);

@@ -99,6 +99,15 @@ static Expression *ast_check_ulong(TypeCheckState *state, Expression *exp)
 }
 
 //
+// Type check a floating point constant.
+//
+static Expression *ast_check_float(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_double());
+    return exp;
+}
+
+//
 // Type check a variable reference.
 //
 static Expression *ast_check_var(TypeCheckState *state, Expression *exp)
@@ -129,6 +138,10 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
     ExpUnary *unary = &exp->unary;
 
     exp_replace(&unary->exp, ast_check_expression(state, unary->exp));
+
+    if (unary->op == UOP_COMPLEMENT && unary->exp->type->tag == TT_DOUBLE) {
+        err_report(EC_ERROR, &exp->loc, "can only apply `~` to integers.");
+    }
     
     //
     // The NOT operator returns an int of 0 or 1. All the other 
@@ -147,12 +160,16 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 // Type check a binary expression which converts the operands to a common
 // type.
 //
-static Expression *ast_check_binary_promote(TypeCheckState *state, Expression *exp)
+static Expression *ast_check_binary_promote(TypeCheckState *state, Expression *exp, bool only_int)
 {
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
 
     Type *common = types_common(binary->left->type, binary->right->type);
+
+    if (only_int && common->tag == TT_DOUBLE) {
+        err_report(EC_ERROR, &exp->loc, "neither operand to operator `%s` may be floating point.", bop_describe(binary->op));
+    }
 
     //
     // Do not use exp_replace here as the original expression object is
@@ -166,13 +183,17 @@ static Expression *ast_check_binary_promote(TypeCheckState *state, Expression *e
 }
 
 //
-// Type check a binary expression which takes the type of the left-hand operand
-// (i.e. shifts).
+// Type check a binary expression which takes the type of the left-hand operand,
+// and which must have integral operands. (i.e. shifts).
 //
-static Expression *ast_check_binary_lhs(TypeCheckState *state, Expression *exp)
+static Expression *ast_check_binary_lhs_int(TypeCheckState *state, Expression *exp)
 {
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
+
+    if (binary->left->type->tag == TT_DOUBLE || binary->right->type->tag == TT_DOUBLE) {
+        err_report(EC_ERROR, &exp->loc, "neither operand to operator `%s` may be floating point.", bop_describe(binary->op));
+    }
 
     exp_set_type(exp, type_clone(binary->left->type));
     return exp;
@@ -218,14 +239,15 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
         case BOP_ADD:
         case BOP_SUBTRACT:
         case BOP_MULTIPLY:
-        case BOP_DIVIDE:
+        case BOP_DIVIDE:        return ast_check_binary_promote(state, exp, false);
+
         case BOP_MODULO:
         case BOP_BITAND:
         case BOP_BITOR:
-        case BOP_BITXOR:        return ast_check_binary_promote(state, exp);
+        case BOP_BITXOR:        return ast_check_binary_promote(state, exp, true);
 
         case BOP_LSHIFT:
-        case BOP_RSHIFT:        return ast_check_binary_lhs(state, exp);
+        case BOP_RSHIFT:        return ast_check_binary_lhs_int(state, exp);
 
         case BOP_LOGAND:
         case BOP_LOGOR:
@@ -389,6 +411,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_LONG:          return ast_check_long(state, exp); break;
         case EXP_UINT:          return ast_check_uint(state, exp); break;
         case EXP_ULONG:         return ast_check_ulong(state, exp); break;
+        case EXP_FLOAT:         return ast_check_float(state, exp); break;
         case EXP_VAR:           return ast_check_var(state, exp); break;
         case EXP_UNARY:         return ast_check_unary(state, exp); break;
         case EXP_BINARY:        return ast_check_binary(state, exp); break;
@@ -637,7 +660,13 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         } else {
             siv = SIV_TENTATIVE;
         }
-    } else if (var->init->tag == EXP_INT || var->init->tag == EXP_LONG || var->init->tag == EXP_UINT || var->init->tag == EXP_ULONG) {
+    } else if (
+        var->init->tag == EXP_INT || 
+        var->init->tag == EXP_LONG || 
+        var->init->tag == EXP_UINT || 
+        var->init->tag == EXP_ULONG ||
+        var->init->tag == EXP_FLOAT) {
+
         siv = SIV_INIT;
 
         switch (var->init->tag) {
@@ -645,6 +674,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
             case EXP_UINT:      init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
             case EXP_LONG:      init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
             case EXP_ULONG:     init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+            case EXP_FLOAT:     init = const_make_double(var->init->floatval); break;
 
             //
             // Checked above
@@ -744,6 +774,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
                 case EXP_UINT:  init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
                 case EXP_LONG:  init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
                 case EXP_ULONG: init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
+                case EXP_FLOAT: init = const_make_double(var->init->floatval); break;
 
                 default:
                     err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);

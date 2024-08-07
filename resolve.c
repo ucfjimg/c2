@@ -293,6 +293,7 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_LONG:          break;
         case EXP_UINT:          break;
         case EXP_ULONG:         break;
+        case EXP_FLOAT:         break;
     }
 }
 

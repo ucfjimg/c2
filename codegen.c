@@ -72,6 +72,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();
+        case TT_DOUBLE:     ICE_NYI("codegen_type_to_asmtype::TT_DOUBLE");
         case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
     }
     
@@ -534,6 +535,11 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_SIGN_EXTEND:       codegen_sign_extend(state, tac); break;
         case TAC_ZERO_EXTEND:       codegen_zero_extend(state, tac); break;
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
+
+        case TAC_DOUBLE_TO_INT:     ICE_NYI("codegen_single::double-to-int");
+        case TAC_DOUBLE_TO_UINT:    ICE_NYI("codegen_single::double-to-uint");
+        case TAC_INT_TO_DOUBLE:     ICE_NYI("codegen_single::int-to-double");
+        case TAC_UINT_TO_DOUBLE:    ICE_NYI("codegen_single::uint-to-double");
 
         case TAC_PROGRAM:           break;
         case TAC_CONST:             break;

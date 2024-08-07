@@ -374,6 +374,58 @@ TacNode *tac_truncate(TacNode *src, TacNode *dst, FileLine loc)
 }
 
 //
+// Constructor for a TAC double to int operation.
+//
+TacNode *tac_double_to_int(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_DOUBLE_TO_INT, loc);
+
+    tac->dbl_to_int.src = src;
+    tac->dbl_to_int.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC double to uint operation.
+//
+TacNode *tac_double_to_uint(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_DOUBLE_TO_UINT, loc);
+
+    tac->dbl_to_uint.src = src;
+    tac->dbl_to_uint.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC double to int operation.
+//
+TacNode *tac_int_to_double(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_INT_TO_DOUBLE, loc);
+
+    tac->int_to_dbl.src = src;
+    tac->int_to_dbl.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC double to int operation.
+//
+TacNode *tac_uint_to_double(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_UINT_TO_DOUBLE, loc);
+
+    tac->uint_to_dbl.src = src;
+    tac->uint_to_dbl.dst = dst;
+
+    return tac;
+}
+
+//
 // Free a TAC function call.
 //
 static void tac_function_call_free(TacFunctionCall *call)
@@ -420,6 +472,42 @@ static void tac_truncate_free(TacTruncate *trunc)
 }
 
 //
+// Free a TAC double to int.
+//
+static void tac_double_to_int_free(TacDoubleToInt *dbl)
+{
+    tac_free(dbl->src);
+    tac_free(dbl->dst);
+}
+
+//
+// Free a TAC double to unsigned int.
+//
+static void tac_double_to_uint_free(TacDoubleToUInt *dbl)
+{
+    tac_free(dbl->src);
+    tac_free(dbl->dst);
+}
+
+//
+// Free a TAC int to double.
+//
+static void tac_int_to_double_free(TacIntToDouble *dbl)
+{
+    tac_free(dbl->src);
+    tac_free(dbl->dst);
+}
+
+//
+// Free a TAC unsigned int to double.
+//
+static void tac_uint_to_double_free(TacUIntToDouble *dbl)
+{
+    tac_free(dbl->src);
+    tac_free(dbl->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST.
 //
@@ -461,6 +549,10 @@ void tac_free(TacNode *tac)
             case TAC_SIGN_EXTEND:   tac_sign_extend_free(&tac->sign_extend); break;
             case TAC_ZERO_EXTEND:   tac_zero_extend_free(&tac->zero_extend); break;
             case TAC_TRUNCATE:      tac_truncate_free(&tac->truncate); break;
+            case TAC_DOUBLE_TO_INT: tac_double_to_int_free(&tac->dbl_to_int); break;
+            case TAC_DOUBLE_TO_UINT:tac_double_to_uint_free(&tac->dbl_to_uint); break;
+            case TAC_INT_TO_DOUBLE: tac_int_to_double_free(&tac->int_to_dbl); break;
+            case TAC_UINT_TO_DOUBLE:tac_uint_to_double_free(&tac->uint_to_dbl); break;
         }
 
         safe_free(tac);
@@ -701,6 +793,54 @@ static void tac_print_truncate(TacTruncate *trunc, int tab, bool locs)
 }
 
 //
+// Print a TAC double to int operation.
+//
+static void tac_print_dbl_to_int(TacDoubleToInt *dbl, int tab, bool locs)
+{
+    printf("%*sdouble-to-int(\n", tab, "");
+    tac_print_recurse(dbl->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(dbl->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC double to unsigned int operation.
+//
+static void tac_print_dbl_to_uint(TacDoubleToUInt *dbl, int tab, bool locs)
+{
+    printf("%*sdouble-to-uint(\n", tab, "");
+    tac_print_recurse(dbl->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(dbl->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC int to double operation.
+//
+static void tac_print_int_to_dbl(TacIntToDouble *dbl, int tab, bool locs)
+{
+    printf("%*sint-to-double(\n", tab, "");
+    tac_print_recurse(dbl->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(dbl->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC uint to double operation.
+//
+static void tac_print_uint_to_dbl(TacUIntToDouble *dbl, int tab, bool locs)
+{
+    printf("%*sint-to-double(\n", tab, "");
+    tac_print_recurse(dbl->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(dbl->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -726,6 +866,10 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_SIGN_EXTEND:   tac_print_sign_extend(&tac->sign_extend, tab, locs); break;
         case TAC_ZERO_EXTEND:   tac_print_zero_extend(&tac->zero_extend, tab, locs); break;
         case TAC_TRUNCATE:      tac_print_truncate(&tac->truncate, tab, locs); break;
+        case TAC_DOUBLE_TO_INT: tac_print_dbl_to_int(&tac->dbl_to_int, tab, locs); break;
+        case TAC_DOUBLE_TO_UINT:tac_print_dbl_to_uint(&tac->dbl_to_uint, tab, locs); break;
+        case TAC_INT_TO_DOUBLE: tac_print_int_to_dbl(&tac->int_to_dbl, tab, locs); break;
+        case TAC_UINT_TO_DOUBLE:tac_print_uint_to_dbl(&tac->uint_to_dbl, tab, locs); break;
     }
 }
 

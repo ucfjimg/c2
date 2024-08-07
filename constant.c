@@ -28,10 +28,14 @@ Const const_make_zero(void)
 //
 // Construct in place a floating point constant.
 //
-void const_make_double(Const *cn, double value)
+Const const_make_double(double value)
 {
-    cn->tag = CON_FLOAT;
-    cn->floatval = value;
+    Const cn;
+
+    cn.tag = CON_FLOAT;
+    cn.floatval = value;
+
+    return cn;
 }
 
 //

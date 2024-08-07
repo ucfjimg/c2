@@ -43,6 +43,7 @@ typedef enum {
     //
     TOK_ID,
     TOK_INT_CONST,
+    TOK_FLOAT_CONST,
 
     //
     // multi-char operators
@@ -94,6 +95,7 @@ typedef enum {
     TOK_LONG,
     TOK_SIGNED,
     TOK_UNSIGNED,
+    TOK_DOUBLE,
 } TokenType;
 
 typedef struct {
@@ -109,6 +111,7 @@ typedef struct {
     union {
         char *id;               // TOK_ID
         TokIntConst int_const;  // TOK_INT_CONST
+        double float_const;     // TOK_FLOAT_CONST
         char *err;              // TOK_ERROR, the invalid token
     };
 } Token;
@@ -117,3 +120,4 @@ extern void token_free(Token *tok);
 extern char *token_describe(Token *tok);
 extern char *token_type_describe(TokenType tt);
 extern void token_clone(Token *src, Token *dst);
+
