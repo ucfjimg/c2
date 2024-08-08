@@ -11,6 +11,7 @@
 
 typedef struct {
     List code;
+    List *statics;
     BackEndSymbolTable *bstab;
     SymbolTable *stab;
     char *neg_zero;
@@ -105,6 +106,14 @@ static bool codegen_operand_float(CodegenState *state, TacNode *tac)
 static void codegen_push_instr(CodegenState *state, AsmNode *instr)
 {
     list_push_back(&state->code, &instr->list);
+}
+
+//
+// Push a static variable definition onto the statics list.
+//
+static void codegen_push_static(CodegenState *state, AsmNode *instr)
+{
+    list_push_back(state->statics, &instr->list);
 }
 
 static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac);
@@ -205,7 +214,7 @@ static char *codegen_float_literal(CodegenState *state, double floatval, int ali
     char *label = tmp_name(val);
     safe_free(val);
 
-    codegen_push_instr(state, asm_static_const(label, align, const_make_double(floatval), loc));
+    codegen_push_static(state, asm_static_const(label, align, const_make_double(floatval), loc));
 
     BackEndSymbol *sym = bstab_lookup(state->bstab, label);
     sym->tag = BST_OBJECT;
@@ -276,8 +285,8 @@ static void codegen_unary_not(CodegenState *state, TacNode *tac)
     AsmType *dsttype = codegen_tac_to_asmtype(state, tac->unary.dst);
 
     if (srctype->tag == AT_DOUBLE) {
-        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
-        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), src, srctype, tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM13), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM13), src, srctype, tac->loc));
     } else {
         codegen_push_instr(state, asm_cmp(aoper_imm(0), src, srctype, tac->loc));
     }
@@ -503,8 +512,8 @@ static void codegen_jump_zero(CodegenState *state, TacNode *tac)
     AsmType *condtype = codegen_tac_to_asmtype(state, tac->jump_zero.condition);
 
     if (condtype->tag == AT_DOUBLE) {
-        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), condtype, tac->loc));
-        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), cond, asmtype_clone(condtype), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM13), aoper_reg(REG_XMM13), condtype, tac->loc));
+        codegen_push_instr(state, asm_cmp(cond, aoper_reg(REG_XMM13), asmtype_clone(condtype), tac->loc));
     } else {
         codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
     }
@@ -522,8 +531,8 @@ static void codegen_jump_not_zero(CodegenState *state, TacNode *tac)
     AsmType *condtype = codegen_tac_to_asmtype(state, tac->jump_not_zero.condition);
 
     if (condtype->tag == AT_DOUBLE) {
-        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), condtype, tac->loc));
-        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), cond, asmtype_clone(condtype), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM13), aoper_reg(REG_XMM13), condtype, tac->loc));
+        codegen_push_instr(state, asm_cmp(cond, aoper_reg(REG_XMM13), asmtype_clone(condtype), tac->loc));
     } else {
         codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
     }
@@ -661,7 +670,7 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
         TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
         AsmOperand *arg = codegen_expression(state, tac_arg);
         AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
-        if (argtype->tag == AT_QUADWORD || argtype->tag == AT_DOUBLE) {
+        if (argtype->tag == AT_DOUBLE) {
             codegen_push_instr(state, asm_push(arg, tac->loc));
         } else {
             codegen_push_instr(state, asm_mov(arg, aoper_reg(REG_RAX), argtype, tac->loc));
@@ -683,11 +692,16 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     }
 
     //
-    // Return value, if any, goes in RAX.
+    // Return value, if any, goes in RAX or XMM0.
     //
     AsmOperand *result = codegen_expression(state, call->dst);
     AsmType *restype = codegen_tac_to_asmtype(state, call->dst);
-    codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, restype, tac->loc));
+    
+    if (restype->tag == AT_DOUBLE) {
+        codegen_push_instr(state, asm_mov(aoper_reg(REG_XMM0), result, restype, tac->loc));
+    } else {
+        codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, restype, tac->loc));
+    }
 }
 
 //
@@ -697,7 +711,7 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
 {
     ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
 
-    codegen_push_instr(state, 
+    codegen_push_static(state, 
         asm_static_var(
             decl->static_var.name, 
             decl->static_var.global, 
@@ -780,7 +794,7 @@ static void codegen_dbl_to_uint(CodegenState *state, TacNode *tac)
     AsmType *type = codegen_tac_to_asmtype(state, tac->dbl_to_uint.dst);
 
     if (type->tag == AT_LONGWORD) {
-        codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_reg(REG_RAX), asmtype_clone(type), tac->loc));
+        codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_long(), tac->loc));
     } else {
         if (state->dbl_to_uint_ub == NULL) {
@@ -799,9 +813,9 @@ static void codegen_dbl_to_uint(CodegenState *state, TacNode *tac)
         codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_clone(dst), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_jump(label2, tac->loc));
         codegen_push_instr(state, asm_label(label1, tac->loc));
-        codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
-        codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_data(state->dbl_to_uint_ub), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
-        codegen_push_instr(state, asm_cvttsd2si(aoper_reg(REG_XMM15), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_data(state->dbl_to_uint_ub), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_cvttsd2si(aoper_reg(REG_XMM13), aoper_clone(dst), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_mov(aoper_imm(DBL_TO_UINT_UPPER_INT), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_binary(BOP_ADD, aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_label(label2, tac->loc));
@@ -844,7 +858,7 @@ static void codegen_uint_to_dbl(CodegenState *state, TacNode *tac)
 
     if (type->tag == AT_LONGWORD) {
         codegen_push_instr(state, asm_movzx(aoper_clone(src), aoper_reg(REG_RAX), tac->loc));
-        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_clone(type), tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
     } else {
         char *label1 = tmp_name("label");
         char *label2 = tmp_name("label");
@@ -856,14 +870,12 @@ static void codegen_uint_to_dbl(CodegenState *state, TacNode *tac)
         codegen_push_instr(state, asm_label(label1, tac->loc));
         codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
-        codegen_push_instr(state, asm_binary(BOP_RSHIFT, aoper_imm(1), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_unary(UOP_SHR, aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_binary(BOP_BITAND, aoper_imm(1), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_binary(BOP_BITOR, aoper_reg(REG_RAX), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RDX), aoper_clone(dst), asmtype_clone(type), tac->loc));
-        codegen_push_instr(state, asm_binary(BOP_ADD, aoper_clone(dst), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_ADD, aoper_clone(dst), aoper_clone(dst), asmtype_double(), tac->loc));
         codegen_push_instr(state, asm_label(label2, tac->loc));
-
-        
         
         safe_free(label1);
         safe_free(label2);
@@ -918,30 +930,29 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
     CodegenState funcstate = nested_state(state);
     list_clear(&funcstate.code);
 
-    Symbol *sym = stab_lookup(state->stab, func->name);
-    ICE_ASSERT(sym->type && sym->type->tag == TT_FUNC);
+    List ints;
+    List floats;
+    List stack;
+
+    codegen_classify_parameters(state, &func->parms, &ints, &floats, &stack);
 
     //
     // Move parameters into local pseudoregisters.
     //
-    int param_count = list_count(&func->parms);
-    int params_in_regs = param_count > int_arg_reg_count ? int_arg_reg_count : param_count;
-    int params_on_stack = param_count - params_in_regs;
 
     //
-    // Register based parameters.
+    // Integer register based parameters.
     //
-    ListNode *pcurr = func->parms.head;
-    ListNode *tcurr = sym->type->func.parms.head; 
+    ListNode *curr = ints.head;
 
-    for (
-        int i = 0; 
-        i < params_in_regs; 
-        i++, pcurr = pcurr->next, tcurr = tcurr->next) {
-        
-        TacFuncParam *param = CONTAINER_OF(pcurr, TacFuncParam, list);
-        Type *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list)->parmtype;
-        AsmType *at = codegen_type_to_asmtype(ptype);
+    for (int i = 0; curr; i++, curr = curr->next) {
+        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
+        ICE_ASSERT(param_node->tag == TAC_VAR);
+        TacVar *param = &param_node->var;
+
+        Symbol *sym = stab_lookup(state->stab, param->name);
+
+        AsmType *at = codegen_type_to_asmtype(sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
@@ -954,16 +965,41 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
     }
 
     //
+    // Float register based parameters.
+    //
+    curr = floats.head;
+    for (int i = 0; curr; i++, curr = curr->next) {
+        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
+        ICE_ASSERT(param_node->tag == TAC_VAR);
+        TacVar *param = &param_node->var;
+
+        Symbol *sym = stab_lookup(state->stab, param->name);
+
+        AsmType *at = codegen_type_to_asmtype(sym->type);
+        codegen_push_instr(
+            &funcstate,
+            asm_mov(
+                aoper_reg(float_arg_regs[i]),
+                aoper_pseudoreg(param->name),
+                at,
+                tac->loc
+            )
+        );
+    }
+
+    //
     // Stack based parameters.
     //
     int offset = 16;
-    for (
-        int i = 0; 
-        i < params_on_stack; 
-        i++, pcurr = pcurr->next, tcurr = tcurr->next) {
-        TacFuncParam *param = CONTAINER_OF(pcurr, TacFuncParam, list);
-        Type *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list)->parmtype;
-        AsmType *at = codegen_type_to_asmtype(ptype);
+    curr = stack.head;
+    for (int i = 0; curr; i++, curr = curr->next) {
+        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
+        ICE_ASSERT(param_node->tag == TAC_VAR);
+        TacVar *param = &param_node->var;
+
+        Symbol *sym = stab_lookup(state->stab, param->name);
+
+        AsmType *at = codegen_type_to_asmtype(sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
@@ -995,8 +1031,12 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
 {
     ICE_ASSERT(tac->tag == TAC_PROGRAM);
 
+    List statics;
+    list_clear(&statics);
+
     CodegenState state;
     list_clear(&state.code);
+    state.statics = &statics;
     state.stab = stab;
     state.bstab = bstab;
     state.neg_zero = NULL;
@@ -1012,6 +1052,8 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
             default: ICE_ASSERT(((void)"unexpected tag for top-level TAC node", false)); 
         }
     }
+
+    list_append(&state.code, state.statics->head);
 
     AsmNode *prog = asm_prog(state.code, tac->loc);
 

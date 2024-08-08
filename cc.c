@@ -67,6 +67,7 @@ typedef struct {
     bool print_stab;                    // if set, print the symbol table
     List includes;                      // list of <PathNode>; -I options from command line
     List non_c_source;                  // list of <PathNode>; non .c source, object, or libraries 
+    List libs;                          // list of <PathNode>; names of -l arguments
     char *srcfile;                      // name of source file
     char *prefile;                      // computed name of preprocessed file (.i)
     char *asmfile;                      // computed name of asm file (.s)
@@ -106,7 +107,7 @@ static Substage validate_substages[] = {
 //
 static void usage(void)
 {
-    fprintf(stderr, "cc: [-cv] [-Iinclude] [--lex | --parse | --validate | --codegen | --tacky]\n    [--keep] [--stab] [--line-no] srcfile [non-c-files]\n");
+    fprintf(stderr, "cc: [-cv] [-Iinclude] [-llib] [--lex | --parse | --validate | --codegen | --tacky]\n    [--keep] [--stab] [--line-no] srcfile [non-c-files]\n");
     exit(1);
 }
 
@@ -162,7 +163,7 @@ static char *replace_extension(char *fname, char *ext)
 }
 
 //
-// Append an include path to the argument list.
+// Append an include path to the includes list.
 //
 static void args_append_include_path(Args *args, char *path)
 {
@@ -171,11 +172,24 @@ static void args_append_include_path(Args *args, char *path)
     list_push_back(&args->includes, &node->list);
 }
 
+//
+// Append a non-C file to the non-c files list.
+//
 static void args_append_non_c_file(Args *args, char *file)
 {
     PathNode *node = safe_malloc(sizeof(PathNode));
     node->path = safe_strdup(file);
     list_push_back(&args->non_c_source, &node->list);
+}
+
+//
+// Append a library name to the libraries list.
+//
+static void args_append_lib(Args *args, char *lib)
+{
+    PathNode *node = safe_malloc(sizeof(PathNode));
+    node->path = safe_strdup(lib);
+    list_push_back(&args->libs, &node->list);
 }
 
 //
@@ -208,7 +222,7 @@ static void parse_args(int argc, char *argv[], Args *args)
 
     args->stage = STAGE_ALL;
 
-    while ((flag = getopt_long(argc, argv, "cI:v", long_opts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "cI:vl:", long_opts, NULL)) != -1) {
         switch (flag) {
             case 'c':
                 args->compile_only = true;
@@ -216,6 +230,10 @@ static void parse_args(int argc, char *argv[], Args *args)
 
             case 'I':
                 args_append_include_path(args, optarg);
+                break;
+
+            case 'l':
+                args_append_lib(args, optarg);
                 break;
 
             case 'v':
@@ -339,6 +357,7 @@ static void free_args(Args *args)
 {
     free_path_node_list(&args->includes);
     free_path_node_list(&args->non_c_source);
+    free_path_node_list(&args->libs);
     safe_free(args->srcfile);
     safe_free(args->prefile);
     safe_free(args->asmfile);
@@ -553,6 +572,11 @@ static int link_program(Args *args)
     for (ListNode *curr = args->non_c_source.head; curr; curr = curr->next) {
         PathNode *file = CONTAINER_OF(curr, PathNode, list);
         stb_printf(cmd, " %s", file->path);
+    }
+
+    for (ListNode *curr = args->libs.head; curr; curr = curr->next) {
+        PathNode *lib = CONTAINER_OF(curr, PathNode, list);
+        stb_printf(cmd, " -l%s", lib->path);
     }
 
     int status = run(args, cmd->str);

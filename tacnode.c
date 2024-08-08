@@ -55,15 +55,6 @@ TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLi
 }
 
 //
-// Free a TAC function parameter.
-//
-static void tac_func_parm_free(TacFuncParam *parm)
-{
-    safe_free(parm->name);
-    safe_free(parm);
-}
-
-//
 // Free a TAC function definition.
 //
 static void tac_function_def_free(TacFuncDef *funcdef)
@@ -73,8 +64,8 @@ static void tac_function_def_free(TacFuncDef *funcdef)
     for (ListNode *curr = funcdef->parms.head; curr; ) {
         ListNode *next = curr->next;
 
-        TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
-        tac_func_parm_free(parm);
+        TacNode *parm = CONTAINER_OF(curr, TacNode, list);
+        tac_free(parm);
 
         curr = next;
     }
@@ -594,8 +585,9 @@ static void tac_print_funcdef(TacFuncDef *funcdef, int tab, bool locs)
     printf("(");
 
     for (ListNode *curr = funcdef->parms.head; curr; curr = curr->next) {
-        TacFuncParam *parm = CONTAINER_OF(curr, TacFuncParam, list);
-        printf("%s", parm->name);
+        TacNode *parm = CONTAINER_OF(curr, TacNode, list);
+        ICE_ASSERT(parm->tag == TAC_VAR);
+        printf("%s", parm->var.name);
         if (curr->next) {
             printf(", ");
         }

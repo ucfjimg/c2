@@ -16,6 +16,7 @@ const char *uop_describe(UnaryOp uop)
         case UOP_PREDECREMENT:  return "(pre)--";
         case UOP_POSTINCREMENT: return "(post)++";
         case UOP_POSTDECREMENT: return "(post)--";
+        case UOP_SHR:           return ">>1";
     }
 
     return "<invalid-unary-op>";

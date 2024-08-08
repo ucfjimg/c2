@@ -645,6 +645,37 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 }
 
 //
+// Convert a constant to a type.
+//
+static Const ast_convert_const_to(Const *cn, Type *ty)
+{
+    Const out = *cn;
+
+    if (cn->tag == CON_INTEGRAL && ty->tag == TT_DOUBLE) {
+        out.tag = CON_FLOAT;
+        if (cn->intval.sign == CIS_SIGNED) {
+            out.floatval = (double)(long)cn->intval.value;
+        } else {
+            out.floatval = (double)cn->intval.value;
+        }
+    }
+
+    if (cn->tag == CON_FLOAT) {
+        switch (ty->tag) {
+            case TT_INT:    out = const_make_int(CIS_INT,  CIS_SIGNED,   (int)cn->floatval); break;
+            case TT_UINT:   out = const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned)cn->floatval); break;
+            case TT_LONG:   out = const_make_int(CIS_LONG, CIS_SIGNED,   (long)cn->floatval); break;
+            case TT_ULONG:  out = const_make_int(CIS_LONG, CIS_UNSIGNED, (unsigned long)cn->floatval); break;
+            case TT_DOUBLE: break;
+                
+            case TT_FUNC: ICE_ASSERT(((void)"cannot convert function in ast_convert_const_to", false));
+        }
+    }
+
+    return out;
+}
+
+//
 // Type check a file scope variable declaration.
 //
 static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
@@ -728,6 +759,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         type = type_clone(var->type);
     }
 
+    init = ast_convert_const_to(&init, type);
     sym_update_static_var(sym, type, siv, init, globally_visible, decl->loc);
 }
 
@@ -765,10 +797,12 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             }
             type_free(type);
         } else {
+            init = ast_convert_const_to(&init, type);
             sym_update_static_var(sym, type, SIV_NO_INIT, init, true, decl->loc);
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
+            init = ast_convert_const_to(&init, type);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
             switch (var->init->tag) {
@@ -781,6 +815,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
                 default:
                     err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
             }
+            init = ast_convert_const_to(&init, type);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }
     } else {

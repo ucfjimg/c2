@@ -787,10 +787,8 @@ static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
     for (ListNode *curr = func->func.parms.head; curr; curr = curr->next) {
         FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
 
-        TacFuncParam * tparm = safe_zalloc(sizeof(TacFuncParam));
-        tparm->name = safe_strdup(parm->name);
-
-        list_push_back(&parms, &tparm->list);
+        TacNode *var = tac_var(parm->name, loc);
+        list_push_back(&parms, &var->list);
     }
 
     TacState funcstate;

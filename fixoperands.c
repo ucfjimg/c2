@@ -38,6 +38,9 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
         (aoper_is_mem(mov->src) && aoper_is_mem(mov->dst)) ||
         (mov->src->tag == AOP_IMM && !imm_fits_in_int(mov->src->imm));
 
+    Register reg = mov->type->tag == AT_DOUBLE ? REG_XMM15 : REG_R10;
+
+    
     //
     // All pseudo-registers must have been replaced by the previous pass.
     //
@@ -45,10 +48,10 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
 
     if (needs_reg) {
         AsmType *at = asmtype_clone(mov->type);
-        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(REG_R10), at, movnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_clone(mov->src), aoper_reg(reg), at, movnode->loc)->list);
 
         at = asmtype_clone(mov->type);
-        list_push_back(code, &asm_mov(aoper_reg(REG_R10), aoper_clone(mov->dst), at, movnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(reg), aoper_clone(mov->dst), at, movnode->loc)->list);
 
         asm_free(movnode);
         return;
@@ -268,6 +271,30 @@ static void asm_fixop_shift(List *code, AsmNode *binopnode)
 }
 
 //
+// Fix floating point arith operators.
+//
+// - destination must be a register.
+//
+static void asm_fixop_float_arith(List *code, AsmNode *binopnode)
+{
+    ICE_ASSERT(binopnode->tag == ASM_BINARY);
+    AsmBinary *binop = &binopnode->binary;
+    FileLine loc = binopnode->loc;
+
+    if (binop->dst->tag != AOP_REG) {
+        AsmOperand *dst = binop->dst;
+        
+        binop->dst = aoper_reg(REG_XMM15);
+
+        list_push_back(code, &asm_mov(dst, aoper_reg(REG_XMM15), asmtype_double(), loc)->list);
+        list_push_back(code, &binopnode->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_XMM15), aoper_clone(dst), asmtype_double(), loc)->list);
+    } else {
+        list_push_back(code, &binopnode->list);
+    }
+}
+
+//
 // Fix operators for a binary operator instruction.
 //
 static void asm_fixop_binary(List *code, AsmNode *binopnode)
@@ -281,30 +308,69 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
     ICE_ASSERT(binop->src->tag != AOP_PSEUDOREG);
     ICE_ASSERT(binop->dst->tag != AOP_PSEUDOREG);
 
-    switch (binop->op) {
-        case BOP_ADD:
-        case BOP_SUBTRACT: 
-        case BOP_BITAND: 
-        case BOP_BITOR:
-        case BOP_BITXOR:
-            ast_fixup_binary_arith(code, binopnode);
-            break;
+    if (binop->type->tag == AT_DOUBLE) {
+        switch (binop->op) {
+            case BOP_ADD:
+            case BOP_SUBTRACT: 
+            case BOP_MULTIPLY:
+            case BOP_DIVIDE:
+            case BOP_DIVDBL:
+            case BOP_BITAND: 
+            case BOP_BITOR:
+            case BOP_BITXOR:
+                asm_fixop_float_arith(code, binopnode);
+                break;
 
-        case BOP_MULTIPLY:
-            asm_fixop_imul(code, binopnode);
-            break;
+            default:
+                list_push_back(code, &binopnode->list);
+                break;
+        }
+    } else {
+        switch (binop->op) {
+            case BOP_ADD:
+            case BOP_SUBTRACT: 
+            case BOP_BITAND: 
+            case BOP_BITOR:
+            case BOP_BITXOR:
+                ast_fixup_binary_arith(code, binopnode);
+                break;
 
-        case BOP_LSHIFT:
-        case BOP_RSHIFT:
-            asm_fixop_shift(code, binopnode);
-            break;
+            case BOP_MULTIPLY:
+                asm_fixop_imul(code, binopnode);
+                break;
 
-        default:
-            //
-            // Most operations need no fixup.
-            //
-            list_push_back(code, &binopnode->list);
+            case BOP_LSHIFT:
+            case BOP_RSHIFT:
+                asm_fixop_shift(code, binopnode);
+                break;
+
+            default:
+                //
+                // Most operations need no fixup.
+                //
+                list_push_back(code, &binopnode->list);
+                break;
+        }
     }
+}
+
+// 
+// Fix up a floating point (comisd) compare instruction.
+//
+// - Destination must be a register.
+//
+static void asm_fixop_comisd(List *code, AsmNode *cmpnode)
+{
+    ICE_ASSERT(cmpnode->tag == ASM_CMP);
+    AsmCmp *cmp = &cmpnode->cmp;
+    FileLine loc = cmpnode->loc;
+
+    if (cmp->right->tag != AOP_REG) {
+        list_push_back(code, &asm_mov(cmp->right, aoper_reg(REG_XMM15), asmtype_double(), loc)->list);
+        cmp->right = aoper_reg(REG_XMM15);
+    }
+
+    list_push_back(code, &cmpnode->list);
 }
 
 //
@@ -320,6 +386,11 @@ static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
     AsmCmp *cmp = &cmpnode->cmp;
     AsmType *at = cmp->type;
     FileLine loc = cmpnode->loc;
+
+    if (at->tag == AT_DOUBLE) {
+        asm_fixop_comisd(code, cmpnode);
+        return;
+    }
 
     bool both_mem = aoper_is_mem(cmp->left) && aoper_is_mem(cmp->right);
     bool left_imm = cmp->left->tag == AOP_IMM && !imm_fits_in_int(cmp->left->imm);

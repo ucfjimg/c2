@@ -43,20 +43,12 @@ typedef struct {
 } TacProgram;
 
 //
-// A function parameter.
-//
-typedef struct {
-    ListNode list;
-    char *name;                     // name of parameter
-} TacFuncParam;
-
-//
 // A function definition.
 //
 typedef struct {
     char *name;                     // name
     bool global;                    // is the function globally visible
-    List parms;                     // List<TacFuncParam> of parameters
+    List parms;                     // List<TacVar> of parameters
     List body;                      // list<TacNode> of instructions
 } TacFuncDef;
 

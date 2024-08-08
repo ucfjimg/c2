@@ -4,7 +4,6 @@
 #include "ice.h"
 #include "safemem.h"
 
-
 typedef enum {
     OS_BYTE = 1,
     OS_DWORD = 4,
@@ -43,7 +42,8 @@ static void type_to_operand_spec(AsmType *type, OperandSpec *spec)
             break;
 
         case AT_DOUBLE:
-            ICE_NYI("type_to_operand_spec::AT_DOUBLE");
+            spec->suffix = "sd";
+            spec->size = OS_QWORD;
             break;
     }
 }
@@ -201,8 +201,8 @@ static void emit_label(EmitState *state, const char *label)
 //
 static void emit_ret(EmitState *state)
 {
-    fprintf(state->out, "        movq %%rbp, %%rsp\n");
-    fprintf(state->out, "        popq %%rbp\n");
+    fprintf(state->out, "        movq\t%%rbp, %%rsp\n");
+    fprintf(state->out, "        popq\t%%rbp\n");
     fprintf(state->out, "        ret\n");
 }
 
@@ -229,7 +229,7 @@ static void emit_mov(EmitState *state, AsmMov *mov)
     OperandSpec spec;
     type_to_operand_spec(mov->type, &spec);
     
-    fprintf(state->out, "        mov%s ", spec.suffix);
+    fprintf(state->out, "        mov%s\t", spec.suffix);
     emit_asmoper(state, mov->src, spec.size);
     fprintf(state->out, ", ");
     emit_asmoper(state, mov->dst, spec.size);
@@ -241,7 +241,7 @@ static void emit_mov(EmitState *state, AsmMov *mov)
 //
 static void emit_movsx(EmitState *state, AsmMovsx *movsx)
 {
-    fprintf(state->out, "        movslq ");
+    fprintf(state->out, "        movslq\t");
     emit_asmoper(state, movsx->src, OS_DWORD);
     fprintf(state->out, ", ");
     emit_asmoper(state, movsx->dst, OS_QWORD);
@@ -262,12 +262,13 @@ static void emit_unary(EmitState *state, AsmUnary *unary)
         case UOP_PLUS:          return;
         case UOP_MINUS:         opcode = "neg"; break;
         case UOP_COMPLEMENT:    opcode = "not"; break;
+        case UOP_SHR:           opcode = "shr"; break;
 
         default:
             ICE_ASSERT(((void)"invalid unary opcode in emit_unary", false));
     }
 
-    fprintf(state->out, "        %s%s ", opcode, spec.suffix);
+    fprintf(state->out, "        %s%s\t", opcode, spec.suffix);
     emit_asmoper(state, unary->arg, spec.size);
     fprintf(state->out, "\n");
 }
@@ -291,6 +292,7 @@ static void emit_binary(EmitState *state, AsmBinary *binary)
         case BOP_BITAND:        opcode = "and"; break;
         case BOP_BITOR:         opcode = "or"; break;
         case BOP_BITXOR:        opcode = "xor"; break;
+        case BOP_DIVDBL:        opcode = "div"; break;
 
         //
         // NOTE idiv is handled as a special case.
@@ -299,13 +301,20 @@ static void emit_binary(EmitState *state, AsmBinary *binary)
             ICE_ASSERT(((void)"invalid binary opcode in emit_binary", false));
     }
 
-    fprintf(state->out, "        %s%s ", opcode, spec.suffix);
+    if (binary->type->tag == AT_DOUBLE && binary->op == BOP_BITXOR) {
+        fprintf(state->out, "        xorpd\t");
+    } else if (binary->type->tag == AT_DOUBLE && binary->op == BOP_MULTIPLY) {
+        fprintf(state->out, "        mulsd\t");
+    } else {
+        fprintf(state->out, "        %s%s\t", opcode, spec.suffix);
+    }
 
     if (binary->op == BOP_RSHIFT || binary->op == BOP_LSHIFT) {
         emit_asmoper(state, binary->src, OS_BYTE);
     } else {
         emit_asmoper(state, binary->src, spec.size);
     }
+
     fprintf(state->out, ", ");
     emit_asmoper(state, binary->dst, spec.size);
     fprintf(state->out, "\n");
@@ -319,7 +328,7 @@ static void emit_idiv(EmitState *state, AsmIdiv *idiv)
     OperandSpec spec;
     type_to_operand_spec(idiv->type, &spec);
 
-    fprintf(state->out, "        idiv%s ", spec.suffix);
+    fprintf(state->out, "        idiv%s\t", spec.suffix);
     emit_asmoper(state, idiv->arg, spec.size);
     fprintf(state->out, "\n");
 }
@@ -332,7 +341,7 @@ static void emit_div(EmitState *state, AsmDiv *div)
     OperandSpec spec;
     type_to_operand_spec(div->type, &spec);
 
-    fprintf(state->out, "        div%s ", spec.suffix);
+    fprintf(state->out, "        div%s\t", spec.suffix);
     emit_asmoper(state, div->arg, spec.size);
     fprintf(state->out, "\n");
 }
@@ -345,7 +354,11 @@ static void emit_cmp(EmitState *state, AsmCmp *cmp)
     OperandSpec spec;
     type_to_operand_spec(cmp->type, &spec);
 
-    fprintf(state->out, "        cmp%s ", spec.suffix);
+    if (cmp->type->tag == AT_DOUBLE) {
+        fprintf(state->out, "        comisd\t");
+    } else {
+        fprintf(state->out, "        cmp%s\t", spec.suffix);
+    }
     emit_asmoper(state, cmp->left, spec.size);
     fprintf(state->out, ", ");
     emit_asmoper(state, cmp->right, spec.size);
@@ -357,7 +370,7 @@ static void emit_cmp(EmitState *state, AsmCmp *cmp)
 //
 static void emit_jump(EmitState *state, AsmJump *jump)
 {
-    fprintf(state->out, "        jmp ");
+    fprintf(state->out, "        jmp\t");
     emit_label(state, jump->target);
     fprintf(state->out, "\n");
 }
@@ -367,7 +380,7 @@ static void emit_jump(EmitState *state, AsmJump *jump)
 //
 static void emit_jumpcc(EmitState *state, AsmJumpCc *jumpcc)
 {
-    fprintf(state->out, "        j%s ", acc_describe(jumpcc->cc));
+    fprintf(state->out, "        j%s\t", acc_describe(jumpcc->cc));
     emit_label(state, jumpcc->target);
     fprintf(state->out, "\n");
 }
@@ -377,7 +390,7 @@ static void emit_jumpcc(EmitState *state, AsmJumpCc *jumpcc)
 //
 static void emit_setcc(EmitState *state, AsmSetCc *setcc)
 {
-    fprintf(state->out, "        set%s ", acc_describe(setcc->cc));
+    fprintf(state->out, "        set%s\t", acc_describe(setcc->cc));
     emit_asmoper(state, setcc->dst, OS_BYTE);
     fprintf(state->out, "\n");
 }
@@ -396,7 +409,7 @@ static void emit_label_instr(EmitState *state, AsmLabel *label)
 //
 static void emit_stack_reserve(EmitState *state, AsmStackReserve *reserve)
 {
-    fprintf(state->out, "        subq $%d, %%rsp\n", reserve->bytes);
+    fprintf(state->out, "        subq\t$%d, %%rsp\n", reserve->bytes);
 }
 
 //
@@ -404,7 +417,7 @@ static void emit_stack_reserve(EmitState *state, AsmStackReserve *reserve)
 //
 static void emit_stack_free(EmitState *state, AsmStackFree *reserve)
 {
-    fprintf(state->out, "        addq $%d, %%rsp\n", reserve->bytes);
+    fprintf(state->out, "        addq\t$%d, %%rsp\n", reserve->bytes);
 }
 
 //
@@ -412,7 +425,7 @@ static void emit_stack_free(EmitState *state, AsmStackFree *reserve)
 //
 static void emit_push(EmitState *state, AsmPush *push)
 {
-    fprintf(state->out, "        push ");
+    fprintf(state->out, "        push\t");
     emit_asmoper(state, push->value, OS_QWORD);
     fprintf(state->out, "\n");
 }
@@ -423,9 +436,9 @@ static void emit_push(EmitState *state, AsmPush *push)
 static void emit_call(EmitState *state, AsmCall *call)
 {
 #ifdef __APPLE__
-    fprintf(state->out, "        call _%s\n", call->id);
+    fprintf(state->out, "        call\t_%s\n", call->id);
 #else
-    fprintf(state->out, "        call %s\n", call->id);
+    fprintf(state->out, "        call\t%s\n", call->id);
 #endif
 }
 
@@ -437,19 +450,19 @@ static void emit_function(EmitState *state, AsmFunction *func, FileLine *loc)
 {
 #ifdef __APPLE__
     if (func->global) {
-        fprintf(state->out, "        .globl _%s\n", func->name);
+        fprintf(state->out, "        .globl\t_%s\n", func->name);
     }
     fprintf(state->out, "        .text\n");
     fprintf(state->out, "_%s:\n", func->name);
 #else
     if (func->global) {   
-        fprintf(state->out, "        .globl %s\n", func->name);
+        fprintf(state->out, "        .globl\t%s\n", func->name);
     }
     fprintf(state->out, "        .text\n");
     fprintf(state->out, "%s:\n", func->name);
 #endif
-    fprintf(state->out, "        pushq %%rbp\n");
-    fprintf(state->out, "        movq %%rsp, %%rbp\n");
+    fprintf(state->out, "        pushq\t%%rbp\n");
+    fprintf(state->out, "        movq\t%%rsp, %%rbp\n");
 
     for (ListNode *curr = func->body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
@@ -465,27 +478,92 @@ void emit_static_var(EmitState *state, AsmStaticVar *var)
     BackEndSymbol *sym = bstab_lookup(state->bstab, var->name);
     ICE_ASSERT(sym->tag == BST_OBJECT);
     int size = asmtype_size(sym->object.type);
-    unsigned long val = var->init.intval.value;
 
     bool is_quad = size == 8;
 
     if (var->global) {
-        fprintf(state->out, "        .globl %s\n", var->name);        
+        fprintf(state->out, "        .globl\t%s\n", var->name);        
     }
 
-    if (val == 0) {
-        fprintf(state->out, "        .bss\n");
-        fprintf(state->out, "        .balign %d\n", var->alignment);
+    if (sym->object.type->tag == AT_DOUBLE) {
+        fprintf(state->out, "        .data\n");
+        fprintf(state->out, "        .balign\t%d\n", var->alignment);
         fprintf(state->out, "%s:\n", var->name);
-        fprintf(state->out, "        .zero %d\n", size);
+        fprintf(state->out, "        .double\t%.20g\n", var->init.floatval); 
+    } else if (var->init.intval.value == 0) {
+        fprintf(state->out, "        .bss\n");
+        fprintf(state->out, "        .balign\t%d\n", var->alignment);
+        fprintf(state->out, "%s:\n", var->name);
+        fprintf(state->out, "        .zero\t%d\n", size);
     } else {
         fprintf(state->out, "        .data\n");
-        fprintf(state->out, "        .balign %d\n", var->alignment);
+        fprintf(state->out, "        .balign\t%d\n", var->alignment);
         fprintf(state->out, "%s:\n", var->name);
-        fprintf(state->out, "        .%s %lu\n", 
+        fprintf(state->out, "        .%s\t%lu\n", 
             is_quad ? "quad" : "long",
             is_quad ? var->init.intval.value : (var->init.intval.value & 0xffffffff));
     }
+    fprintf(state->out, "        .text\n");
+}
+
+//
+// Emit a static constant.
+//
+void emit_static_const(EmitState *state, AsmStaticConst *cn)
+{
+    BackEndSymbol *sym = bstab_lookup(state->bstab, cn->name);
+    ICE_ASSERT(sym->tag == BST_OBJECT);
+    int size = asmtype_size(sym->object.type);
+
+    bool is_quad = size == 8;
+
+    fprintf(state->out, "        .section\t.rodata\n");
+    if (sym->object.type->tag == AT_DOUBLE) {
+        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
+        fprintf(state->out, "%s:\n", cn->name);
+        fprintf(state->out, "        .double\t%.20g\n", cn->init.floatval); 
+    } else if (cn->init.intval.value == 0) {
+        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
+        fprintf(state->out, "%s:\n", cn->name);
+        fprintf(state->out, "        .zero\t%d\n", size);
+    } else {
+        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
+        fprintf(state->out, "%s:\n", cn->name);
+        fprintf(state->out, "        .%s\t%lu\n", 
+            is_quad ? "quad" : "long",
+            is_quad ? cn->init.intval.value : (cn->init.intval.value & 0xffffffff));
+    }
+    fprintf(state->out, "        .text\n");
+}
+
+//
+// Emit a cvttsd2si instruction.
+//
+void emit_cvttsd2si(EmitState *state, AsmCvttsd2si *cvttsd2si)
+{
+    OperandSpec spec;
+    type_to_operand_spec(cvttsd2si->type, &spec);
+
+    fprintf(state->out, "        cvttsd2si%s\t", spec.suffix);
+    emit_asmoper(state, cvttsd2si->src, OS_QWORD);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, cvttsd2si->dst, spec.size);
+    fprintf(state->out, "\n");
+}
+
+//
+// Emit a cvtsi2sd instruction.
+//
+void emit_cvtsi2sd(EmitState *state, AsmCvtsi2sd *cvtsi2sd)
+{
+    OperandSpec spec;
+    type_to_operand_spec(cvtsi2sd->type, &spec);
+
+    fprintf(state->out, "        cvtsi2sd%s\t", spec.suffix);
+    emit_asmoper(state, cvtsi2sd->src, spec.size);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, cvtsi2sd->dst, OS_QWORD);
+    fprintf(state->out, "\n");
 }
 
 //
@@ -525,7 +603,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_PROG:          emit_program(state, &node->prog); break;
         case ASM_FUNC:          emit_function(state, &node->func, loc); break;
         case ASM_STATIC_VAR:    emit_static_var(state, &node->static_var); break;
-        case ASM_STATIC_CONST:  ICE_NYI("emitcode_recurse::ASM_STATIC_CONST"); 
+        case ASM_STATIC_CONST:  emit_static_const(state, &node->static_const); break;
         case ASM_STACK_RESERVE: emit_stack_reserve(state, &node->stack_reserve); break;
         case ASM_STACK_FREE:    emit_stack_free(state, &node->stack_free); break;
         case ASM_MOV:           emit_mov(state, &node->mov); break;
@@ -544,8 +622,8 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_DIV:           emit_div(state, &node->div); break;
         case ASM_PUSH:          emit_push(state, &node->push); break;
         case ASM_CALL:          emit_call(state, &node->call); break;
-        case ASM_CVTTSD2SI:     ICE_NYI("emitcode_recurse::cvttsd2si");
-        case ASM_CVTSI2SD:      ICE_NYI("emitcode_recurse::cvtsi2sd");
+        case ASM_CVTTSD2SI:     emit_cvttsd2si(state, &node->cvttsd2si); break;
+        case ASM_CVTSI2SD:      emit_cvtsi2sd(state, &node->cvtsi2sd); break;
     }
 }
 

@@ -11,6 +11,7 @@ typedef enum {
     UOP_PREDECREMENT,
     UOP_POSTINCREMENT,
     UOP_POSTDECREMENT,
+    UOP_SHR,                    // shift right by 1, unsigned
 } UnaryOp;
 
 typedef enum {
@@ -21,7 +22,7 @@ typedef enum {
     BOP_DIVDBL,
     BOP_MODULO,
     BOP_LSHIFT,
-    BOP_RSHIFT,
+    BOP_RSHIFT,                 // counted signed shift
     BOP_BITAND,
     BOP_BITOR,
     BOP_BITXOR,
