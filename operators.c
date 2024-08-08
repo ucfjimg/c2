@@ -31,6 +31,7 @@ const char *bop_describe(BinaryOp bop)
         case BOP_SUBTRACT:          return "-";
         case BOP_MULTIPLY:          return "*";
         case BOP_DIVIDE:            return "/";
+        case BOP_DIVDBL:            return "/.";
         case BOP_MODULO:            return "%";
         case BOP_LSHIFT:            return "<<";
         case BOP_RSHIFT:            return ">>";

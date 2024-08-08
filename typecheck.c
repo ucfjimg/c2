@@ -241,6 +241,8 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
         case BOP_MULTIPLY:
         case BOP_DIVIDE:        return ast_check_binary_promote(state, exp, false);
 
+        case BOP_DIVDBL:        ICE_NYI("ast_check_binary::BOP_DIVDBL");
+
         case BOP_MODULO:
         case BOP_BITAND:
         case BOP_BITOR:

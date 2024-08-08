@@ -339,6 +339,55 @@ static void asm_fixop_cmp(List *code, AsmNode *cmpnode)
 }
 
 //
+// Fix up a cvttsd2si instruction.
+//
+// - Destination must be a register.
+//
+static void asm_fixop_cvttsd2si(List *code, AsmNode *cvtnode)
+{
+    ICE_ASSERT(cvtnode->tag == ASM_CVTTSD2SI);
+    AsmCvttsd2si *cvt = &cvtnode->cvttsd2si;
+
+    if (cvt->dst->tag != AOP_REG) {
+        AsmOperand *dst = cvt->dst;
+        cvt->dst = aoper_reg(REG_R11);
+        list_push_back(code, &cvtnode->list);
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), dst, asmtype_clone(cvt->type), cvtnode->loc)->list);
+        return;
+    }
+    list_push_back(code, &cvtnode->list);
+}
+
+//
+// Fix up a cvtsi2sd instruction.
+//
+// - Source cannot be an immediate.
+// - Destination must be a register.
+//
+static void asm_fixop_cvtsi2sd(List *code, AsmNode *cvtnode)
+{
+    ICE_ASSERT(cvtnode->tag == ASM_CVTSI2SD);
+    AsmCvtsi2sd *cvt = &cvtnode->cvtsi2sd;
+    AsmOperand *dst = NULL;
+
+    if (cvt->src->tag == AOP_IMM) {
+        list_push_back(code, &asm_mov(cvt->src, aoper_reg(REG_R10), asmtype_clone(cvt->type), cvtnode->loc)->list);
+        cvt->src = aoper_reg(REG_R10);
+    }
+
+    if (aoper_is_mem(cvt->dst)) {
+        dst = cvt->dst;
+        cvt->dst = aoper_reg(REG_XMM15);
+    }
+
+    list_push_back(code, &cvtnode->list);
+
+    if (dst) {
+        list_push_back(code, &asm_mov(aoper_reg(REG_XMM15), dst, asmtype_double(), cvtnode->loc)->list);
+    }
+}
+
+//
 // Fix instructions in a function.
 //
 static void asm_fixop_func(AsmNode *func)
@@ -375,6 +424,9 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
             case ASM_CMP:       asm_fixop_cmp(&newcode, node); break;
 
+            case ASM_CVTTSD2SI: asm_fixop_cvttsd2si(&newcode, node); break;
+            case ASM_CVTSI2SD:  asm_fixop_cvtsi2sd(&newcode, node); break;
+
             case ASM_PUSH:
             case ASM_CALL:
             case ASM_PROG:
@@ -389,6 +441,7 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_STACK_RESERVE:
             case ASM_STACK_FREE:
             case ASM_STATIC_VAR:
+            case ASM_STATIC_CONST:
                 //
                 // instructions which need no modification
                 //

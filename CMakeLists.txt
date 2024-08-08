@@ -31,6 +31,7 @@ add_executable(cc
     tacgen.c
     tacnode.c
     target.c
+    temporary.c
     token.c
     type.c
     typecheck.c

@@ -3,11 +3,18 @@
 #include "asm-ast.h"
 #include "ice.h"
 #include "list.h"
+#include "safemem.h"
 #include "symtab.h"
+#include "temporary.h"
+
+#include <ctype.h>
 
 typedef struct {
     List code;
+    BackEndSymbolTable *bstab;
     SymbolTable *stab;
+    char *neg_zero;
+    char *dbl_to_uint_ub;
 } CodegenState;
 
 static Register int_arg_regs[] =
@@ -20,6 +27,22 @@ static Register int_arg_regs[] =
     REG_R9,
 };
 static const int int_arg_reg_count = sizeof(int_arg_regs) / sizeof(int_arg_regs[0]);
+
+static Register float_arg_regs[] =
+{
+    REG_XMM0,
+    REG_XMM1,
+    REG_XMM2,
+    REG_XMM3,
+    REG_XMM4,
+    REG_XMM5,
+    REG_XMM6,
+    REG_XMM7,
+};
+static const int float_arg_reg_count = sizeof(float_arg_regs) / sizeof(float_arg_regs[0]);
+
+#define DBL_TO_UINT_UPPER_FLT 9223372036854775808.0
+#define DBL_TO_UINT_UPPER_INT 9223372036854775808lu
 
 //
 // Create a nested state.
@@ -50,6 +73,32 @@ static bool codegen_operand_unsigned(CodegenState *state, TacNode *tac)
     return false;
 }
 
+// Return true if the given TAC operand is a float.
+//
+// The TAC node must either be a variable or a constant.
+//
+static bool codegen_operand_float(CodegenState *state, TacNode *tac)
+{
+    //
+    // If it's a constant, the type is specified.
+    //
+    if (tac->tag == TAC_CONST) {
+        return tac->constant.tag == CON_FLOAT;
+    }
+
+    //
+    // If it's a variable, look it up in the symbol 
+    // table to see what type it is.
+    //
+    if (tac->tag == TAC_VAR) {
+        Symbol *sym = stab_lookup(state->stab, tac->var.name);
+        return sym->type->tag == TT_DOUBLE;
+    }
+
+    ICE_ASSERT(((void)"TAC node in codegen_operand_float was not an operand.", false));
+    return false;
+}
+
 //
 // Push an assembly instruction onto a code list.
 //
@@ -72,7 +121,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();
-        case TT_DOUBLE:     ICE_NYI("codegen_type_to_asmtype::TT_DOUBLE");
+        case TT_DOUBLE:     return asmtype_double();
         case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
     }
     
@@ -100,7 +149,8 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
                 }
                 break;
 
-            case CON_FLOAT: ICE_NYI("codegen_type_to_asmtype::CON_FLOAT");
+            case CON_FLOAT: 
+                return asmtype_double();
         }
     }
 
@@ -117,6 +167,7 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
     return asmtype_long();
 }
 
+//
 //
 // Return the alignment for a static variable.
 //
@@ -137,11 +188,46 @@ static int codegen_align(Const *init)
 }
 
 //
+// Create a labeled floating point literal and return the allocated label.
+//
+static char *codegen_float_literal(CodegenState *state, double floatval, int align, FileLine loc)
+{
+    char *val = saprintf("float_%g", floatval);
+    for (char *p = val; *p; p++) {
+        //
+        // Make value safe as a label
+        //
+        if (!(isalpha(*p) || isdigit(*p) || *p == '_' || *p == '.')) {
+            *p = '_';
+        }
+    }
+
+    char *label = tmp_name(val);
+    safe_free(val);
+
+    codegen_push_instr(state, asm_static_const(label, align, const_make_double(floatval), loc));
+
+    BackEndSymbol *sym = bstab_lookup(state->bstab, label);
+    sym->tag = BST_OBJECT;
+    sym->object.type = asmtype_double();
+    sym->object.is_static = true;
+    sym->object.is_literal = true;
+
+    return label;
+}
+
+//
 // Generate code for a constant.
 //
 static AsmOperand *codegen_constant(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_CONST);
+    
+    if (tac->constant.tag == CON_FLOAT) {
+        char *label = codegen_float_literal(state, tac->constant.floatval, 8, tac->loc);
+        return aoper_data(label);
+    }
+
     return aoper_imm(tac->constant.intval.value);
 }
 
@@ -176,26 +262,68 @@ static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac)
 }
 
 //
+// Generate code for a unary not operator.
+//
+static void codegen_unary_not(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_UNARY);
+    ICE_ASSERT(tac->unary.op == UOP_LOGNOT);
+
+    AsmOperand *src = codegen_expression(state, tac->unary.src);
+    AsmOperand *dst = codegen_expression(state, tac->unary.dst);
+
+    AsmType *srctype = codegen_tac_to_asmtype(state, tac->unary.src);
+    AsmType *dsttype = codegen_tac_to_asmtype(state, tac->unary.dst);
+
+    if (srctype->tag == AT_DOUBLE) {
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), src, srctype, tac->loc));
+    } else {
+        codegen_push_instr(state, asm_cmp(aoper_imm(0), src, srctype, tac->loc));
+    }
+
+    codegen_push_instr(state, asm_mov(aoper_imm(0), dst, dsttype, tac->loc));
+    codegen_push_instr(state, asm_setcc(aoper_clone(dst), ACC_E, tac->loc));
+}
+
+//
+// Generate code for a unary negation on floating point.
+//
+static void codegen_unary_neg_float(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_UNARY);
+    ICE_ASSERT(tac->unary.op == UOP_MINUS);
+
+    AsmOperand *src = codegen_expression(state, tac->unary.src);
+    AsmOperand *dst = codegen_expression(state, tac->unary.dst);
+
+    if (state->neg_zero == NULL) {
+        state->neg_zero = codegen_float_literal(state, -0.0, 16, tac->loc);
+    }
+
+    codegen_push_instr(state, asm_mov(src, dst, asmtype_double(), tac->loc));
+    codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_data(state->neg_zero), aoper_clone(dst), asmtype_double(), tac->loc));
+}
+
+//
 // Generate code for a unary operator.
 //
 static void codegen_unary(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_UNARY);
 
-    AsmOperand *src = codegen_expression(state, tac->unary.src);
-    AsmOperand *dst = codegen_expression(state, tac->unary.dst);
-
-
     if (tac->unary.op == UOP_LOGNOT) {
-        AsmType *srctype = codegen_tac_to_asmtype(state, tac->unary.src);
-        AsmType *dsttype = codegen_tac_to_asmtype(state, tac->unary.dst);
-
-        codegen_push_instr(state, asm_cmp(aoper_imm(0), src, srctype, tac->loc));
-        codegen_push_instr(state, asm_mov(aoper_imm(0), dst, dsttype, tac->loc));
-        codegen_push_instr(state, asm_setcc(aoper_clone(dst), ACC_E, tac->loc));
-
+        codegen_unary_not(state, tac);
         return;
     }
+
+    if (tac->unary.op == UOP_MINUS && codegen_operand_float(state, tac->unary.dst)) {
+        codegen_unary_neg_float(state, tac);
+        return;
+    }
+
+    AsmOperand *src = codegen_expression(state, tac->unary.src);
+    AsmOperand *dst = codegen_expression(state, tac->unary.dst);
 
     AsmType *srctype = codegen_tac_to_asmtype(state, tac->unary.src);
     AsmType *dsttype = codegen_tac_to_asmtype(state, tac->unary.dst);
@@ -211,8 +339,9 @@ static void codegen_relational(CodegenState *state, TacNode *tac)
     AsmConditionCode cc = ACC_E;
 
     bool is_unsigned = codegen_operand_unsigned(state, tac->binary.left);
+    bool is_float = codegen_operand_float(state, tac->binary.left);
 
-    if (is_unsigned) {
+    if (is_unsigned || is_float) {
         switch (tac->binary.op) {
             case BOP_EQUALITY:      cc = ACC_E; break;
             case BOP_NOTEQUAL:      cc = ACC_NE; break;
@@ -251,6 +380,58 @@ static void codegen_relational(CodegenState *state, TacNode *tac)
 }
 
 //
+// Generate code for an integer divide (or modulo) operation.
+//
+static void codegen_int_div(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_BINARY);
+    ICE_ASSERT(tac->binary.op == BOP_DIVIDE || tac->binary.op == BOP_MODULO);
+
+    bool is_unsigned = codegen_operand_unsigned(state, tac->binary.left);
+    AsmType *lefttype = codegen_tac_to_asmtype(state, tac->binary.left);
+
+    AsmOperand *left = codegen_expression(state, tac->binary.left);
+    AsmOperand *right = codegen_expression(state, tac->binary.right);
+    AsmOperand *dst = codegen_expression(state, tac->binary.dst);
+
+    codegen_push_instr(state, asm_mov(left, aoper_reg(REG_RAX), lefttype, tac->loc));
+    if (is_unsigned) {
+        lefttype = asmtype_clone(lefttype);
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_RDX), aoper_reg(REG_RDX), lefttype, tac->loc));
+        lefttype = asmtype_clone(lefttype);
+        codegen_push_instr(state, asm_div(right, lefttype, tac->loc));
+    } else {
+        lefttype = asmtype_clone(lefttype);
+        codegen_push_instr(state, asm_cdq(lefttype, tac->loc));
+        lefttype = asmtype_clone(lefttype);
+        codegen_push_instr(state, asm_idiv(right, lefttype, tac->loc));
+    }
+
+    //
+    // div/idiv return quotient in AX, remainder in DX
+    //
+    Register dstreg = tac->binary.op == BOP_DIVIDE ? REG_RAX : REG_RDX;
+    AsmType *dsttype = codegen_tac_to_asmtype(state, tac->binary.left);
+    codegen_push_instr(state, asm_mov(aoper_reg(dstreg), dst, dsttype, tac->loc));
+}
+
+//
+// Generate code for a floating point divide.
+//
+static void codegen_float_div(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_BINARY);
+    ICE_ASSERT(tac->binary.op == BOP_DIVIDE);   // NOTE: no modulo in floating point.
+
+    AsmOperand *left = codegen_expression(state, tac->binary.left);
+    AsmOperand *right = codegen_expression(state, tac->binary.right);
+    AsmOperand *dst = codegen_expression(state, tac->binary.dst);
+
+    codegen_push_instr(state, asm_mov(left, dst, asmtype_double(), tac->loc));
+    codegen_push_instr(state, asm_binary(BOP_DIVDBL, right, aoper_clone(dst), asmtype_double(), tac->loc));
+}
+
+//
 // Generate code for a binary operator.
 //
 static void codegen_binary(CodegenState *state, TacNode *tac)
@@ -262,36 +443,18 @@ static void codegen_binary(CodegenState *state, TacNode *tac)
         return;
     }
 
+    if (tac->binary.op == BOP_DIVIDE || tac->binary.op == BOP_MODULO) {
+        if (codegen_operand_float(state, tac->binary.dst)) {
+            codegen_float_div(state, tac);
+        } else {
+            codegen_int_div(state, tac);
+        }
+        return;
+    }
+
     AsmOperand *left = codegen_expression(state, tac->binary.left);
     AsmOperand *right = codegen_expression(state, tac->binary.right);
     AsmOperand *dst = codegen_expression(state, tac->binary.dst);
-
-    if (tac->binary.op == BOP_DIVIDE || tac->binary.op == BOP_MODULO) {
-        bool is_unsigned = codegen_operand_unsigned(state, tac->binary.left);
-        AsmType *lefttype = codegen_tac_to_asmtype(state, tac->binary.left);
-
-        codegen_push_instr(state, asm_mov(left, aoper_reg(REG_RAX), lefttype, tac->loc));
-        if (is_unsigned) {
-            lefttype = asmtype_clone(lefttype);
-            codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_RDX), aoper_reg(REG_RDX), lefttype, tac->loc));
-            lefttype = asmtype_clone(lefttype);
-            codegen_push_instr(state, asm_div(right, lefttype, tac->loc));
-        } else {
-            lefttype = asmtype_clone(lefttype);
-            codegen_push_instr(state, asm_cdq(lefttype, tac->loc));
-            lefttype = asmtype_clone(lefttype);
-            codegen_push_instr(state, asm_idiv(right, lefttype, tac->loc));
-        }
-
-        //
-        // div/idiv return quotient in AX, remainder in DX
-        //
-        Register dstreg = tac->binary.op == BOP_DIVIDE ? REG_RAX : REG_RDX;
-        AsmType *dsttype = codegen_tac_to_asmtype(state, tac->binary.left);
-        codegen_push_instr(state, asm_mov(aoper_reg(dstreg), dst, dsttype, tac->loc));
-
-        return;
-    }
 
     AsmType *dsttype = codegen_tac_to_asmtype(state, tac->binary.left);
     codegen_push_instr(state, asm_mov(left, dst, dsttype, tac->loc));
@@ -310,7 +473,12 @@ static void codegen_return(CodegenState *state, TacNode *tac)
     AsmOperand *retval = codegen_expression(state, tac->ret.val);
 
     AsmType *rettype = codegen_tac_to_asmtype(state, tac->ret.val);
-    codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), rettype, tac->loc));
+
+    if (rettype->tag == AT_DOUBLE) {
+        codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_XMM0), rettype, tac->loc));
+    } else {
+        codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), rettype, tac->loc));
+    }
     codegen_push_instr(state, asm_ret(tac->loc));
 }
 
@@ -334,7 +502,12 @@ static void codegen_jump_zero(CodegenState *state, TacNode *tac)
     AsmOperand *cond = codegen_expression(state, tac->jump_zero.condition);
     AsmType *condtype = codegen_tac_to_asmtype(state, tac->jump_zero.condition);
 
-    codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
+    if (condtype->tag == AT_DOUBLE) {
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), condtype, tac->loc));
+        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), cond, asmtype_clone(condtype), tac->loc));
+    } else {
+        codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
+    }
     codegen_push_instr(state, asm_jumpcc(tac->jump_zero.target, ACC_E, tac->loc));
 }
 
@@ -348,7 +521,12 @@ static void codegen_jump_not_zero(CodegenState *state, TacNode *tac)
     AsmOperand *cond = codegen_expression(state, tac->jump_not_zero.condition);
     AsmType *condtype = codegen_tac_to_asmtype(state, tac->jump_not_zero.condition);
 
-    codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
+    if (condtype->tag == AT_DOUBLE) {
+        codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_reg(REG_XMM15), aoper_reg(REG_XMM15), condtype, tac->loc));
+        codegen_push_instr(state, asm_cmp(aoper_reg(REG_XMM15), cond, asmtype_clone(condtype), tac->loc));
+    } else {
+        codegen_push_instr(state, asm_cmp(aoper_imm(0), cond, condtype, tac->loc));
+    }
     codegen_push_instr(state, asm_jumpcc(tac->jump_zero.target, ACC_NE, tac->loc));
 }
 
@@ -377,6 +555,47 @@ static void codegen_label(CodegenState *state, TacNode *tac)
 }
 
 //
+// Given a list of TAC operand nodes, partition the list into new lists based on
+// parameter passing conventions.
+//
+// - First 6 integer operands go into integer registers.
+// - First 8 float operands go into XMM registers.
+// - Remaining operands go onto the stack.
+//
+// The original list will be destroyed.
+//
+static void codegen_classify_parameters(CodegenState *state, List *nodes, List *ints, List *floats, List *stack)
+{
+    int nints = 0;
+    int nfloats = 0;
+
+    list_clear(ints);
+    list_clear(floats);
+    list_clear(stack);
+
+    ListNode *next = NULL;
+    for (ListNode *curr = nodes->head; curr; curr = next) {
+        next = curr->next;
+
+        TacNode *parm = CONTAINER_OF(curr, TacNode, list);
+
+        if (nfloats < float_arg_reg_count && codegen_operand_float(state, parm)) {
+            list_push_back(floats, curr);
+            nfloats++;
+            continue;
+        }
+
+        if (nints < int_arg_reg_count && !codegen_operand_float(state, parm)) {
+            list_push_back(ints, curr);
+            nints++;
+            continue;
+        }
+
+        list_push_back(stack, curr);
+    }
+}
+
+//
 // Generate code for a function call.
 //
 // The stack pointer on entry is guaranteed to be 16-byte aligned; it must
@@ -391,9 +610,11 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     ICE_ASSERT(tac->tag == TAC_FUNCTION_CALL);
     TacFunctionCall *call = &tac->call;
 
-    int arg_count = list_count(&call->args);
-    int args_in_regs = arg_count < int_arg_reg_count ? arg_count : int_arg_reg_count;
-    int args_on_stack = arg_count - args_in_regs;
+    List ints, floats, stack;
+
+    codegen_classify_parameters(state, &call->args, &ints, &floats, &stack);
+
+    int args_on_stack = list_count(&stack);
 
     //
     // We push 8-byte arguments on the stack, but the stack pointer must stay 
@@ -407,11 +628,23 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     }
 
     //
-    // Load register arguments.
+    // Load integer register arguments.
     //
-    ListNode *curr = call->args.head;
-    for (int i = 0; i < args_in_regs; i++, curr = curr->next) {
+    ListNode *curr = ints.head;
+    for (int i = 0; curr; i++, curr = curr->next) {
         Register arg_reg = int_arg_regs[i];
+        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
+        AsmOperand *arg = codegen_expression(state, tac_arg);
+        AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
+        codegen_push_instr(state, asm_mov(arg, aoper_reg(arg_reg), argtype, tac->loc));
+    }
+
+    //
+    // Load floating point register arguments.
+    //
+    curr = floats.head;
+    for (int i = 0; curr; i++, curr = curr->next) {
+        Register arg_reg = float_arg_regs[i];
         TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
         AsmOperand *arg = codegen_expression(state, tac_arg);
         AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
@@ -421,15 +654,19 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     //
     // Push stack args.
     //
-    list_reverse(&call->args);
+    list_reverse(&stack);
 
-    curr = call->args.head;
+    curr = stack.head;
     for (int i = 0; i < args_on_stack; i++, curr = curr->next) {
         TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
         AsmOperand *arg = codegen_expression(state, tac_arg);
         AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
-        codegen_push_instr(state, asm_mov(arg, aoper_reg(REG_RAX), argtype, tac->loc));
-        codegen_push_instr(state, asm_push(aoper_reg(REG_RAX), tac->loc));
+        if (argtype->tag == AT_QUADWORD || argtype->tag == AT_DOUBLE) {
+            codegen_push_instr(state, asm_push(arg, tac->loc));
+        } else {
+            codegen_push_instr(state, asm_mov(arg, aoper_reg(REG_RAX), argtype, tac->loc));
+            codegen_push_instr(state, asm_push(aoper_reg(REG_RAX), tac->loc));
+        }
     }
 
     //
@@ -516,6 +753,128 @@ static void codegen_truncate(CodegenState *state, TacNode *decl)
 }
 
 //
+// Generate code to convert a double to an integer.
+//
+static void codegen_dbl_to_int(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_DOUBLE_TO_INT); 
+
+    AsmOperand *src = codegen_expression(state, tac->dbl_to_int.src);
+    AsmOperand *dst = codegen_expression(state, tac->dbl_to_int.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->dbl_to_int.dst);
+
+    codegen_push_instr(state,
+        asm_cvttsd2si(src, dst, type, tac->loc)
+    );
+}
+
+//
+// Generate code to convert a double to an unsigned integer.
+//
+static void codegen_dbl_to_uint(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_DOUBLE_TO_UINT); 
+
+    AsmOperand *src = codegen_expression(state, tac->dbl_to_uint.src);
+    AsmOperand *dst = codegen_expression(state, tac->dbl_to_uint.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->dbl_to_uint.dst);
+
+    if (type->tag == AT_LONGWORD) {
+        codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_reg(REG_RAX), asmtype_clone(type), tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_long(), tac->loc));
+    } else {
+        if (state->dbl_to_uint_ub == NULL) {
+            state->dbl_to_uint_ub = codegen_float_literal(state, DBL_TO_UINT_UPPER_FLT, 16, tac->loc);
+        }
+
+        char *label1 = tmp_name("label");
+        char *label2 = tmp_name("label");
+
+        //
+        // This algorithm avoids rounding error in the conversion by adjusting the
+        // value to convert if it's over the max that can be represented in a signed long.
+        //
+        codegen_push_instr(state, asm_cmp(aoper_clone(src), aoper_data(state->dbl_to_uint_ub), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_jumpcc(label1, ACC_AE, tac->loc));
+        codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_jump(label2, tac->loc));
+        codegen_push_instr(state, asm_label(label1, tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_data(state->dbl_to_uint_ub), aoper_reg(REG_XMM15), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_cvttsd2si(aoper_reg(REG_XMM15), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_imm(DBL_TO_UINT_UPPER_INT), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_ADD, aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_label(label2, tac->loc));
+        
+        safe_free(label1);
+        safe_free(label2);
+    }
+
+    asmtype_free(type);
+    aoper_free(src);
+    aoper_free(dst);
+}
+
+//
+// Generate code to convert an integer to a double.
+//
+static void codegen_int_to_dbl(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_INT_TO_DOUBLE); 
+
+    AsmOperand *src = codegen_expression(state, tac->int_to_dbl.src);
+    AsmOperand *dst = codegen_expression(state, tac->int_to_dbl.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->int_to_dbl.src);
+
+    codegen_push_instr(state,
+        asm_cvtsi2sd(src, dst, type, tac->loc)
+    );
+}
+
+//
+// Generate code to convert an unsigned integer to a double.
+//
+static void codegen_uint_to_dbl(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_UINT_TO_DOUBLE); 
+
+    AsmOperand *src = codegen_expression(state, tac->uint_to_dbl.src);
+    AsmOperand *dst = codegen_expression(state, tac->uint_to_dbl.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->uint_to_dbl.src);
+
+    if (type->tag == AT_LONGWORD) {
+        codegen_push_instr(state, asm_movzx(aoper_clone(src), aoper_reg(REG_RAX), tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_clone(type), tac->loc));
+    } else {
+        char *label1 = tmp_name("label");
+        char *label2 = tmp_name("label");
+
+        codegen_push_instr(state, asm_cmp(aoper_imm(0), aoper_clone(src), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_jumpcc(label1, ACC_L, tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_clone(src), aoper_clone(dst), asmtype_clone(type), tac->loc));
+        codegen_push_instr(state, asm_jump(label2, tac->loc));
+        codegen_push_instr(state, asm_label(label1, tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_RSHIFT, aoper_imm(1), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_BITAND, aoper_imm(1), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_BITOR, aoper_reg(REG_RAX), aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RDX), aoper_clone(dst), asmtype_clone(type), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_ADD, aoper_clone(dst), aoper_clone(dst), asmtype_quad(), tac->loc));
+        codegen_push_instr(state, asm_label(label2, tac->loc));
+
+        
+        
+        safe_free(label1);
+        safe_free(label2);
+    }
+
+    asmtype_free(type);
+    aoper_free(src);
+    aoper_free(dst);
+}
+
+//
 // Generate code for a single instruction.
 //
 static void codegen_single(CodegenState *state, TacNode *tac)
@@ -536,10 +895,10 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_ZERO_EXTEND:       codegen_zero_extend(state, tac); break;
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
 
-        case TAC_DOUBLE_TO_INT:     ICE_NYI("codegen_single::double-to-int");
-        case TAC_DOUBLE_TO_UINT:    ICE_NYI("codegen_single::double-to-uint");
-        case TAC_INT_TO_DOUBLE:     ICE_NYI("codegen_single::int-to-double");
-        case TAC_UINT_TO_DOUBLE:    ICE_NYI("codegen_single::uint-to-double");
+        case TAC_DOUBLE_TO_INT:     codegen_dbl_to_int(state, tac); break;
+        case TAC_DOUBLE_TO_UINT:    codegen_dbl_to_uint(state, tac); break;
+        case TAC_INT_TO_DOUBLE:     codegen_int_to_dbl(state, tac); break;
+        case TAC_UINT_TO_DOUBLE:    codegen_uint_to_dbl(state, tac); break;
 
         case TAC_PROGRAM:           break;
         case TAC_CONST:             break;
@@ -632,13 +991,16 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 //
 // Generate code from the AST.
 //
-AsmNode *codegen(TacNode *tac, SymbolTable *stab)
+AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
 {
     ICE_ASSERT(tac->tag == TAC_PROGRAM);
 
     CodegenState state;
     list_clear(&state.code);
     state.stab = stab;
+    state.bstab = bstab;
+    state.neg_zero = NULL;
+    state.dbl_to_uint_ub = NULL;
 
     for (ListNode *curr = tac->prog.decls.head; curr; curr = curr->next) {
         TacNode *decl = CONTAINER_OF(curr, TacNode, list);
@@ -651,7 +1013,12 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab)
         }
     }
 
-    return asm_prog(state.code, tac->loc);
+    AsmNode *prog = asm_prog(state.code, tac->loc);
+
+    safe_free(state.dbl_to_uint_ub);
+    safe_free(state.neg_zero);
+
+    return prog;
 }
 
 //
@@ -691,11 +1058,9 @@ void codegen_local_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
 // Allocate a back end symbol table an populate it from the front end
 // symbol table.
 // 
-BackEndSymbolTable *codegen_sym_to_backsym(SymbolTable *stab)
+void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
 {
     HashIterator iter;
-
-    BackEndSymbolTable *bstab = bstab_alloc();
 
     for (HashNode *curr = hashtab_first(stab->hashtab, &iter); curr; curr = hashtab_next(&iter)) {
         Symbol *sym = CONTAINER_OF(curr, Symbol, hash);        
@@ -709,7 +1074,5 @@ BackEndSymbolTable *codegen_sym_to_backsym(SymbolTable *stab)
         }
 
     }
-
-    return bstab;
 }
 

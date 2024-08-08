@@ -1,3 +1,18 @@
 {
-    "longs.c": "lex:success"
+    "longs.c": "lex:success",
+    "and-double.c": "codegen:success",
+    "double-to-int.c": "codegen:success",
+    "double-to-uint.c": "codegen:success",
+    "double-to-ulong.c": "codegen:success",
+    "doublediv.c": "codegen:success",
+    "if-float-2.c": "codegen:success",
+    "if-float.c": "codegen:success",
+    "int-to-double.c": "codegen:success",
+    "longs.c": "codegen:success",
+    "or-double.c": "codegen:success",
+    "ret-double.c": "codegen:success",
+    "uint-to-double.c": "codegen:success",
+    "ulong-to-double.c": "codegen:success",
+    "unary-neg-double.c": "codegen:success",
+    "unary-not-double.c": "codegen:success"
 }

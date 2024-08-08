@@ -4,6 +4,7 @@
 #include "errors.h"
 #include "ice.h"
 #include "list.h"
+#include "temporary.h"
 
 typedef struct {
     int break_label;
@@ -19,8 +20,7 @@ static void ast_label_block(LabelState state, List items);
 //
 static int ast_alloc_loop_label(void)
 {
-    static int next_label = 0;
-    return next_label++;
+    return tmp_alloc_id();
 }
 
 //

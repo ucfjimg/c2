@@ -41,6 +41,10 @@ static void type_to_operand_spec(AsmType *type, OperandSpec *spec)
             spec->suffix = "q";
             spec->size = OS_QWORD;
             break;
+
+        case AT_DOUBLE:
+            ICE_NYI("type_to_operand_spec::AT_DOUBLE");
+            break;
     }
 }
 
@@ -51,29 +55,61 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
 {
     if (os == OS_QWORD) {
         switch (reg) {
-            case REG_RAX: fprintf(state->out, "%%rax"); break;
-            case REG_RCX: fprintf(state->out, "%%rcx"); break;
-            case REG_RDX: fprintf(state->out, "%%rdx"); break;
-            case REG_RDI: fprintf(state->out, "%%rdi"); break;
-            case REG_RSI: fprintf(state->out, "%%rsi"); break;
-            case REG_R8:  fprintf(state->out, "%%r8"); break;
-            case REG_R9:  fprintf(state->out, "%%r9"); break;
-            case REG_R10: fprintf(state->out, "%%r10"); break;
-            case REG_R11: fprintf(state->out, "%%r11"); break;
-            case REG_RSP: fprintf(state->out, "%%rsp"); break;
+            case REG_RAX:   fprintf(state->out, "%%rax"); break;
+            case REG_RCX:   fprintf(state->out, "%%rcx"); break;
+            case REG_RDX:   fprintf(state->out, "%%rdx"); break;
+            case REG_RDI:   fprintf(state->out, "%%rdi"); break;
+            case REG_RSI:   fprintf(state->out, "%%rsi"); break;
+            case REG_R8:    fprintf(state->out, "%%r8"); break;
+            case REG_R9:    fprintf(state->out, "%%r9"); break;
+            case REG_R10:   fprintf(state->out, "%%r10"); break;
+            case REG_R11:   fprintf(state->out, "%%r11"); break;
+            case REG_RSP:   fprintf(state->out, "%%rsp"); break;
+            case REG_XMM0:  fprintf(state->out, "%%xmm0"); break;
+            case REG_XMM1:  fprintf(state->out, "%%xmm1"); break;
+            case REG_XMM2:  fprintf(state->out, "%%xmm2"); break;
+            case REG_XMM3:  fprintf(state->out, "%%xmm3"); break;
+            case REG_XMM4:  fprintf(state->out, "%%xmm4"); break;
+            case REG_XMM5:  fprintf(state->out, "%%xmm5"); break;
+            case REG_XMM6:  fprintf(state->out, "%%xmm6"); break;
+            case REG_XMM7:  fprintf(state->out, "%%xmm7"); break;
+            case REG_XMM8:  fprintf(state->out, "%%xmm8"); break;
+            case REG_XMM9:  fprintf(state->out, "%%xmm9"); break;
+            case REG_XMM10: fprintf(state->out, "%%xmm10"); break;
+            case REG_XMM11: fprintf(state->out, "%%xmm11"); break;
+            case REG_XMM12: fprintf(state->out, "%%xmm12"); break;
+            case REG_XMM13: fprintf(state->out, "%%xmm13"); break;
+            case REG_XMM14: fprintf(state->out, "%%xmm14"); break;
+            case REG_XMM15: fprintf(state->out, "%%xmm15"); break;
         }
     } else if (os == OS_DWORD) {
         switch (reg) {
-            case REG_RAX: fprintf(state->out, "%%eax"); break;
-            case REG_RCX: fprintf(state->out, "%%ecx"); break;
-            case REG_RDX: fprintf(state->out, "%%edx"); break;
-            case REG_RDI: fprintf(state->out, "%%edi"); break;
-            case REG_RSI: fprintf(state->out, "%%esi"); break;
-            case REG_R8:  fprintf(state->out, "%%r8d"); break;
-            case REG_R9:  fprintf(state->out, "%%r9d"); break;
-            case REG_R10: fprintf(state->out, "%%r10d"); break;
-            case REG_R11: fprintf(state->out, "%%r11d"); break;
-            case REG_RSP: fprintf(state->out, "%%esp"); break;
+            case REG_RAX:   fprintf(state->out, "%%eax"); break;
+            case REG_RCX:   fprintf(state->out, "%%ecx"); break;
+            case REG_RDX:   fprintf(state->out, "%%edx"); break;
+            case REG_RDI:   fprintf(state->out, "%%edi"); break;
+            case REG_RSI:   fprintf(state->out, "%%esi"); break;
+            case REG_R8:    fprintf(state->out, "%%r8d"); break;
+            case REG_R9:    fprintf(state->out, "%%r9d"); break;
+            case REG_R10:   fprintf(state->out, "%%r10d"); break;
+            case REG_R11:   fprintf(state->out, "%%r11d"); break;
+            case REG_RSP:   fprintf(state->out, "%%esp"); break;
+            case REG_XMM0:  
+            case REG_XMM1:  
+            case REG_XMM2:  
+            case REG_XMM3:  
+            case REG_XMM4:  
+            case REG_XMM5:  
+            case REG_XMM6:  
+            case REG_XMM7:  
+            case REG_XMM8:  
+            case REG_XMM9:  
+            case REG_XMM10: 
+            case REG_XMM11: 
+            case REG_XMM12: 
+            case REG_XMM13: 
+            case REG_XMM14: 
+            case REG_XMM15: ICE_ASSERT(((void)"xmm registers have no 4-byte equivalent", false));
         }
     } else if (os == OS_BYTE) {
         switch (reg) {
@@ -87,6 +123,22 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
             case REG_R10: fprintf(state->out, "%%r10b"); break;
             case REG_R11: fprintf(state->out, "%%r11b"); break;
             case REG_RSP: ICE_ASSERT(((void)"cannot byte address rsp in emitcode.", false));
+            case REG_XMM0:  
+            case REG_XMM1:  
+            case REG_XMM2:  
+            case REG_XMM3:  
+            case REG_XMM4:  
+            case REG_XMM5:  
+            case REG_XMM6:  
+            case REG_XMM7:  
+            case REG_XMM8:  
+            case REG_XMM9:  
+            case REG_XMM10: 
+            case REG_XMM11: 
+            case REG_XMM12: 
+            case REG_XMM13: 
+            case REG_XMM14: 
+            case REG_XMM15: ICE_ASSERT(((void)"xmm registers have no 4-byte equivalent", false));
         }
     }
 }
@@ -473,6 +525,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_PROG:          emit_program(state, &node->prog); break;
         case ASM_FUNC:          emit_function(state, &node->func, loc); break;
         case ASM_STATIC_VAR:    emit_static_var(state, &node->static_var); break;
+        case ASM_STATIC_CONST:  ICE_NYI("emitcode_recurse::ASM_STATIC_CONST"); 
         case ASM_STACK_RESERVE: emit_stack_reserve(state, &node->stack_reserve); break;
         case ASM_STACK_FREE:    emit_stack_free(state, &node->stack_free); break;
         case ASM_MOV:           emit_mov(state, &node->mov); break;
@@ -491,6 +544,8 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_DIV:           emit_div(state, &node->div); break;
         case ASM_PUSH:          emit_push(state, &node->push); break;
         case ASM_CALL:          emit_call(state, &node->call); break;
+        case ASM_CVTTSD2SI:     ICE_NYI("emitcode_recurse::cvttsd2si");
+        case ASM_CVTSI2SD:      ICE_NYI("emitcode_recurse::cvtsi2sd");
     }
 }
 

@@ -8,6 +8,7 @@
 #include "safemem.h"
 #include "symtab.h"
 #include "tacnode.h"
+#include "temporary.h"
 
 typedef struct 
 {
@@ -41,7 +42,10 @@ static char *tcg_loop_tag_label(char *tag, int label)
 {
     ICE_ASSERT(label >= 0);
 
-    return saprintf("loop_%s..%d", tag, label);
+    char *base = saprintf("loop_%s", tag);
+    char *name = tmp_id_name(base, label);
+    safe_free(base);
+    return name;
 }
 
 //
@@ -92,9 +96,8 @@ static void tcg_append(TacState *state, TacNode *tac)
 //
 static TacNode *tcg_temporary(TacState *state, Type *type, FileLine loc)
 {
-    static int suffix = 0;
+    char *name = tmp_name("tmp");
 
-    char *name = saprintf("tmp..%d", suffix++);
     TacNode *var = tac_var(name, loc);
 
     Symbol *sym = stab_lookup(state->stab, name);
@@ -110,13 +113,10 @@ static TacNode *tcg_temporary(TacState *state, Type *type, FileLine loc)
 //
 static TacNode *tcg_make_label(FileLine loc)
 {
-    static int suffix = 0;
-
-    char *name = saprintf("label..%d", suffix++);
-    TacNode *var = tac_label(name, loc);
+    char *name = tmp_name("label");
+    TacNode *label = tac_label(name, loc);
     safe_free(name);
-
-    return var;
+    return label;
 }
 
 //

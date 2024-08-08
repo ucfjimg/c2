@@ -19,6 +19,23 @@ typedef enum {
     REG_R10,
     REG_R11,
     REG_RSP,
+
+    REG_XMM0,
+    REG_XMM1,
+    REG_XMM2,
+    REG_XMM3,
+    REG_XMM4,
+    REG_XMM5,
+    REG_XMM6,
+    REG_XMM7,
+    REG_XMM8,
+    REG_XMM9,
+    REG_XMM10,
+    REG_XMM11,
+    REG_XMM12,
+    REG_XMM13,
+    REG_XMM14,
+    REG_XMM15,
 } Register;
 
 extern char *reg_name(Register reg);
@@ -26,6 +43,7 @@ extern char *reg_name(Register reg);
 typedef enum {
     AT_LONGWORD,
     AT_QUADWORD,
+    AT_DOUBLE,
 } AsmTypeTag;
 
 typedef struct {
@@ -42,6 +60,7 @@ typedef enum  {
 
 extern AsmType *asmtype_long(void);
 extern AsmType *asmtype_quad(void);
+extern AsmType *asmtype_double(void);
 extern AsmType *asmtype_clone(AsmType *type);
 extern void asmtype_free(AsmType *type);
 extern char *asmtype_describe(AsmType *type);
@@ -91,6 +110,7 @@ typedef enum {
     ASM_PROG,
     ASM_FUNC,
     ASM_STATIC_VAR,
+    ASM_STATIC_CONST,
     ASM_MOV,
     ASM_MOVSX,
     ASM_MOVZX,
@@ -109,6 +129,8 @@ typedef enum {
     ASM_STACK_FREE,
     ASM_PUSH,
     ASM_CALL,
+    ASM_CVTTSD2SI,
+    ASM_CVTSI2SD,
 } AsmNodeTag;
 
 typedef struct AsmNode AsmNode;
@@ -130,6 +152,12 @@ typedef struct {
     int alignment;          // required alignment (power of two)
     Const init;             // initial value
 } AsmStaticVar;
+
+typedef struct {
+    char *name;             // variable name
+    int alignment;          // required alignment (power of two)
+    Const init;             // initial value
+} AsmStaticConst;
 
 typedef struct {
     AsmOperand *src;        // source operand
@@ -214,6 +242,18 @@ typedef struct {
     char *id;               // name of function to call
 } AsmCall;
 
+typedef struct {
+    AsmOperand *src;        // source of conversion
+    AsmOperand *dst;        // dest of conversion
+    AsmType *type;          // operand size
+} AsmCvttsd2si;
+
+typedef struct {
+    AsmOperand *src;        // source of conversion
+    AsmOperand *dst;        // dest of conversion
+    AsmType *type;          // operand size
+} AsmCvtsi2sd;
+
 struct AsmNode {
     AsmNodeTag tag;         // discriminated union tag
     ListNode list;          // keep instructions in list
@@ -223,6 +263,7 @@ struct AsmNode {
         AsmProgram          prog;               // ASM_PROG
         AsmFunction         func;               // ASM_FUNC
         AsmStaticVar        static_var;         // ASM_STATIC_VAR
+        AsmStaticConst      static_const;       // ASM_STATIC_CONST
         AsmMov              mov;                // ASM_MOV
         AsmMovsx            movsx;              // ASM_MOVSX
         AsmMovzx            movzx;              // ASM_MOVZX
@@ -240,12 +281,15 @@ struct AsmNode {
         AsmStackFree        stack_free;         // ASM_STACK_FREE
         AsmPush             push;               // ASM_PUSH
         AsmCall             call;               // ASM_CALL
+        AsmCvttsd2si        cvttsd2si;          // ASM_CVTTSD2SI 
+        AsmCvtsi2sd         cvtsi2sd;           // ASM_CVTSI2SD 
     };
 };
 
 extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
 extern AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, FileLine loc);
+extern AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc);
@@ -264,6 +308,8 @@ extern AsmNode *asm_stack_reserve(int bytes, FileLine loc);
 extern AsmNode *asm_stack_free(int bytes, FileLine loc);
 extern AsmNode *asm_push(AsmOperand *value, FileLine loc);
 extern AsmNode *asm_call(char *id, FileLine loc);
+extern AsmNode *asm_cvttsd2si(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
+extern AsmNode *asm_cvtsi2sd(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern void asm_free(AsmNode *node);
 extern void asm_print(AsmNode *node, bool locs);
 

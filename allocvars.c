@@ -212,6 +212,28 @@ static void asm_alloc_push(VarTable *vartab, AsmNode *instr)
 }
 
 //
+// Apply pseudoregister replacement to a cvttsd2si instruction.
+//
+static void asm_alloc_cvttsd2si(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_CVTTSD2SI);
+
+    asm_alloc_operand(vartab, &instr->cvttsd2si.src);
+    asm_alloc_operand(vartab, &instr->cvttsd2si.dst);
+}
+
+//
+// Apply pseudoregister replacement to a cvtsi2sd instruction.
+//
+static void asm_alloc_cvtsi2sd(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_CVTSI2SD);
+
+    asm_alloc_operand(vartab, &instr->cvtsi2sd.src);
+    asm_alloc_operand(vartab, &instr->cvtsi2sd.dst);
+}
+
+//
 // Apply pseudoregister replacement to an instruction.
 //
 static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
@@ -236,8 +258,11 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_STACK_FREE:    break;
         case ASM_FUNC:          break;
         case ASM_STATIC_VAR:    break;
+        case ASM_STATIC_CONST:  break;
         case ASM_PUSH:          asm_alloc_push(vartab, instr); break;
         case ASM_CALL:          break;
+        case ASM_CVTTSD2SI:     asm_alloc_cvttsd2si(vartab, instr); break;
+        case ASM_CVTSI2SD:      asm_alloc_cvtsi2sd(vartab, instr); break;
     }
 }
 

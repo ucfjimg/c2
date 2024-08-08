@@ -70,6 +70,7 @@ void safe_free(void *p)
     free(p);
 }
 
+
 //
 // sprintf format the arguments and return the result as an allocated string.
 // Exit the program on out of memory.

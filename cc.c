@@ -470,15 +470,16 @@ semantic_done:
         goto done;
     }
 
-
     //
     // Code generation and assembly transformation passes.
     //
-    asmcode = codegen(taccode, stab);
+    bstab = bstab_alloc();
+
+    asmcode = codegen(taccode, stab, bstab);
     ast_free_program(ast);
     ast = NULL;
 
-    bstab = codegen_sym_to_backsym(stab);
+    codegen_sym_to_backsym(stab, bstab);
 
     asm_allocate_vars(asmcode, bstab);
     asm_fix_operands(asmcode);

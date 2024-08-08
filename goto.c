@@ -6,6 +6,7 @@
 #include "ice.h"
 #include "list.h"
 #include "safemem.h"
+#include "temporary.h"
 
 typedef struct {
     HashNode hash;
@@ -72,9 +73,7 @@ static LabelNode *goto_get_label(GotoState *state, char *label)
 //
 static char *make_unique_label(char *label)
 {
-    static int seq = 1;
-
-    return saprintf("%s.%d", label, seq++);
+    return tmp_name(label); 
 }
 
 //

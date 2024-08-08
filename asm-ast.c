@@ -24,6 +24,22 @@ char *reg_name(Register reg)
         case REG_R10:   return "r10";
         case REG_R11:   return "r11";
         case REG_RSP:   return "rsp";
+        case REG_XMM0:  return "xmm0";
+        case REG_XMM1:  return "xmm1";
+        case REG_XMM2:  return "xmm2";
+        case REG_XMM3:  return "xmm3";
+        case REG_XMM4:  return "xmm4";
+        case REG_XMM5:  return "xmm5";
+        case REG_XMM6:  return "xmm6";
+        case REG_XMM7:  return "xmm7";
+        case REG_XMM8:  return "xmm8";
+        case REG_XMM9:  return "xmm9";
+        case REG_XMM10: return "xmm10";
+        case REG_XMM11: return "xmm11";
+        case REG_XMM12: return "xmm12";
+        case REG_XMM13: return "xmm13";
+        case REG_XMM14: return "xmm14";
+        case REG_XMM15: return "xmm15";
     }
 
     return "<invalid-reg>";
@@ -71,6 +87,16 @@ AsmType *asmtype_quad(void)
 }
 
 //
+// Allocate an assembly type of a double.
+//
+AsmType *asmtype_double(void)
+{
+    AsmType *at = safe_zalloc(sizeof(AsmType));
+    at->tag = AT_DOUBLE;
+    return at;
+}
+
+//
 // Free an assembly type object.
 //
 void asmtype_free(AsmType *type)
@@ -86,6 +112,7 @@ AsmType *asmtype_clone(AsmType *type)
     switch (type->tag) {
         case AT_LONGWORD:       return asmtype_long();
         case AT_QUADWORD:       return asmtype_quad();
+        case AT_DOUBLE:         return asmtype_double();
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_clone", false));
@@ -100,6 +127,7 @@ char *asmtype_describe(AsmType *at)
     switch (at->tag) {
         case AT_LONGWORD: return saprintf("longword");
         case AT_QUADWORD: return saprintf("quadword");
+        case AT_DOUBLE:   return saprintf("double");
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_describe", false));
@@ -114,6 +142,7 @@ int asmtype_size(AsmType *type)
     switch (type->tag) {
         case AT_LONGWORD: return 4;
         case AT_QUADWORD: return 8;
+        case AT_DOUBLE:   return 8;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_size", false));
@@ -128,6 +157,7 @@ int asmtype_alignment(AsmType *type)
     switch (type->tag) {
         case AT_LONGWORD: return 4;
         case AT_QUADWORD: return 8;
+        case AT_DOUBLE:   return 8;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_alignment", false));
@@ -301,6 +331,22 @@ AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, File
     node->static_var.global = global;
     node->static_var.alignment = alignment;
     node->static_var.init = init;
+
+    return node;    
+}
+
+//
+// Construct an assembly static const.
+//
+AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_STATIC_CONST;
+    node->loc = loc;
+    node->static_const.name = safe_strdup(name);
+    node->static_const.alignment = alignment;
+    node->static_const.init = init;
 
     return node;    
 }
@@ -573,6 +619,39 @@ AsmNode *asm_call(char *id, FileLine loc)
 }
 
 //
+// Construct a double to integer conversion instruction.
+//
+AsmNode *asm_cvttsd2si(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_CVTTSD2SI;
+    node->loc = loc;
+    node->cvttsd2si.src = src;
+    node->cvttsd2si.dst = dst;
+    node->cvttsd2si.type = type;
+
+    return node;
+}
+
+//
+// Construct an integer to double coversion instruction.
+//
+AsmNode *asm_cvtsi2sd(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_CVTSI2SD;
+    node->loc = loc;
+    node->cvtsi2sd.src = src;
+    node->cvtsi2sd.dst = dst;
+    node->cvtsi2sd.type = type;
+
+    return node;
+
+}
+
+//
 // Free an assembly program
 //
 static void asm_prog_free(AsmProgram *prog)
@@ -725,6 +804,14 @@ static void asm_static_var_free(AsmStaticVar *var)
 }
 
 //
+// Free an assembly static constant.
+//
+static void asm_static_const_free(AsmStaticConst *cn)
+{
+    safe_free(cn->name);
+}
+
+//
 // Free a push instruction.
 //
 static void asm_push_free(AsmPush *push)
@@ -738,6 +825,26 @@ static void asm_push_free(AsmPush *push)
 static void asm_call_free(AsmCall *call)
 {
     safe_free(call->id);
+}
+
+//
+// Free a cvttsd2si instruction.
+//
+static void asm_cvttsd2si_free(AsmCvttsd2si *cvt)
+{
+    aoper_free(cvt->src);
+    aoper_free(cvt->dst);
+    asmtype_free(cvt->type);
+}
+
+//
+// Free a cvtsi2sd instruction.
+//
+static void asm_cvtsi2sd_free(AsmCvtsi2sd *cvt)
+{
+    aoper_free(cvt->src);
+    aoper_free(cvt->dst);
+    asmtype_free(cvt->type);
 }
 
 //
@@ -763,8 +870,11 @@ void asm_free(AsmNode *node)
             case ASM_CDQ:           asm_cdq_free(&node->cdq); break;
             case ASM_FUNC:          asm_func_free(&node->func); break;
             case ASM_STATIC_VAR:    asm_static_var_free(&node->static_var); break; 
+            case ASM_STATIC_CONST:  asm_static_const_free(&node->static_const); break; 
             case ASM_PUSH:          asm_push_free(&node->push); break;
             case ASM_CALL:          asm_call_free(&node->call); break;
+            case ASM_CVTTSD2SI:     asm_cvttsd2si_free(&node->cvttsd2si); break;
+            case ASM_CVTSI2SD:      asm_cvtsi2sd_free(&node->cvtsi2sd); break;
 
             case ASM_STACK_RESERVE: break;
             case ASM_STACK_FREE:    break;
@@ -813,11 +923,29 @@ static void asm_static_var_print(AsmStaticVar *var)
     }
 
     printf(".align %d\n", var->alignment);
-
-    if (var->init.intval.size == CIS_LONG) {
+    
+    if (var->init.tag == CON_FLOAT) {
+        printf("%s: .double %.13g\n", var->name, var->init.floatval);
+    } else if (var->init.intval.size == CIS_LONG) {
         printf("%s: .quad %lu\n", var->name, var->init.intval.value);
     } else {
         printf("%s: .long %lu\n", var->name, var->init.intval.value);
+    }
+}
+
+//
+// Print an assembly static constant.
+//
+static void asm_static_const_print(AsmStaticConst *cn)
+{
+    printf(".align %d\n", cn->alignment);
+
+    if (cn->init.tag == CON_FLOAT) {
+        printf("%s: .double %.13g\n", cn->name, cn->init.floatval);
+    } else if (cn->init.intval.size == CIS_LONG) {
+        printf("%s: .quad %lu\n", cn->name, cn->init.intval.value);
+    } else {
+        printf("%s: .long %lu\n", cn->name, cn->init.intval.value);
     }
 }
 
@@ -1020,6 +1148,34 @@ static void asm_call_print(AsmCall *call)
 }
 
 //
+// Print a cvttsd2si instruction.
+//
+static void asm_cvttsd2si_print(AsmCvttsd2si *cvt)
+{
+    printf("        cvttsd2si ");
+    aoper_print(cvt->src);
+    printf(" => ");
+    aoper_print(cvt->dst);
+    printf(" # ");
+    asmtype_print(cvt->type);
+    printf("\n");
+}
+
+//
+// Print a cvtsi2sd instruction.
+//
+static void asm_cvtsi2sd_print(AsmCvtsi2sd *cvt)
+{
+    printf("        cvtsi2sd ");
+    aoper_print(cvt->src);
+    printf(" => ");
+    aoper_print(cvt->dst);
+    printf(" # ");
+    asmtype_print(cvt->type);
+    printf("\n");
+}
+
+//
 // Print the assembly AST.
 //
 static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
@@ -1037,6 +1193,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_PROG:          asm_prog_print(&node->prog, loc, locs); break;
         case ASM_FUNC:          asm_func_print(&node->func, loc, locs); break;
         case ASM_STATIC_VAR:    asm_static_var_print(&node->static_var); break;
+        case ASM_STATIC_CONST:  asm_static_const_print(&node->static_const); break;
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_MOVSX:         asm_movsx_print(&node->movsx); break;
         case ASM_MOVZX:         asm_movzx_print(&node->movzx); break;
@@ -1055,6 +1212,8 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_STACK_FREE:    asm_stack_free_print(&node->stack_free); break;
         case ASM_PUSH:          asm_push_print(&node->push); break;
         case ASM_CALL:          asm_call_print(&node->call); break;
+        case ASM_CVTTSD2SI:     asm_cvttsd2si_print(&node->cvttsd2si); break;
+        case ASM_CVTSI2SD:      asm_cvtsi2sd_print(&node->cvtsi2sd); break;
     }
 }
 

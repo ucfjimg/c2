@@ -18,6 +18,7 @@ typedef enum {
     BOP_SUBTRACT,
     BOP_MULTIPLY,
     BOP_DIVIDE,
+    BOP_DIVDBL,
     BOP_MODULO,
     BOP_LSHIFT,
     BOP_RSHIFT,

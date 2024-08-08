@@ -13,6 +13,7 @@ typedef enum {
 typedef struct {
     AsmType *type;
     bool is_static;
+    bool is_literal;     
 } BackEndObject;
 
 typedef struct {
