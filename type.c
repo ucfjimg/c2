@@ -67,6 +67,16 @@ TypeFuncParam *type_func_param(Type *type)
 }
 
 //
+// Free a type parameter.
+//
+void type_func_param_free(TypeFuncParam *param)
+{
+    type_free(param->parmtype);
+    safe_free(param);
+}
+
+
+//
 // Constructor for a function type.
 //
 Type *type_function(Type *ret, List parms)

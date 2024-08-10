@@ -346,7 +346,7 @@ FuncParameter *func_parm(char *name)
 //
 // Free a function parameter.
 //
-static void func_parm_free(FuncParameter *parm)
+void func_parm_free(FuncParameter *parm)
 {
     safe_free(parm->name);
     safe_free(parm);

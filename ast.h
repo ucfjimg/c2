@@ -139,6 +139,7 @@ typedef struct {
 } FuncParameter;
 
 extern FuncParameter *func_parm(char *name);
+extern void func_parm_free(FuncParameter *parm);
 
 typedef struct {
     char *name;                 // function name

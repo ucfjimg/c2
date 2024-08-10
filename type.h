@@ -56,6 +56,7 @@ extern Type *type_uint(void);
 extern Type *type_ulong(void);
 extern Type *type_double(void);
 extern TypeFuncParam *type_func_param(Type *type);
+extern void type_func_param_free(TypeFuncParam *param);
 extern Type *type_pointer(Type *ref);
 extern Type *type_function(Type *ret, List parms);
 extern Type *type_clone(Type *type);

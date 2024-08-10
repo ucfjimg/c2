@@ -63,6 +63,25 @@ typedef struct {
 } ProcessedDeclarator;
 
 typedef enum {
+    ADT_POINTER,
+    ADT_BASE,
+} AbstractDeclaratorTag;
+
+typedef struct AbstractDeclarator AbstractDeclarator;
+
+typedef struct {
+    AbstractDeclarator *decl;
+} AbstractDeclaratorPointer;
+
+struct AbstractDeclarator {
+    AbstractDeclaratorTag tag;
+
+    union {
+        AbstractDeclaratorPointer ptr;
+    };
+};
+
+typedef enum {
     AS_LEFT,
     AS_RIGHT
 } Assoc;
@@ -376,8 +395,103 @@ done:
 }
 
 //
+// Construct a pointer abstract declarator.
+//
+static AbstractDeclarator *abstract_declarator_pointer(AbstractDeclarator *inner)
+{
+    AbstractDeclarator *decl = safe_zalloc(sizeof(AbstractDeclarator));
+    decl->tag = ADT_POINTER;
+    decl->ptr.decl = inner;
+    return decl;
+}
+
+//
+// Construct a base abstract declarator.
+// 
+static AbstractDeclarator *abstract_declarator_base(void)
+{
+    AbstractDeclarator *decl = safe_zalloc(sizeof(AbstractDeclarator));
+    decl->tag = ADT_BASE;
+    return decl;
+}
+
+//
+// Free an abstract declarator.
+//
+static void abstract_declarator_free(AbstractDeclarator *decl)
+{
+    switch (decl->tag) {
+        case ADT_POINTER:   abstract_declarator_free(decl->ptr.decl); break;
+        case ADT_BASE:      break;
+    }
+
+    safe_free(decl);
+}
+
+//
+// Parse an abstract declarator.
+//
+// <abstract-declarator> := '*' <abstract-declarator> | <direct-abstract-declarator>
+// <direct-abstract-declarator> := '(' <abstract-declarator> ')'
+//
+static AbstractDeclarator *parse_abstract_declarator(Parser *parser)
+{
+    AbstractDeclarator *inner;
+
+    switch (parser->tok.type) {
+        case '*':
+            parse_next_token(parser);
+            inner = parse_abstract_declarator(parser);
+            return abstract_declarator_pointer(inner);
+
+        case '(':
+            parse_next_token(parser);
+            inner = parse_abstract_declarator(parser);
+            if (parser->tok.type != ')') {
+                report_expected_err(&parser->tok, "`)`");
+            }
+            parse_next_token(parser);
+            return inner;
+
+        default:
+            break;
+    }
+
+    return abstract_declarator_base();
+}
+
+//
+// Convert an abstract declarator to a type. `base` will be used in the 
+// construction of `type`.
+//
+static Type *abstract_decl_to_type(AbstractDeclarator *decl, Type *base)
+{
+    switch (decl->tag) {
+        case ADT_POINTER:   return type_pointer(abstract_decl_to_type(decl->ptr.decl, base));
+        case ADT_BASE:      return base;
+    }
+
+    ICE_ASSERT(((void)"invalid abstraction declarator tag in abstract_decl_to_type", false));
+    return NULL;
+}
+
+//
+// Parse a type name.
+// <type-name> := { <specifier> }+ [ <abstract-declarator> ]
+//
+static TypeSpecifier *parse_type_name(Parser *parser)
+{
+    TypeSpecifier *ts = parse_type_specifier(parser);
+    AbstractDeclarator *decl = parse_abstract_declarator(parser);
+    ts->type = abstract_decl_to_type(decl, ts->type);
+    abstract_declarator_free(decl);
+
+    return ts;
+}
+
+//
 // Parse a factor.
-// <factor> := <unop> <factor> | "(" { <specifier> }+ ")" <fcator> | <postfix>
+// <factor> := <unop> <factor> | "(" { <specifier> }+ [ <abstract-declarator> ] ")" <fcator> | <postfix>
 //
 static Expression *parse_factor(Parser *parser)
 {
@@ -393,7 +507,6 @@ static Expression *parse_factor(Parser *parser)
         return exp;
     }
 
-
     //
     // '(' could be the start of a cast, or at a higher precedence,
     // a function call or precedence operator. Check for a type to
@@ -407,7 +520,8 @@ static Expression *parse_factor(Parser *parser)
 
         if (is_type_specifier(parser)) {
             parse_free_bookmark(bmrk);
-            TypeSpecifier *ts = parse_type_specifier(parser);
+
+            TypeSpecifier *ts = parse_type_name(parser);
 
             if (ts->sc != SC_NONE) {
                 err_report(EC_ERROR, &parser->tok.loc, "cast operator may not include storage class.");
@@ -636,11 +750,11 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 
 //
 // Parse a variable declaration.
-// <declaration> := { <specifier> }+ <identifier> [ "=" <exp> ] ";"  |
+// <declaration> := { <specifier> }+ <declarator> [ "=" <exp> ] ";"  |
 //
-// The type and identifier have already been parsed.
+// The type and declarator have already been parsed.
 //
-static Declaration *parse_decl_variable(Parser *parser, TypeSpecifier *typespec, char *name, FileLine loc)
+static Declaration *parse_decl_variable(Parser *parser, Type *type, StorageClass sc, char *name, FileLine loc)
 {
     Expression *init = NULL;
 
@@ -655,7 +769,7 @@ static Declaration *parse_decl_variable(Parser *parser, TypeSpecifier *typespec,
         parse_next_token(parser);
     }
 
-    return decl_variable(name, typespec_take_type(typespec), typespec->sc, init, loc);
+    return decl_variable(name, type, sc, init, loc);
 }
 
 //
@@ -816,6 +930,7 @@ static Declarator *parse_simple_declarator(Parser *parser)
     }
 
     report_expected_err(&parser->tok, "id or `(`");
+    parse_next_token(parser);
 
     char *errid = tmp_name("error");
     Declarator *decl = declarator_ident(errid, parser->tok.loc);
@@ -889,6 +1004,7 @@ static Declarator *parse_direct_declarator(Parser *parser)
     Declarator *simple = parse_simple_declarator(parser);
 
     if (parser->tok.type == '(') {
+        parse_next_token(parser);
         FileLine loc = parser->tok.loc;
         List params = parse_decl_params(parser);
         return declarator_function(params, simple, loc);
@@ -939,8 +1055,8 @@ static void processed_declarator_free(ProcessedDeclarator *pd)
     ListNode *next = NULL;
     for (ListNode *curr = pd->params.head; curr; curr = next) {
         next = curr->next;
-        DeclaratorParam *param = CONTAINER_OF(curr, DeclaratorParam, list);
-        declarator_param_free(param);
+        FuncParameter *param = CONTAINER_OF(curr, FuncParameter, list);
+        func_parm_free(param);
     }
 }
 
@@ -953,26 +1069,6 @@ static ProcessedDeclarator *processed_declarator_ident(char *ident, Type *base)
     list_clear(&params);
 
     return processed_declarator(ident, type_clone(base), params);
-}
-
-//
-// Take ownership of the type from a processed declarator.
-//
-static Type *processed_declarator_take_type(ProcessedDeclarator *pd)
-{
-    Type *type = pd->type;
-    pd->type = NULL;
-    return type;
-}
-
-//
-// Take ownership of the parameter list from a processed declarator.
-//
-static List processed_declarator_take_params(ProcessedDeclarator *pd)
-{
-    List params = pd->params;
-    list_clear(&pd->params);
-    return params;
 }
 
 //
@@ -1058,11 +1154,19 @@ static Declaration *parse_declaration(Parser *parser)
     TypeSpecifier *typespec = parse_type_specifier(parser);
     Declarator *declarator = parse_declarator(parser);
     ProcessedDeclarator *pdecl = process_declarator(declarator, typespec->type);
+
+    declarator_free(declarator);
+    
     Declaration *decl = NULL;
     
     if (pdecl->type->tag == TT_FUNC) {
         decl = parse_function_body(parser, pdecl->name, type_clone(pdecl->type), typespec->sc, pdecl->params, loc);
+        list_clear(&pdecl->params);
+    } else {
+        decl = parse_decl_variable(parser, type_clone(pdecl->type), typespec->sc, pdecl->name, loc);
     }
+
+    processed_declarator_free(pdecl);
 
     return decl;
 }
