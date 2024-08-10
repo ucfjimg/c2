@@ -421,6 +421,9 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_ASSIGNMENT:    return ast_check_assignment(state, exp); break;
         case EXP_FUNCTION_CALL: return ast_check_function_call(state, exp); break;
         case EXP_CAST:          return ast_check_cast(state, exp); break;
+
+        case EXP_DEREF:         ICE_NYI("ast_check_expression::EXP_DEREF");
+        case EXP_ADDROF:        ICE_NYI("ast_check_expression::EXP_ADDROF");
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -662,13 +665,14 @@ static Const ast_convert_const_to(Const *cn, Type *ty)
 
     if (cn->tag == CON_FLOAT) {
         switch (ty->tag) {
-            case TT_INT:    out = const_make_int(CIS_INT,  CIS_SIGNED,   (int)cn->floatval); break;
-            case TT_UINT:   out = const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned)cn->floatval); break;
-            case TT_LONG:   out = const_make_int(CIS_LONG, CIS_SIGNED,   (long)cn->floatval); break;
-            case TT_ULONG:  out = const_make_int(CIS_LONG, CIS_UNSIGNED, (unsigned long)cn->floatval); break;
-            case TT_DOUBLE: break;
+            case TT_INT:        out = const_make_int(CIS_INT,  CIS_SIGNED,   (int)cn->floatval); break;
+            case TT_UINT:       out = const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned)cn->floatval); break;
+            case TT_LONG:       out = const_make_int(CIS_LONG, CIS_SIGNED,   (long)cn->floatval); break;
+            case TT_ULONG:      out = const_make_int(CIS_LONG, CIS_UNSIGNED, (unsigned long)cn->floatval); break;
+            case TT_DOUBLE:     break;
                 
-            case TT_FUNC: ICE_ASSERT(((void)"cannot convert function in ast_convert_const_to", false));
+            case TT_FUNC:       ICE_ASSERT(((void)"cannot convert function in ast_convert_const_to", false));
+            case TT_POINTER:    ICE_ASSERT(((void)"cannot convert pointer in ast_convert_const_to", false));
         }
     }
 

@@ -28,6 +28,8 @@ typedef enum {
     EXP_ASSIGNMENT,
     EXP_FUNCTION_CALL,
     EXP_CAST,
+    EXP_DEREF,
+    EXP_ADDROF,
 } ExpressionTag;
 
 typedef struct {
@@ -67,6 +69,14 @@ typedef struct {
     Expression *exp;
 } ExpCast;
 
+typedef struct {
+    Expression *exp;
+} ExpDeref;
+
+typedef struct {
+    Expression *exp;
+} ExpAddrOf;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;       
@@ -86,6 +96,8 @@ struct Expression {
         ExpAssignment assignment;
         ExpFunctionCall call;
         ExpCast cast;
+        ExpDeref deref;
+        ExpAddrOf addrof;
     };
 };
 
@@ -101,6 +113,8 @@ extern Expression *exp_conditional(Expression *conditional, Expression *trueval,
 extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
 extern Expression *exp_function_call(char *name, List args, FileLine loc);
 extern Expression *exp_cast(Type *type, Expression *exp, FileLine loc);
+extern Expression *exp_deref(Expression *exp, FileLine loc);
+extern Expression *exp_addrof(Expression *exp, FileLine loc);
 extern void exp_free(Expression *exp);
 extern void exp_set_type(Expression *exp, Type *type);
 

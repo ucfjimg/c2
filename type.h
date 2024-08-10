@@ -13,6 +13,7 @@ typedef enum {
     TT_ULONG,
     TT_DOUBLE,
     TT_FUNC,
+    TT_POINTER,
 } TypeTag;
 
 typedef struct {
@@ -25,6 +26,10 @@ typedef struct {
     List parms;                 // of <TypeFuncParam>
 } TypeFunction;
 
+typedef struct {
+    Type *ref;                  // referenced type
+} TypePointer;
+
 typedef enum {
     SC_NONE,
     SC_STATIC,
@@ -35,7 +40,8 @@ struct Type {
     TypeTag tag;
 
     union {
-        TypeFunction func;      // TT_FUNC
+        TypeFunction    func;   // TT_FUNC
+        TypePointer     ptr;    // TT_POINTER
     };
 };
 
@@ -50,6 +56,7 @@ extern Type *type_uint(void);
 extern Type *type_ulong(void);
 extern Type *type_double(void);
 extern TypeFuncParam *type_func_param(Type *type);
+extern Type *type_pointer(Type *ref);
 extern Type *type_function(Type *ret, List parms);
 extern Type *type_clone(Type *type);
 extern bool types_equal(Type *left, Type *right);

@@ -277,6 +277,22 @@ static void ast_resolve_cast_exp(ResolveState *state, ExpCast *cast)
 }
 
 //
+// Resolve a deref expression.
+//
+static void ast_resolve_deref_exp(ResolveState *state, ExpDeref *deref)
+{
+    ast_resolve_expression(state, deref->exp);
+}
+
+//
+// Resolve a addrof expression.
+//
+static void ast_resolve_addrof_exp(ResolveState *state, ExpAddrOf *addrof)
+{
+    ast_resolve_expression(state, addrof->exp);
+}
+
+//
 // Resolve variable references in an expression.
 //
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
@@ -289,6 +305,8 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_ASSIGNMENT:    ast_resolve_assign_exp(state, &exp->assignment); break;
         case EXP_FUNCTION_CALL: ast_resolve_function_call(state, exp); break;
         case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
+        case EXP_DEREF:         ast_resolve_deref_exp(state, &exp->deref); break;
+        case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
         case EXP_INT:           break;
         case EXP_LONG:          break;
         case EXP_UINT:          break;

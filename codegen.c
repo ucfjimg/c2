@@ -131,7 +131,8 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();
         case TT_DOUBLE:     return asmtype_double();
-        case TT_FUNC:       ICE_ASSERT(((void)"function symbol found in codegen_type_to_asmtype.", false));
+        case TT_FUNC:       ICE_ASSERT(((void)"function type found in codegen_type_to_asmtype.", false));
+        case TT_POINTER:    ICE_ASSERT(((void)"pointer symbol found in codegen_type_to_asmtype.", false));
     }
     
     ICE_ASSERT(false);

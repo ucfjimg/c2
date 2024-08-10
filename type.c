@@ -78,6 +78,16 @@ Type *type_function(Type *ret, List parms)
 }
 
 //
+// Constructor for a pointer.
+//
+Type *type_pointer(Type *ref)
+{
+    Type *type = type_alloc(TT_POINTER);
+    type->ptr.ref = ref;
+    return type;
+}
+
+//
 // Clone a function parameter.
 //
 static TypeFuncParam *type_func_param_clone(TypeFuncParam *parm)
@@ -105,6 +115,14 @@ static Type *type_clone_func(TypeFunction *func)
 }
 
 //
+// Clone a pointer type.
+//
+static Type *type_clone_pointer(TypePointer *ptr)
+{
+    return type_pointer(type_clone(ptr->ref));
+}
+
+//
 // Clone a type.
 //
 Type *type_clone(Type *type)
@@ -116,6 +134,7 @@ Type *type_clone(Type *type)
         case TT_ULONG:  return type_ulong();
         case TT_DOUBLE: return type_double();
         case TT_FUNC:   return type_clone_func(&type->func);
+        case TT_POINTER:return type_clone_pointer(&type->ptr);
     }
 
     ICE_ASSERT(((void)"invalid type tag in type_clone", false));
@@ -169,6 +188,7 @@ bool types_equal(Type *left, Type *right)
         case TT_ULONG:  return true;
         case TT_DOUBLE: return true;
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
+        case TT_POINTER:return types_equal(left->ptr.ref, right->ptr.ref);
     }
 
     ICE_ASSERT(((void)"invalid type tag in types_equal", false));
@@ -198,7 +218,8 @@ bool type_unsigned(Type *type)
         case TT_INT:
         case TT_LONG:
         case TT_DOUBLE:
-        case TT_FUNC:   return false;
+        case TT_FUNC:   
+        case TT_POINTER:return false;
     }
 
     return false;
@@ -215,7 +236,8 @@ int type_rank(Type *type)
         case TT_LONG:   return 3;
         case TT_UINT:   return 2;
         case TT_INT:    return 1;
-        case TT_FUNC:   ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
+        case TT_FUNC:   
+        case TT_POINTER:ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
 
     return 0;
@@ -268,6 +290,17 @@ static char *type_describe_func(TypeFunction *func)
 }
 
 //
+// Return an allocated string describing a function type.
+//
+static char *type_describe_ptr(TypePointer *ptr)
+{
+    char *ref = type_describe(ptr->ref);
+    char *desc = saprintf("%s*", ref);
+    safe_free(ref);
+    return desc;
+}
+
+//
 // Return an allocated string describing a type.
 //
 char *type_describe(Type *type)
@@ -279,6 +312,7 @@ char *type_describe(Type *type)
         case TT_ULONG:  return saprintf("unsigned long");
         case TT_DOUBLE: return saprintf("double");
         case TT_FUNC:   return type_describe_func(&type->func); break;
+        case TT_POINTER:return type_describe_ptr(&type->ptr); break;
     }
 
     return saprintf("<invalid-type>");

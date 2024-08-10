@@ -3,6 +3,7 @@
 #include "errors.h"
 #include "ice.h"
 #include "safemem.h"
+#include "temporary.h"
 
 #include <stdbool.h>
 
@@ -16,6 +17,50 @@ typedef struct {
     LexerBookmark *lexer_bmrk;  // the corresponding lexer state
     Token tok;                  // the current token
 } ParserBookmark;
+
+typedef enum {
+    DC_IDENT,
+    DC_POINTER,
+    DC_FUNCTION,
+} DeclaratorTag;
+
+typedef struct Declarator Declarator;
+
+typedef struct {
+    char *ident;                // name being declared
+} DeclaratorIdent;
+
+typedef struct {
+    Declarator *decl;           // pointed-to declaration 
+} DeclaratorPointer;
+
+typedef struct {
+    ListNode list;
+    Type *base;                 // base type
+    Declarator *decl;           // and declarator
+} DeclaratorParam;
+
+typedef struct {
+    List params;                // of <DeclaratorParam>
+    Declarator *decl;           // function itself 
+} DeclaratorFunction;
+
+struct Declarator {
+    DeclaratorTag tag;
+    FileLine loc;
+
+    union {
+        DeclaratorIdent         ident;
+        DeclaratorPointer       ptr;
+        DeclaratorFunction      func;
+    };
+};
+
+typedef struct {
+    char *name;                 // declared name
+    Type *type;                 // synthesized type
+    List params;                // of <FuncParameter> if function
+} ProcessedDeclarator;
 
 typedef enum {
     AS_LEFT,
@@ -86,6 +131,9 @@ static Statement *parse_statement(Parser *parser);
 static List parse_block(Parser *parser);
 static TypeSpecifier *parse_type_specifier(Parser *parser);
 static bool is_type_specifier(Parser *parser);
+static void declarator_free(Declarator *decl);
+static Declarator *parse_declarator(Parser *parser);
+static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base);
 
 //
 // Create a parser bookmark at the current state.
@@ -156,6 +204,8 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
         case TOK_LOGNOT:        *uop = UOP_LOGNOT; break;
         case TOK_INCREMENT:     *uop = UOP_PREINCREMENT; break;
         case TOK_DECREMENT:     *uop = UOP_PREDECREMENT; break;
+        case TOK_DEREF:         *uop = UOP_DEREF; break;
+        case TOK_ADDROF:        *uop = UOP_ADDROF; break;
 
         default:
             return false;
@@ -609,91 +659,19 @@ static Declaration *parse_decl_variable(Parser *parser, TypeSpecifier *typespec,
 }
 
 //
-// Parse a function declaration.
-// <declaration> := { <specifier> }+ <identifier> "(" <param-list> ")" ";"
+// Given a function header having been parsed, parse a body if one follows, and
+// return a function declaration.
 //
-// Tokens up to and including the opening '(' have been parsed.
-//
-// `typespec` is the parsed return type.
-//
-static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec, char *name, FileLine loc)
+static Declaration *parse_function_body(Parser *parser, char *name, Type *functype, StorageClass sc, List parms, FileLine loc)
 {
-    List parms;
-    List ptypes;
-    bool parm_list_err = false;
-    bool is_void = false;
-
     //
     // parms is the list of identifiers of the parameter list, which goes in the AST.
     // ptypes is the list of types in the parameter list, which goes in the function type.
     //
-    list_clear(&parms);
-    list_clear(&ptypes);
-
-    //
-    // Special case - "(" "void" ")" means empty parameter list.
-    //
-    if (parser->tok.type == TOK_VOID) {
-        parse_next_token(parser);
-        is_void = true;
-
-        if (parser->tok.type != ')') {
-            parm_list_err = true;
-            report_expected_err(&parser->tok, "`)`");
-        } else {
-            parse_next_token(parser);
-        }
-    } else {
-        while (true) {
-            TypeSpecifier *ptypespec = parse_type_specifier(parser);
-            
-            if (ptypespec->sc != SC_NONE) {
-                err_report(EC_ERROR, &parser->tok.loc, "function parameters may not have storage classes.");
-                parm_list_err = true;
-                break;
-            }
-
-            char *parm_name = NULL;
-            if (parser->tok.type != TOK_ID) {
-                parm_list_err = true;
-                typespec_free(ptypespec);
-                report_expected_err(&parser->tok, "identifier");
-                break;
-            } else {
-                parm_name = safe_strdup(parser->tok.id);
-                parse_next_token(parser);
-            }
-
-            FuncParameter *parm = func_parm(parm_name);
-            list_push_back(&parms, &parm->list);
-
-            TypeFuncParam *tparm = type_func_param(typespec_take_type(ptypespec));
-            list_push_back(&ptypes, &tparm->list);
-
-            typespec_free(ptypespec);
-            safe_free(parm_name);
-
-            if (parser->tok.type == ',') {
-                parse_next_token(parser);
-                continue;
-            }
-
-            break;
-        }
-
-        if (parser->tok.type != ')') {
-            parm_list_err = true;
-            report_expected_err(&parser->tok, "`,` or `)`");
-        } else {
-            parse_next_token(parser);
-        }
-    }
-
-    Type *functype = type_function(typespec_take_type(typespec), ptypes);
-
     bool has_body = false;
     List body;
     list_clear(&body);
+
     if (parser->tok.type == '{') {
         parse_next_token(parser);
         has_body = true;
@@ -711,54 +689,381 @@ static Declaration *parse_decl_function(Parser *parser, TypeSpecifier *typespec,
         report_expected_err(&parser->tok, "`{` or `;`");
     }
 
-    if (!parm_list_err && !is_void && parms.head == NULL) {
-        err_report(EC_ERROR, &loc, "`()` is not valid for a function with no parameters; use `(void)`.");
+    return decl_function(name, functype, sc, parms, body, has_body, loc);    
+}
+
+// 
+// Construct a declarator parameter.
+//
+static DeclaratorParam *declarator_param(Type *base, Declarator *decl)
+{
+    DeclaratorParam *param = safe_zalloc(sizeof(DeclaratorParam));
+
+    param->base = base;
+    param->decl = decl;
+
+    return param;
+}
+
+//
+// Free a declarator param.
+//
+static void declarator_param_free(DeclaratorParam *param)
+{
+    type_free(param->base);
+    declarator_free(param->decl);
+    safe_free(param);
+}
+
+//
+// Free an identifier declarator.
+//
+static void declarator_ident_free(DeclaratorIdent *ident)
+{
+    safe_free(ident->ident);
+}
+
+//
+// Free a pointer declarator.
+//
+static void declarator_ptr_free(DeclaratorPointer *ptr)
+{
+    declarator_free(ptr->decl);
+}
+
+//
+// Free a function declarator.
+//
+static void declarator_func_free(DeclaratorFunction *func)
+{
+    ListNode *next = NULL;
+    for (ListNode *curr = func->params.head; curr; curr = next) {
+        next = curr->next;
+        DeclaratorParam *param = CONTAINER_OF(curr, DeclaratorParam, list);
+        declarator_param_free(param);
+    }
+    declarator_free(func->decl);
+}
+
+//
+// Free a declarator.
+//
+static void declarator_free(Declarator *decl)
+{
+    switch (decl->tag) {
+        case DC_IDENT:          declarator_ident_free(&decl->ident); break;
+        case DC_POINTER:        declarator_ptr_free(&decl->ptr); break;
+        case DC_FUNCTION:       declarator_func_free(&decl->func); break;
+    }
+}
+
+//
+// Construct an identifier declarator.
+//
+static Declarator *declarator_ident(char *id, FileLine loc)
+{
+    Declarator *decl = safe_zalloc(sizeof(Declarator));
+    decl->tag = DC_IDENT;
+    decl->loc = loc;
+    decl->ident.ident = safe_strdup(id);
+    return decl;
+}
+
+//
+// Construct a pointer declarator.
+//
+static Declarator *declarator_pointer(Declarator *ref, FileLine loc)
+{
+    Declarator *decl = safe_zalloc(sizeof(Declarator));
+    decl->tag = DC_POINTER;
+    decl->loc = loc;
+    decl->ptr.decl = ref;
+    return decl;
+}
+
+//
+// Construct a function declarator.
+//
+static Declarator *declarator_function(List params, Declarator *retdecl, FileLine loc)
+{
+    Declarator *decl = safe_zalloc(sizeof(Declarator));
+    decl->tag = DC_FUNCTION;
+    decl->loc = loc;
+    decl->func.params = params;
+    decl->func.decl = retdecl; 
+    return decl;
+}
+ 
+//
+// Parse a simple declarator.
+//
+static Declarator *parse_simple_declarator(Parser *parser)
+{
+    if (parser->tok.type == TOK_ID) {
+        Declarator *decl = declarator_ident(parser->tok.id, parser->tok.loc);
+        parse_next_token(parser);
+        return decl;
     }
 
-    return decl_function(name, functype, typespec->sc, parms, body, has_body, loc);    
+    if (parser->tok.type == '(') {
+        parse_next_token(parser);
+        Declarator *decl = parse_declarator(parser);
+        if (parser->tok.type != ')') {
+            report_expected_err(&parser->tok, "`)`");
+        }
+        parse_next_token(parser);
+        return decl;
+    }
+
+    report_expected_err(&parser->tok, "id or `(`");
+
+    char *errid = tmp_name("error");
+    Declarator *decl = declarator_ident(errid, parser->tok.loc);
+    safe_free(errid);
+    return decl;
+}
+
+//
+// Parse a parameter list.
+// <param-list> := '(' 'void' ')' | '(' <param> { ',' <param> } ')'
+// <param> := <type-specficier> <declarator>
+//
+// The leading '(' should have already been consumed by the caller.
+//
+static List parse_decl_params(Parser *parser)
+{
+    List params;
+    list_clear(&params);
+
+    if (parser->tok.type == TOK_VOID) {
+        parse_next_token(parser);
+        if (parser->tok.type != ')') {
+            report_expected_err(&parser->tok, "`)`");
+        }
+        parse_next_token(parser);
+        return params;
+    }
+
+    while (true) {
+        TypeSpecifier *typespec = parse_type_specifier(parser);
+        if (typespec->sc != SC_NONE) {
+            err_report(EC_ERROR, &parser->tok.loc, "storage class is not valid in function parameter declaration.");
+        }
+
+        Type *type = typespec_take_type(typespec);
+        typespec_free(typespec);
+
+        Declarator *pdecl = parse_declarator(parser);
+        DeclaratorParam *param = declarator_param(type, pdecl);
+
+        list_push_back(&params, &param->list);
+
+        if (parser->tok.type == ',') {
+            parse_next_token(parser);
+            continue;
+        }
+
+        if (parser->tok.type == ')') {
+            parse_next_token(parser);
+            break;
+        }
+
+        report_expected_err(&parser->tok, "`,` or `)`");
+        parse_next_token(parser);
+        break;
+    }
+
+    if (params.head == NULL) {
+        err_report(EC_ERROR, &parser->tok.loc, "() as parameter list is not allowed (use `void`).");
+    }
+    return params;
+}
+
+//
+// Parse a direct declarator.
+//
+// <direct-declarator> := <simple-declarator> [ <param-list> ]
+//
+static Declarator *parse_direct_declarator(Parser *parser)
+{
+    Declarator *simple = parse_simple_declarator(parser);
+
+    if (parser->tok.type == '(') {
+        FileLine loc = parser->tok.loc;
+        List params = parse_decl_params(parser);
+        return declarator_function(params, simple, loc);
+    }
+    
+    return simple;
+}
+
+//
+// Parse a declarator.
+//
+// <declarator> := '*' <declarator> | <direct-declarator>
+//
+static Declarator *parse_declarator(Parser *parser)
+{
+    if (parser->tok.type == '*') {
+        FileLine loc = parser->tok.loc;
+        parse_next_token(parser);
+        Declarator *ref = parse_declarator(parser);
+        return declarator_pointer(ref, loc);
+    }
+
+    return parse_direct_declarator(parser);
+}
+
+//
+// Construct a processed declarator.
+//
+static ProcessedDeclarator *processed_declarator(char *name, Type *type, List params)
+{
+    ProcessedDeclarator *pd = safe_zalloc(sizeof(ProcessedDeclarator));
+
+    pd->name = name ? safe_strdup(name) : NULL;
+    pd->type = type;
+    pd->params = params;
+
+    return pd;
+}
+
+//
+// Free a processors declarator.
+//
+static void processed_declarator_free(ProcessedDeclarator *pd)
+{
+    safe_free(pd->name);
+    type_free(pd->type);
+
+    ListNode *next = NULL;
+    for (ListNode *curr = pd->params.head; curr; curr = next) {
+        next = curr->next;
+        DeclaratorParam *param = CONTAINER_OF(curr, DeclaratorParam, list);
+        declarator_param_free(param);
+    }
+}
+
+//
+// Construct an identifier processed declarator.
+//
+static ProcessedDeclarator *processed_declarator_ident(char *ident, Type *base)
+{
+    List params;
+    list_clear(&params);
+
+    return processed_declarator(ident, type_clone(base), params);
+}
+
+//
+// Take ownership of the type from a processed declarator.
+//
+static Type *processed_declarator_take_type(ProcessedDeclarator *pd)
+{
+    Type *type = pd->type;
+    pd->type = NULL;
+    return type;
+}
+
+//
+// Take ownership of the parameter list from a processed declarator.
+//
+static List processed_declarator_take_params(ProcessedDeclarator *pd)
+{
+    List params = pd->params;
+    list_clear(&pd->params);
+    return params;
+}
+
+//
+// Process a pointer declarator.
+//
+static ProcessedDeclarator *process_pointer_declarator(Declarator *ref, Type *base)
+{
+    Type *ptr = type_pointer(type_clone(base));
+    return process_declarator(ref, ptr);
+}
+
+//
+// Process a function declarator.
+//
+static ProcessedDeclarator *process_function_declarator(List params, Declarator *decl, Type *base)
+{
+    char *name;
+
+    if (decl->tag == DC_IDENT) {
+        name = safe_strdup(decl->ident.ident);
+    } else {
+        name = tmp_name("error");
+        err_report(EC_ERROR, &decl->loc, "function type may not have further derivations.");
+    } 
+
+    List names;
+    List types;
+
+    list_clear(&names);
+    list_clear(&types);
+
+    for (ListNode *curr = params.head; curr; curr = curr->next) {
+        DeclaratorParam *param = CONTAINER_OF(curr, DeclaratorParam, list);
+        ProcessedDeclarator *pd = process_declarator(param->decl, param->base);
+
+        if (pd->type->tag == TT_FUNC) {
+            err_report(EC_ERROR, &decl->loc, "function may not have function type parameters.");
+        }
+
+        TypeFuncParam *tfp = type_func_param(type_clone(pd->type));
+        list_push_back(&types, &tfp->list);
+
+        FuncParameter *fp = func_parm(pd->name);
+        list_push_back(&names, &fp->list);
+
+        processed_declarator_free(pd);
+    }
+
+    Type *functype = type_function(type_clone(base), types);
+    
+    ProcessedDeclarator *pd = processed_declarator(name, functype, names);
+    safe_free(name);
+    return pd;
+}
+
+//
+// Given a parsed declarator, unwind it and return the declared name,
+// type, and function parameter names if any.
+//
+static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base)
+{
+    switch (decl->tag) {
+        case DC_IDENT:      return processed_declarator_ident(decl->ident.ident, base);
+        case DC_POINTER:    return process_pointer_declarator(decl->ptr.decl, base);
+        case DC_FUNCTION:   return process_function_declarator(decl->func.params, decl->func.decl, base);
+    }
+
+    ICE_ASSERT(((void)"unhandled tag in process_declarator", false));
+    return NULL;
 }
 
 //
 // Parse a declaration.
 // <declaration> := 
-//    { <specifier> }+ <identifier> [ "=" <exp> ] ";"  |
-//    { <specifier> }+ <identifier> "(" <param-list> ")" ( <block> | ";" )
+//    { <specifier> }+ <declarator> [ "=" <exp> ] ";"  |
+//    { <specifier> }+ <declarator> ( <block> | ";" )
 //
 // The type has already been parsed.
 //
 static Declaration *parse_declaration(Parser *parser)
 {
-    Declaration *decl = NULL;
-    char *name = NULL;
     FileLine loc = parser->tok.loc;
-    TypeSpecifier *typespec = NULL;
-
-    typespec = parse_type_specifier(parser);
-
-    if (parser->tok.type != TOK_ID) {
-        report_expected_err(&parser->tok, "identifier");
-        parse_next_token(parser);
-        goto done;
-    }
-    name = safe_strdup(parser->tok.id);
-    parse_next_token(parser);
-
-    if (parser->tok.type == '(') {
-        parse_next_token(parser);
-        decl = parse_decl_function(parser, typespec, name, loc);
-    } else {
-        decl = parse_decl_variable(parser, typespec, name, loc);
+    TypeSpecifier *typespec = parse_type_specifier(parser);
+    Declarator *declarator = parse_declarator(parser);
+    ProcessedDeclarator *pdecl = process_declarator(declarator, typespec->type);
+    Declaration *decl = NULL;
+    
+    if (pdecl->type->tag == TT_FUNC) {
+        decl = parse_function_body(parser, pdecl->name, type_clone(pdecl->type), typespec->sc, pdecl->params, loc);
     }
 
-done:
-    if (decl == NULL) {
-        //
-        // If there's no name, just add a dummy declaration.
-        //
-        decl = decl_variable(".error", type_int(), SC_NONE, NULL, loc);
-    }
-    typespec_free(typespec);
-    safe_free(name);
     return decl;
 }
 

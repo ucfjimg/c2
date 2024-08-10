@@ -227,6 +227,42 @@ static void exp_cast_free(ExpCast *cast)
 }
 
 //
+// Construct a deref operator.
+//
+Expression *exp_deref(Expression *exp, FileLine loc)
+{
+    Expression *deref = exp_alloc(EXP_DEREF, loc);
+    deref->deref.exp = exp;
+    return deref;
+}
+
+//
+// Free a deref operator.
+//
+static void exp_deref_free(ExpDeref *deref)
+{
+    exp_free(deref->exp);
+}
+
+//
+// Construct an addrof operator.
+//
+Expression *exp_addrof(Expression *exp, FileLine loc)
+{
+    Expression *addrof = exp_alloc(EXP_ADDROF, loc);
+    addrof->addrof.exp = exp;
+    return addrof;
+}
+
+//
+// Free a addrof operator.
+//
+static void exp_addrof_free(ExpAddrOf *addrof)
+{
+    exp_free(addrof->exp);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
@@ -240,6 +276,8 @@ void exp_free(Expression *exp)
             case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
             case EXP_FUNCTION_CALL: exp_function_call_free(&exp->call); break;
             case EXP_CAST:          exp_cast_free(&exp->cast); break;
+            case EXP_DEREF:         exp_deref_free(&exp->deref); break;
+            case EXP_ADDROF:        exp_addrof_free(&exp->addrof); break;
 
             case EXP_INT:
             case EXP_UINT:
@@ -946,6 +984,26 @@ static void print_exp_cast(ExpCast *cast, int tab, bool locs)
 }
 
 //
+// Print a deref expression.
+//
+static void print_exp_deref(ExpDeref *deref, int tab, bool locs)
+{
+    printf("deref {\n");
+    exp_print_recurse(deref->exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print an addrof expression.
+//
+static void print_exp_addrof(ExpAddrOf *addrof, int tab, bool locs)
+{
+    printf("addrof {\n");
+    exp_print_recurse(addrof->exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -976,6 +1034,8 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_ASSIGNMENT:    print_exp_assignment(&exp->assignment, tab, locs); break;
         case EXP_FUNCTION_CALL: print_exp_function_call(&exp->call, tab, locs); break;
         case EXP_CAST:          print_exp_cast(&exp->cast, tab, locs); break;
+        case EXP_DEREF:         print_exp_deref(&exp->deref, tab, locs); break;
+        case EXP_ADDROF:        print_exp_addrof(&exp->addrof, tab, locs); break;
     }
 }
 
