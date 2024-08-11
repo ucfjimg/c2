@@ -149,8 +149,15 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
 //
 // Emit an immediate value.
 //
-static void emit_imm(EmitState *state, unsigned long val)
+static void emit_imm(EmitState *state, unsigned long val, OperandSize os)
 {
+    switch (os) {
+        case OS_BYTE:   val &= 0xff; break;
+        case OS_DWORD:  val &= 0xffffffff; break;
+        case OS_QWORD:  break;
+    }
+
+
     fprintf(state->out, "$%lu", val);
 }
 
@@ -178,7 +185,7 @@ static void emit_data(EmitState *state, char *name)
 static void emit_asmoper(EmitState *state, AsmOperand *oper, OperandSize os)
 {
     switch (oper->tag) {
-        case AOP_IMM:   emit_imm(state, oper->imm); break;
+        case AOP_IMM:   emit_imm(state, oper->imm, os); break;
         case AOP_REG:   emit_reg(state, oper->reg, os); break;
         case AOP_MEMORY:emit_memory(state, &oper->memory); break;
         case AOP_DATA:  emit_data(state, oper->data); break;
