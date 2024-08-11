@@ -741,9 +741,17 @@ static void ast_check_do_while(TypeCheckState *state, StmtDoWhile *dowhile)
 //
 // Type check a switch statement.
 //
-static void ast_check_switch(TypeCheckState *state, StmtSwitch *switch_)
+static void ast_check_switch(TypeCheckState *state, Statement *stmt)
 {
+    ICE_ASSERT(stmt->tag == STMT_SWITCH);
+    StmtSwitch *switch_ = &stmt->switch_;
+
     ast_check_expression(state, switch_->cond);
+
+    if (!type_integral(switch_->cond->type)) {
+        err_report(EC_ERROR, &stmt->loc, "switch conditional must be of integral type.");
+    }
+
     ast_check_statement(state, switch_->body);
 }
 
@@ -781,7 +789,7 @@ static void ast_check_statement(TypeCheckState *state, Statement *stmt)
         case STMT_DOWHILE:      ast_check_do_while(state, &stmt->dowhile); break;
         case STMT_BREAK:        break;
         case STMT_CONTINUE:     break;
-        case STMT_SWITCH:       ast_check_switch(state, &stmt->switch_); break;
+        case STMT_SWITCH:       ast_check_switch(state, stmt); break;
         case STMT_CASE:         ast_check_case(state, &stmt->case_); break;
         case STMT_DEFAULT:      ast_check_default(state, &stmt->default_); break;
     }

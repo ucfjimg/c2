@@ -257,7 +257,7 @@ typedef struct {
 
 typedef struct {
     ListNode list;              // place in list
-    int value;                  // case value
+    unsigned long value;        // case value
 } CaseLabel;
 
 typedef struct {
@@ -269,7 +269,7 @@ typedef struct {
 } StmtSwitch;
 
 typedef struct {
-    int value;                  // case value
+    unsigned long value;        // case value
     int label;                  // label of enclosing switch
     Statement *stmt;            // labeled statement
 } StmtCase;
@@ -319,7 +319,7 @@ extern Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc)
 extern Statement *stmt_break(FileLine loc);
 extern Statement *stmt_continue(FileLine loc);
 extern Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc);
-extern Statement *stmt_case(int value, Statement *stmt, FileLine loc);
+extern Statement *stmt_case(unsigned long value, Statement *stmt, FileLine loc);
 extern Statement *stmt_default(Statement *stmt, FileLine loc);
 
 extern void stmt_free(Statement *stmt);

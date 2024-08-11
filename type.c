@@ -241,7 +241,7 @@ bool type_unsigned(Type *type)
 //
 // Return true if the given type is an arithmetic type.
 //
-extern bool type_arithmetic(Type *type)
+bool type_arithmetic(Type *type)
 {
     switch (type->tag) {
         case TT_UINT:
@@ -249,6 +249,24 @@ extern bool type_arithmetic(Type *type)
         case TT_INT:
         case TT_LONG:
         case TT_DOUBLE: return true;
+        case TT_FUNC:   
+        case TT_POINTER:return false;
+    }
+
+    return false;
+}
+
+//
+// Return true if the given type is an integral type.
+//
+bool type_integral(Type *type)
+{
+    switch (type->tag) {
+        case TT_UINT:
+        case TT_ULONG: 
+        case TT_INT:
+        case TT_LONG:   return true;
+        case TT_DOUBLE:
         case TT_FUNC:   
         case TT_POINTER:return false;
     }

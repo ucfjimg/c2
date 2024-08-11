@@ -460,11 +460,11 @@ static int compile(Args *args)
     if (args->stage == STAGE_VALIDATE_GOTO) goto semantic_done;
     ast_label_loops(ast);
     if (args->stage == STAGE_VALIDATE_LOOPS) goto semantic_done;
-    ast_validate_switch(ast);
-    if (args->stage == STAGE_VALIDATE_SWITCH) goto semantic_done;
-
     stab = stab_alloc();
     ast_typecheck(ast, stab);
+    if (args->stage == STAGE_VALIDATE_TYPECHECK) goto semantic_done;
+    ast_validate_switch(ast);
+    if (args->stage == STAGE_VALIDATE_SWITCH) goto semantic_done;
 
 semantic_done:
     if (err_has_errors()) {

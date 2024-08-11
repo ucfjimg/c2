@@ -121,9 +121,9 @@ static char *tcg_break_label(int label)
 //
 // Format a label for a case statement. Returns an allocated string.
 //
-static char *tcg_case_label(int label, int value)
+static char *tcg_case_label(int label, unsigned long value)
 {
-    char *tag = saprintf("case_%x", value);
+    char *tag = saprintf("case_%lx", value);
     char *looplabel = tcg_loop_tag_label(tag, label);
     safe_free(tag);
     return looplabel;

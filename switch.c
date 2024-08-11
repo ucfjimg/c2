@@ -10,6 +10,7 @@
 
 typedef struct {
     int label;              // loop label of innermost switch
+    Type *type;             // condition type of innermost switch
     List cases;             // list of collected case values <CaseLabel>
     bool has_default;       // true if a default case has been seen
 } SwitchState;
@@ -76,6 +77,7 @@ static void ast_switch_switch(StmtSwitch *switch_)
     SwitchState state;
 
     state.label = switch_->label;
+    state.type = switch_->cond->type;
     state.has_default = false;
     list_clear(&state.cases);
 
@@ -95,13 +97,28 @@ static void ast_switch_case(SwitchState *state, StmtCase *case_, FileLine loc)
         return;
     }
 
+    bool is_unsigned = type_unsigned(state->type);
+
+    unsigned long value = case_->value;
+
+    //
+    // $TARGET this is assuming that int is the same on host and target
+    //
+    if (state->type->tag == TT_INT || state->type->tag == TT_UINT) {
+        value = (unsigned)value;
+    }
+
     //
     // Check for duplicate case labels.
     //
     for (ListNode *curr = state->cases.head; curr; curr = curr->next) {
         CaseLabel *label = CONTAINER_OF(curr, CaseLabel, list);
-        if (case_->value == label->value) {
-            err_report(EC_ERROR, &loc, "duplicate case value `%d`.", case_->value);
+        if (value == label->value) {
+            if (is_unsigned) {
+                err_report(EC_ERROR, &loc, "duplicate case value `%ld`.", (long)value);
+            } else {
+                err_report(EC_ERROR, &loc, "duplicate case value `%lu`.", value);
+            }
             return;
         }
     }

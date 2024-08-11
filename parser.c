@@ -1579,16 +1579,12 @@ static Statement *parse_switch(Parser *parser, FileLine loc)
 //
 static Statement *parse_case(Parser *parser, FileLine loc)
 {
-    int value = 0;
+    unsigned long value = 0;
 
     if (parser->tok.type != TOK_INT_CONST) {
         report_expected_err(&parser->tok, "integer constant");
     } else {
-        //
-        // TODO when we have proper typing, this will be converted to
-        // the proper size/signedness value.
-        //
-        value = (int)parser->tok.int_const.intval;
+        value = parser->tok.int_const.intval;
         parse_next_token(parser);
     }
 

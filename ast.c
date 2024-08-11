@@ -722,7 +722,7 @@ void stmt_switch_free(StmtSwitch *switch_)
 //
 // Constructor for a case statement.
 //
-Statement *stmt_case(int value, Statement *stmt, FileLine loc)
+Statement *stmt_case(unsigned long value, Statement *stmt, FileLine loc)
 {
     Statement *casestmt = stmt_alloc(STMT_CASE, loc);
     casestmt->case_.value = value;
@@ -1276,7 +1276,7 @@ static void stmt_print_switch(StmtSwitch *switch_, int tab, bool locs)
 //
 static void stmt_print_case(StmtCase *case_, int tab, bool locs)
 {
-    printf("%*scase (label=%d,value=%d) {\n", tab, "", case_->label, case_->value);
+    printf("%*scase (label=%d,value=%ld) {\n", tab, "", case_->label, case_->value);
     stmt_print_recurse(case_->stmt, tab + 2, locs);
     printf("%*s}\n", tab, "");
 }

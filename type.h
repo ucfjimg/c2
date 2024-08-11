@@ -64,6 +64,7 @@ extern bool types_equal(Type *left, Type *right);
 extern bool types_same_size(Type *left, Type *right);
 extern bool type_unsigned(Type *type);
 extern bool type_arithmetic(Type *type);
+extern bool type_integral(Type *type);
 extern int type_rank(Type *type);
 extern void type_free(Type *type);
 extern char *type_describe(Type *type);
