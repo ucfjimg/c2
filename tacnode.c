@@ -417,6 +417,45 @@ TacNode *tac_uint_to_double(TacNode *src, TacNode *dst, FileLine loc)
 }
 
 //
+// Constructor for a TAC get address operation.
+//
+TacNode *tac_get_address(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_GET_ADDRESS, loc);
+
+    tac->get_address.src = src;
+    tac->get_address.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC load operation.
+//
+TacNode *tac_load(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_LOAD, loc);
+
+    tac->load.src = src;
+    tac->load.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC store operation.
+//
+TacNode *tac_store(TacNode *src, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_STORE, loc);
+
+    tac->store.src = src;
+    tac->store.dst = dst;
+
+    return tac;
+}
+
+//
 // Free a TAC function call.
 //
 static void tac_function_call_free(TacFunctionCall *call)
@@ -499,6 +538,33 @@ static void tac_uint_to_double_free(TacUIntToDouble *dbl)
 }
 
 //
+// Free a TAC get address operation.
+//
+static void tac_get_address_free(TacGetAddress *get_addr)
+{
+    tac_free(get_addr->src);
+    tac_free(get_addr->dst);
+}
+
+//
+// Free a TAC load operation.
+//
+static void tac_load_free(TacLoad *load)
+{
+    tac_free(load->src);
+    tac_free(load->dst);
+}
+
+//
+// Free a TAC store operation.
+//
+static void tac_store_free(TacStore *store)
+{
+    tac_free(store->src);
+    tac_free(store->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST.
 //
@@ -544,6 +610,9 @@ void tac_free(TacNode *tac)
             case TAC_DOUBLE_TO_UINT:tac_double_to_uint_free(&tac->dbl_to_uint); break;
             case TAC_INT_TO_DOUBLE: tac_int_to_double_free(&tac->int_to_dbl); break;
             case TAC_UINT_TO_DOUBLE:tac_uint_to_double_free(&tac->uint_to_dbl); break;
+            case TAC_GET_ADDRESS:   tac_get_address_free(&tac->get_address); break;
+            case TAC_LOAD:          tac_load_free(&tac->load); break;
+            case TAC_STORE:         tac_store_free(&tac->store); break;
         }
 
         safe_free(tac);
@@ -833,6 +902,42 @@ static void tac_print_uint_to_dbl(TacUIntToDouble *dbl, int tab, bool locs)
 }
 
 //
+// Print a TAC get address operation.
+//
+static void tac_print_get_address(TacGetAddress *get_addr, int tab, bool locs)
+{
+    printf("%*sget-address(\n", tab, "");
+    tac_print_recurse(get_addr->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(get_addr->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC load operation.
+//
+static void tac_print_load(TacLoad *load, int tab, bool locs)
+{
+    printf("%*sload(\n", tab, "");
+    tac_print_recurse(load->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(load->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC store operation.
+//
+static void tac_print_store(TacStore *store, int tab, bool locs)
+{
+    printf("%*sstore(\n", tab, "");
+    tac_print_recurse(store->src, tab + 2, locs);
+    printf("%*s=>\n", tab, "");
+    tac_print_recurse(store->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -862,6 +967,9 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_DOUBLE_TO_UINT:tac_print_dbl_to_uint(&tac->dbl_to_uint, tab, locs); break;
         case TAC_INT_TO_DOUBLE: tac_print_int_to_dbl(&tac->int_to_dbl, tab, locs); break;
         case TAC_UINT_TO_DOUBLE:tac_print_uint_to_dbl(&tac->uint_to_dbl, tab, locs); break;
+        case TAC_GET_ADDRESS:   tac_print_get_address(&tac->get_address, tab, locs); break;
+        case TAC_LOAD:          tac_print_load(&tac->load, tab, locs); break;
+        case TAC_STORE:         tac_print_store(&tac->store, tab, locs); break;
     }
 }
 

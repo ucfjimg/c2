@@ -255,7 +255,7 @@ Expression *exp_addrof(Expression *exp, FileLine loc)
 }
 
 //
-// Free a addrof operator.
+// Free an addrof operator.
 //
 static void exp_addrof_free(ExpAddrOf *addrof)
 {
@@ -845,15 +845,12 @@ AstProgram *ast_program(List decls, FileLine loc)
 void ast_free_program(AstProgram *prog)
 {
     if (prog) {
-        for (ListNode *curr = prog->decls.head; curr; ) {
-            ListNode *next = curr->next;
-
+        ListNode *next = NULL;
+        for (ListNode *curr = prog->decls.head; curr; curr = next) {
+            next = curr->next;
             Declaration *decl = CONTAINER_OF(curr, Declaration, list);
             declaration_free(decl);
-
-            curr = next;
         }
-
         safe_free(prog);
     }
 }

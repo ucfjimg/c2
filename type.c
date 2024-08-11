@@ -236,18 +236,36 @@ bool type_unsigned(Type *type)
 }
 
 //
+// Return true if the given type is an arithmetic type.
+//
+extern bool type_arithmetic(Type *type)
+{
+    switch (type->tag) {
+        case TT_UINT:
+        case TT_ULONG: 
+        case TT_INT:
+        case TT_LONG:
+        case TT_DOUBLE: return true;
+        case TT_FUNC:   
+        case TT_POINTER:return false;
+    }
+
+    return false;
+}
+
+//
 // Return the rank of a base type.
 //
 int type_rank(Type *type)
 {
     switch (type->tag) {
         case TT_DOUBLE: return 5;
-        case TT_ULONG:  return 4;
+        case TT_ULONG:  
+        case TT_POINTER:return 4;
         case TT_LONG:   return 3;
         case TT_UINT:   return 2;
         case TT_INT:    return 1;
-        case TT_FUNC:   
-        case TT_POINTER:ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
+        case TT_FUNC:   ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
 
     return 0;

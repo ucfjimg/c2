@@ -913,6 +913,10 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_INT_TO_DOUBLE:     codegen_int_to_dbl(state, tac); break;
         case TAC_UINT_TO_DOUBLE:    codegen_uint_to_dbl(state, tac); break;
 
+        case TAC_GET_ADDRESS:       ICE_NYI("codegen_single::get-address");
+        case TAC_LOAD:              ICE_NYI("codegen_single::load");
+        case TAC_STORE:             ICE_NYI("codegen_single::store");
+
         case TAC_PROGRAM:           break;
         case TAC_CONST:             break;
         case TAC_VAR:               break;

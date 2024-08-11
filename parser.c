@@ -223,8 +223,6 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
         case TOK_LOGNOT:        *uop = UOP_LOGNOT; break;
         case TOK_INCREMENT:     *uop = UOP_PREINCREMENT; break;
         case TOK_DECREMENT:     *uop = UOP_PREDECREMENT; break;
-        case TOK_DEREF:         *uop = UOP_DEREF; break;
-        case TOK_ADDROF:        *uop = UOP_ADDROF; break;
 
         default:
             return false;
@@ -504,6 +502,20 @@ static Expression *parse_factor(Parser *parser)
     if (parse_unary_op(parser, &uop)) {
         Expression *rhs = parse_factor(parser);
         Expression *exp = exp_unary(uop, rhs, loc);
+        return exp;
+    }
+
+    if (parser->tok.type == '*') {
+        parse_next_token(parser);
+        Expression *rhs = parse_factor(parser);
+        Expression *exp = exp_deref(rhs, loc);
+        return exp;
+    }
+
+    if (parser->tok.type == '&') {
+        parse_next_token(parser);
+        Expression *rhs = parse_factor(parser);
+        Expression *exp = exp_addrof(rhs, loc);
         return exp;
     }
 

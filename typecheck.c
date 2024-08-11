@@ -63,6 +63,72 @@ static Expression *convert_to(Expression *exp, Type *type)
 }
 
 //
+// Return true if the given expression is an l-value.
+//
+static bool exp_is_lvalue(Expression *exp)
+{
+    return
+        exp->tag == EXP_VAR ||
+        exp->tag == EXP_DEREF;
+}
+
+//
+// Return true if the given expression can be used in a NULL pointer
+// context.
+//
+static bool exp_is_null_pointer(Expression *exp)
+{
+    return
+        (exp->tag == EXP_INT && exp->intval == 0) ||
+        (exp->tag == EXP_LONG && exp->longval == 0) ||
+        (exp->tag == EXP_UINT && exp->uintval == 0) ||
+        (exp->tag == EXP_ULONG && exp->ulongval == 0);
+}
+
+//
+// Implement the rules described in the standard as "convert as if by assigment."
+//
+static Expression *convert_by_assignment(Expression *exp, Type *type)
+{
+    if (types_equal(exp->type, type)) {
+        return exp;
+    }
+
+    if (type_arithmetic(exp->type) && type_arithmetic(type)) {
+        return convert_to(exp, type);
+    }
+
+    if (exp_is_null_pointer(exp) && type->tag == TT_POINTER) {
+        return convert_to(exp, type);
+    }
+
+    err_report(EC_ERROR, &exp->loc, "invalid type conversion.");
+
+    return exp;
+}
+
+//
+// Return the common pointer types of two expressions, if there is one.
+//
+static Type *ptr_type_common(Expression *left, Expression *right)
+{
+    if (types_equal(left->type, right->type)) {
+        return type_clone(left->type);
+    }
+
+    if (exp_is_null_pointer(left)) {
+        return type_clone(right->type);
+    }
+
+    if (exp_is_null_pointer(right)) {
+        return type_clone(left->type);
+    }
+
+    err_report(EC_ERROR, &left->loc, "incompatible pointer types.");
+    return type_clone(left->type);
+}
+
+//
 // Type check an integer constant.
 //
 static Expression *ast_check_int(TypeCheckState *state, Expression *exp)
@@ -139,10 +205,15 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     exp_replace(&unary->exp, ast_check_expression(state, unary->exp));
 
-    if (unary->op == UOP_COMPLEMENT && unary->exp->type->tag == TT_DOUBLE) {
+    if (
+        unary->op == UOP_COMPLEMENT && (unary->exp->type->tag == TT_DOUBLE || unary->exp->type->tag == TT_POINTER)) {
         err_report(EC_ERROR, &exp->loc, "can only apply `~` to integers.");
-    }
-    
+    } 
+
+    if (unary->op == UOP_MINUS && unary->exp->type->tag == TT_POINTER) {        
+        err_report(EC_ERROR, &exp->loc, "cannot apply `-` to pointers.");
+    }    
+
     //
     // The NOT operator returns an int of 0 or 1. All the other 
     // unary operators are type preserving.
@@ -200,16 +271,42 @@ static Expression *ast_check_binary_lhs_int(TypeCheckState *state, Expression *e
 }
 
 //
-// Type check a binary expression which requires the operands to be promoted to
-// the same but, but which returns an integer (anything that returns a Boolean
-// result, like the relational operators).
+// Type check a binary expression which returns an integer (anything that 
+// returns a Boolean result, like the relational operators).
 //
-static Expression *ast_check_binary_bool(TypeCheckState *state, Expression *exp)
+static Expression *ast_check_binary_bool(TypeCheckState *state, Expression *exp, bool promote)
 {
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
 
-    Type *common = types_common(binary->left->type, binary->right->type);
+    if (promote) {
+        Type *common = NULL;
+        
+        common = types_common(binary->left->type, binary->right->type);
+
+        //
+        // Do not use exp_replace here as the original expression object is
+        // guaranteed to still be in use.
+        //
+        binary->left = convert_to(binary->left, common);
+        binary->right = convert_to(binary->right, common);
+
+        type_free(common);
+    }
+
+    exp_set_type(exp, type_int());
+    return exp; 
+}
+
+//
+// Type check a binary equality expression between two pointers.
+//
+static Expression *ast_check_pointer_equality(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_BINARY);
+    ExpBinary *binary = &exp->binary;
+
+    Type *common = ptr_type_common(binary->left, binary->right);
 
     //
     // Do not use exp_replace here as the original expression object is
@@ -235,49 +332,106 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
     exp_replace(&binary->left, ast_check_expression(state, binary->left));
     exp_replace(&binary->right, ast_check_expression(state, binary->right));
 
-    switch (binary->op) {
-        case BOP_ADD:
-        case BOP_SUBTRACT:
-        case BOP_MULTIPLY:
-        case BOP_DIVIDE:        return ast_check_binary_promote(state, exp, false);
+    bool pointers = binary->left->type->tag == TT_POINTER || binary->right->type->tag == TT_POINTER;
 
-        case BOP_DIVDBL:        ICE_NYI("ast_check_binary::BOP_DIVDBL");
+    if (pointers) {
+        switch (binary->op) {
+            case BOP_EQUALITY:
+            case BOP_NOTEQUAL:  return ast_check_pointer_equality(state, exp);
 
-        case BOP_MODULO:
-        case BOP_BITAND:
-        case BOP_BITOR:
-        case BOP_BITXOR:        return ast_check_binary_promote(state, exp, true);
+            case BOP_LOGAND:
+            case BOP_LOGOR:     return ast_check_binary_bool(state, exp, false);
 
-        case BOP_LSHIFT:
-        case BOP_RSHIFT:        return ast_check_binary_lhs_int(state, exp);
+            case BOP_MULTIPLY:
+            case BOP_DIVIDE:
+            case BOP_DIVDBL:
+            case BOP_MODULO:
+                err_report(EC_ERROR, &exp->loc, "cannot apply multiplicative operator to a pointer.");
+                exp_set_type(exp, type_int());
+                return exp;
 
-        case BOP_LOGAND:
-        case BOP_LOGOR:
-        case BOP_EQUALITY:
-        case BOP_NOTEQUAL:
-        case BOP_LESSTHAN:
-        case BOP_GREATERTHAN:
-        case BOP_LESSEQUAL:
-        case BOP_GREATEREQUAL:  return ast_check_binary_bool(state, exp);
+            case BOP_BITAND:
+            case BOP_BITOR:
+            case BOP_BITXOR:
+            case BOP_LSHIFT:
+            case BOP_RSHIFT:
+                err_report(EC_ERROR, &exp->loc, "cannot apply bitwise operator to a pointer.");
+                exp_set_type(exp, type_int());
+                return exp;
 
-        //
-        // It is a bug for any of these operators to be in a binary
-        // operator expression; they are special cases handled elsewhere.
-        //
-        case BOP_CONDITIONAL:
-        case BOP_ASSIGN:
-        case BOP_COMPOUND_ADD:
-        case BOP_COMPOUND_SUBTRACT:
-        case BOP_COMPOUND_MULTIPLY:
-        case BOP_COMPOUND_DIVIDE:
-        case BOP_COMPOUND_MODULO:
-        case BOP_COMPOUND_BITAND:
-        case BOP_COMPOUND_BITOR:
-        case BOP_COMPOUND_BITXOR:
-        case BOP_COMPOUND_LSHIFT:
-        case BOP_COMPOUND_RSHIFT:
-            break;
-    }       
+
+            case BOP_ADD:
+            case BOP_SUBTRACT:
+            case BOP_LESSTHAN:
+            case BOP_GREATERTHAN:
+            case BOP_LESSEQUAL:
+            case BOP_GREATEREQUAL:
+                ICE_NYI("ast_check_binary::pointer-ops");
+
+            //
+            // It is a bug for any of these operators to be in a binary
+            // operator expression; they are special cases handled elsewhere.
+            //
+            case BOP_CONDITIONAL:
+            case BOP_ASSIGN:
+            case BOP_COMPOUND_ADD:
+            case BOP_COMPOUND_SUBTRACT:
+            case BOP_COMPOUND_MULTIPLY:
+            case BOP_COMPOUND_DIVIDE:
+            case BOP_COMPOUND_MODULO:
+            case BOP_COMPOUND_BITAND:
+            case BOP_COMPOUND_BITOR:
+            case BOP_COMPOUND_BITXOR:
+            case BOP_COMPOUND_LSHIFT:
+            case BOP_COMPOUND_RSHIFT:
+                break;
+        }
+    } else {
+        switch (binary->op) {
+            case BOP_ADD:
+            case BOP_SUBTRACT:
+            case BOP_MULTIPLY:
+            case BOP_DIVIDE:        return ast_check_binary_promote(state, exp, false);
+
+            case BOP_DIVDBL:        ICE_NYI("ast_check_binary::BOP_DIVDBL");
+
+            case BOP_MODULO:
+            case BOP_BITAND:
+            case BOP_BITOR:
+            case BOP_BITXOR:        return ast_check_binary_promote(state, exp, true);
+
+            case BOP_LSHIFT:
+            case BOP_RSHIFT:        return ast_check_binary_lhs_int(state, exp);
+
+            case BOP_LOGAND:
+            case BOP_LOGOR:         return ast_check_binary_bool(state, exp, false);
+
+            case BOP_EQUALITY:
+            case BOP_NOTEQUAL:
+            case BOP_LESSTHAN:
+            case BOP_GREATERTHAN:
+            case BOP_LESSEQUAL:
+            case BOP_GREATEREQUAL:  return ast_check_binary_bool(state, exp, true);
+
+            //
+            // It is a bug for any of these operators to be in a binary
+            // operator expression; they are special cases handled elsewhere.
+            //
+            case BOP_CONDITIONAL:
+            case BOP_ASSIGN:
+            case BOP_COMPOUND_ADD:
+            case BOP_COMPOUND_SUBTRACT:
+            case BOP_COMPOUND_MULTIPLY:
+            case BOP_COMPOUND_DIVIDE:
+            case BOP_COMPOUND_MODULO:
+            case BOP_COMPOUND_BITAND:
+            case BOP_COMPOUND_BITOR:
+            case BOP_COMPOUND_BITXOR:
+            case BOP_COMPOUND_LSHIFT:
+            case BOP_COMPOUND_RSHIFT:
+                break;
+        }       
+    }
 
     ICE_ASSERT(((void)"invalid binary operator in AST in ast_check_binary", false));
     return NULL;
@@ -295,7 +449,13 @@ static Expression *ast_check_conditional(TypeCheckState *state, Expression *exp)
     exp_replace(&cond->trueval, ast_check_expression(state, cond->trueval));
     exp_replace(&cond->falseval, ast_check_expression(state, cond->falseval));
 
-    Type *common = types_common(cond->trueval->type, cond->falseval->type);
+    Type *common;
+    
+    if (cond->trueval->type->tag == TT_POINTER || cond->falseval->type->tag == TT_POINTER) {
+        common = ptr_type_common(cond->trueval, cond->falseval); 
+    } else {
+        common = types_common(cond->trueval->type, cond->falseval->type);
+    }
 
     //
     // Do not use exp_replace here as the original expression object is
@@ -319,7 +479,11 @@ static Expression *ast_check_assignment(TypeCheckState *state, Expression *exp)
     exp_replace(&assign->left, ast_check_expression(state, assign->left));
     exp_replace(&assign->right, ast_check_expression(state, assign->right));
 
-    assign->right = convert_to(assign->right, assign->left->type);
+    if (!exp_is_lvalue(assign->left)) {
+        err_report(EC_ERROR, &exp->loc, "l-value required for assignment.");
+    }
+
+    assign->right = convert_by_assignment(assign->right, assign->left->type);
 
     exp_set_type(exp, type_clone(assign->left->type));
     return exp;
@@ -369,7 +533,7 @@ static Expression *ast_check_function_call(TypeCheckState *state, Expression *ex
         TypeFuncParam *parm = CONTAINER_OF(parmcurr, TypeFuncParam, list);
 
         exp_replace(&arg, ast_check_expression(state, arg));
-        arg = convert_to(arg, parm->parmtype);
+        arg = convert_by_assignment(arg, parm->parmtype);
 
         list_push_back(&new_args, &arg->list);
 
@@ -398,7 +562,54 @@ static Expression *ast_check_cast(TypeCheckState *state, Expression *exp)
 
     exp_replace(&cast->exp, ast_check_expression(state, cast->exp));
 
+    if (
+        (cast->type->tag == TT_POINTER && cast->exp->type->tag == TT_DOUBLE) ||
+        (cast->type->tag == TT_DOUBLE && cast->exp->type->tag == TT_POINTER)) {
+        
+        err_report(EC_ERROR, &exp->loc, "cannot cast between a double and a pointer.");
+    }
+
     exp_set_type(exp, type_clone(cast->type));
+    return exp;
+}
+
+//
+// Type check a dereference expression.
+//
+static Expression *ast_check_deref(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_DEREF);
+    ExpDeref *deref = &exp->deref;
+
+    exp_replace(&deref->exp, ast_check_expression(state, deref->exp));
+
+    if (deref->exp->type->tag == TT_POINTER) {
+        exp_set_type(exp, type_clone(deref->exp->type->ptr.ref));
+    } else {
+        err_report(EC_ERROR, &exp->loc, "cannot dereference non-pointer.");
+        exp_set_type(exp, type_int());
+    }
+
+    return exp;
+}
+
+//
+// Type check an addr-of expression.
+//
+static Expression *ast_check_addrof(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_ADDROF);
+    ExpAddrOf *addrof = &exp->addrof;
+
+    exp_replace(&addrof->exp, ast_check_expression(state, addrof->exp));
+
+    if (exp_is_lvalue(addrof->exp)) {
+        exp_set_type(exp, type_pointer(type_clone(addrof->exp->type)));
+    } else {
+        err_report(EC_ERROR, &exp->loc, "cannot take the address of something which is not an l-value.");
+        exp_set_type(exp, type_int());
+    }
+
     return exp;
 }
 
@@ -421,9 +632,8 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_ASSIGNMENT:    return ast_check_assignment(state, exp); break;
         case EXP_FUNCTION_CALL: return ast_check_function_call(state, exp); break;
         case EXP_CAST:          return ast_check_cast(state, exp); break;
-
-        case EXP_DEREF:         ICE_NYI("ast_check_expression::EXP_DEREF");
-        case EXP_ADDROF:        ICE_NYI("ast_check_expression::EXP_ADDROF");
+        case EXP_DEREF:         return ast_check_deref(state, exp); break;
+        case EXP_ADDROF:        return ast_check_addrof(state, exp); break;
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -437,7 +647,7 @@ static void ast_check_return(TypeCheckState *state, StmtReturn *ret)
 {
     exp_replace(&ret->exp, ast_check_expression(state, ret->exp));
 
-    ret->exp = convert_to(ret->exp, type_clone(state->func_type->func.ret));
+    ret->exp = convert_by_assignment(ret->exp, type_clone(state->func_type->func.ret));
 }
 
 //
@@ -680,6 +890,26 @@ static Const ast_convert_const_to(Const *cn, Type *ty)
 }
 
 //
+// Check and update a static initializer.
+//
+static Const ast_check_static_init(Type *type, Const init, FileLine loc)
+{
+    if (type->tag == TT_POINTER) {
+        if (init.tag == CON_FLOAT) {
+            err_report(EC_ERROR, &loc, "cannot initialize pointer with double.");
+        } else if (init.intval.value != 0) {
+            err_report(EC_ERROR, &loc, "cannot initialize pointer with nonzero value.");
+        } else {
+            init = const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
+        }
+    } else {
+        init = ast_convert_const_to(&init, type);
+    }
+
+    return init;
+}
+
+//
 // Type check a file scope variable declaration.
 //
 static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
@@ -763,7 +993,8 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         type = type_clone(var->type);
     }
 
-    init = ast_convert_const_to(&init, type);
+    init = ast_check_static_init(type, init, decl->loc);
+
     sym_update_static_var(sym, type, siv, init, globally_visible, decl->loc);
 }
 
@@ -806,7 +1037,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            init = ast_convert_const_to(&init, type);
+            init = ast_check_static_init(type, init, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
             switch (var->init->tag) {
@@ -819,7 +1050,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
                 default:
                     err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
             }
-            init = ast_convert_const_to(&init, type);
+            init = ast_check_static_init(type, init, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }
     } else {
@@ -829,7 +1060,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         sym_update_local(sym, type);
         if (var->init) {
             ast_check_expression(state, var->init);
-            var->init = convert_to(var->init, var->type);
+            var->init = convert_by_assignment(var->init, var->type);
         }
     }
 }

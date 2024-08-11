@@ -12,8 +12,6 @@ typedef enum {
     UOP_POSTINCREMENT,
     UOP_POSTDECREMENT,
     UOP_SHR,                    // shift right by 1, unsigned
-    UOP_DEREF,
-    UOP_ADDROF,
 } UnaryOp;
 
 typedef enum {

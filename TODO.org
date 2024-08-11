@@ -1,1 +1,5 @@
 * Consistently pass FileLine as a value
+* In type rank, there is an assumption that sizeof(pointer) == sizeof(unsigned long) which might not be true in all architectures
+* Fix extra credit
+* Do quiet NaN
+* Fix ability to free program AST w/ dup interior pointers in declarations

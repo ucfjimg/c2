@@ -31,6 +31,9 @@ typedef enum {
     TAC_DOUBLE_TO_UINT,
     TAC_INT_TO_DOUBLE,
     TAC_UINT_TO_DOUBLE,
+    TAC_GET_ADDRESS,
+    TAC_LOAD,
+    TAC_STORE,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -199,6 +202,30 @@ typedef struct {
 } TacUIntToDouble;
 
 //
+// Take the address of an expression.
+//
+typedef struct { 
+    TacNode *src;
+    TacNode *dst;
+} TacGetAddress;
+
+//
+// Load a pointer from a pointer.
+//
+typedef struct { 
+    TacNode *src;
+    TacNode *dst;
+} TacLoad;
+
+//
+// Store a value a pointer.
+//
+typedef struct { 
+    TacNode *src;
+    TacNode *dst;
+} TacStore;
+
+//
 // A TAC node -- discriminated union based on `tag`
 //
 typedef struct TacNode {
@@ -228,6 +255,9 @@ typedef struct TacNode {
         TacDoubleToUInt dbl_to_uint;
         TacIntToDouble  int_to_dbl;
         TacUIntToDouble uint_to_dbl;
+        TacGetAddress   get_address;
+        TacLoad         load;
+        TacStore        store;
     };
 } TacNode;
 
@@ -252,6 +282,9 @@ extern TacNode *tac_double_to_int(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_double_to_uint(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_int_to_double(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_uint_to_double(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_get_address(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_load(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_store(TacNode *src, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

@@ -531,12 +531,12 @@ done:
             bstab_print(bstab);
         }
     }
-
     bstab_free(bstab);
     stab_free(stab);
     tac_free(taccode);
     asm_free(asmcode);
-    ast_free_program(ast);
+    // TODO fix this - current scheme leads to duplicate free's
+    //  ast_free_program(ast);
     lexer_close(lex);
     return status;
 }
