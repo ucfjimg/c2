@@ -174,48 +174,110 @@ static TacNode *tcg_make_label(FileLine loc)
 }
 
 //
+// Return TAC for an increment or decrement unary operator.
+//
+static TacExpResult tcg_unary_incdec(TacState *state, Expression *unary)
+{
+    FileLine loc = unary->loc;
+    BinaryOp bop = BOP_ADD;
+
+    switch (unary->unary.op) {
+        case UOP_PREDECREMENT:
+        case UOP_POSTDECREMENT:     bop = BOP_SUBTRACT; break;
+
+        case UOP_PREINCREMENT:
+        case UOP_POSTINCREMENT:     bop = BOP_ADD; break;
+
+        default:
+            ICE_ASSERT(((void)"invalid operator in tcg_unary_indec", false));
+    }
+
+    Const one = const_make_int(CIS_INT, CIS_SIGNED, 1);
+    if (unary->unary.exp->type->tag == TT_DOUBLE) {
+        one = const_make_double(1);
+    }
+
+    if (unary->unary.op == UOP_PREDECREMENT || unary->unary.op == UOP_PREINCREMENT) {
+        TacNode *post_value = tcg_temporary(state, type_clone(unary->type), loc);
+        TacExpResult operand_res = tcg_expression(state, unary->unary.exp);
+
+        TacNode *operand = NULL;
+
+        switch (operand_res.tag) {
+            case ER_PLAIN:          
+                operand = operand_res.plain; 
+                break;
+
+            case ER_DEREF_POINTER:
+                operand = tcg_deref_pointer(state, operand_res.deref_pointer, type_clone(unary->unary.exp->type));
+                break;
+        }
+
+        tcg_append(state, tac_binary(bop, operand, tac_const(one, loc), post_value, loc));
+
+        switch (operand_res.tag) {
+            case ER_PLAIN:
+                tcg_append(state, tac_copy(tac_clone_operand(post_value), tac_clone_operand(operand), loc));
+                break;
+
+            case ER_DEREF_POINTER:
+                tcg_append(state, tac_store(tac_clone_operand(post_value), tac_clone_operand(operand_res.deref_pointer), loc));
+                break;
+        }
+
+        return expres_plain(tac_clone_operand(post_value));
+    }
+
+    TacNode *old_value = tcg_temporary(state, type_clone(unary->type), loc);
+    TacNode *post_value = tcg_temporary(state, type_clone(unary->type), loc);
+    TacExpResult operand_res = tcg_expression(state, unary->unary.exp);
+
+    TacNode *operand = NULL;
+
+    switch (operand_res.tag) {
+        case ER_PLAIN:
+            operand = operand_res.plain;
+            break;
+
+        case ER_DEREF_POINTER:
+            operand = tcg_deref_pointer(state, operand_res.deref_pointer, type_clone(unary->unary.exp->type));
+            break;
+    }
+            
+    tcg_append(state, tac_copy(tac_clone_operand(operand), old_value, loc));
+
+    tcg_append(state, tac_binary(bop, operand, tac_const(one, loc), post_value, loc));
+
+    switch (operand_res.tag) {
+        case ER_PLAIN:
+            tcg_append(state, tac_copy(tac_clone_operand(post_value), tac_clone_operand(operand), loc));
+            break;
+
+        case ER_DEREF_POINTER:
+            tcg_append(state, tac_store(tac_clone_operand(post_value), tac_clone_operand(operand_res.deref_pointer), loc));
+            break;
+    }
+
+    return expres_plain(tac_clone_operand(old_value));
+}
+
+//
 // Return TAC for a unary operation.
 //
 static TacExpResult tcg_unary_op(TacState *state, Expression *unary)
 {
+    if (
+        unary->unary.op == UOP_PREDECREMENT ||
+        unary->unary.op == UOP_PREINCREMENT ||
+        unary->unary.op == UOP_POSTDECREMENT ||
+        unary->unary.op == UOP_POSTINCREMENT) {
+        
+        return tcg_unary_incdec(state, unary);
+    }
+
     FileLine loc = unary->loc;
     TacNode *src = tcg_expression_and_convert(state, unary->unary.exp);
     TacNode *dst = tcg_temporary(state, type_clone(unary->type), loc);
-
-    Const one = const_make_int(CIS_INT, CIS_SIGNED, 1);
-
-    if (unary->unary.op == UOP_PREDECREMENT || unary->unary.op == UOP_PREINCREMENT) {
-        TacNode *tmp = tcg_temporary(state, type_clone(unary->type), loc);
-        TacNode *operand = tcg_expression_and_convert(state, unary->unary.exp);
-                
-        if (unary->unary.op == UOP_PREDECREMENT) {
-            tcg_append(state, tac_binary(BOP_SUBTRACT, operand, tac_const(one, loc), tmp, loc));
-        } else {
-            tcg_append(state, tac_binary(BOP_ADD, operand, tac_const(one, loc), tmp, loc));
-        }
-
-        tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(operand), loc));
-
-        return expres_plain(tac_clone_operand(operand));
-    }
-
-    if (unary->unary.op == UOP_POSTDECREMENT || unary->unary.op == UOP_POSTINCREMENT) {
-        TacNode *oldval = tcg_temporary(state, type_clone(unary->type), loc);
-        TacNode *tmp = tcg_temporary(state, type_clone(unary->type), loc);
-        TacExpResult operand = tcg_expression(state, unary->unary.exp);
-                
-        tcg_append(state, tac_copy(tac_clone_operand(operand.plain), oldval, loc));
-
-        if (unary->unary.op == UOP_POSTDECREMENT) {
-            tcg_append(state, tac_binary(BOP_SUBTRACT, operand.plain, tac_const(one, loc), tmp, loc));
-        } else {
-            tcg_append(state, tac_binary(BOP_ADD, operand.plain, tac_const(one, loc), tmp, loc));
-        }
-
-        tcg_append(state, tac_copy(tac_clone_operand(tmp), tac_clone_operand(operand.plain), loc));
-
-        return expres_plain(tac_clone_operand(oldval));
-    }
 
     tcg_append(state, tac_unary(unary->unary.op, src, dst, unary->loc));
 

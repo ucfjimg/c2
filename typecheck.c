@@ -212,7 +212,21 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     if (unary->op == UOP_MINUS && unary->exp->type->tag == TT_POINTER) {        
         err_report(EC_ERROR, &exp->loc, "cannot apply `-` to pointers.");
-    }    
+    }
+
+    bool incdec = 
+        unary->op == UOP_PREINCREMENT || 
+        unary->op == UOP_POSTINCREMENT || 
+        unary->op == UOP_PREDECREMENT || 
+        unary->op == UOP_POSTDECREMENT; 
+
+    if (incdec && (!type_arithmetic(unary->exp->type) || unary->exp->type->tag == TT_POINTER)) {
+        err_report(EC_ERROR, &exp->loc, "++/-- may only be applied to numeric or pointer types.");
+    }
+
+    if (incdec && unary->exp->tag != EXP_VAR && unary->exp->tag != EXP_DEREF) {
+        err_report(EC_ERROR, &exp->loc, "++/-- may only be applied to l-values.");
+    }
 
     //
     // The NOT operator returns an int of 0 or 1. All the other 
