@@ -36,6 +36,7 @@ const char *bop_describe(BinaryOp bop)
         case BOP_MODULO:            return "%";
         case BOP_LSHIFT:            return "<<";
         case BOP_RSHIFT:            return ">>";
+        case BOP_URSHIFT:           return ">>>";
         case BOP_BITAND:            return "&";
         case BOP_BITOR:             return "|";
         case BOP_BITXOR:            return "^";
@@ -53,6 +54,7 @@ const char *bop_describe(BinaryOp bop)
         case BOP_COMPOUND_BITXOR:   return "^=";
         case BOP_COMPOUND_LSHIFT:   return "<<=";
         case BOP_COMPOUND_RSHIFT:   return ">>=";
+        case BOP_COMPOUND_URSHIFT:  return ">>>=";
         case BOP_EQUALITY:          return "==";
         case BOP_NOTEQUAL:          return "!=";
         case BOP_LESSTHAN:          return "<";
@@ -96,6 +98,7 @@ BinaryOp bop_compound_to_binop(BinaryOp bop)
         case BOP_COMPOUND_BITXOR: return BOP_BITXOR; 
         case BOP_COMPOUND_LSHIFT: return BOP_LSHIFT; 
         case BOP_COMPOUND_RSHIFT: return BOP_RSHIFT; 
+        case BOP_COMPOUND_URSHIFT: return BOP_URSHIFT; 
 
         default:
             ICE_ASSERT(((void)"invalid compound assignment in bop_compound_to_binop", false));

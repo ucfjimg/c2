@@ -23,6 +23,7 @@ typedef enum {
     BOP_MODULO,
     BOP_LSHIFT,
     BOP_RSHIFT,                 // counted signed shift
+    BOP_URSHIFT,                // counted unsigned shift
     BOP_BITAND,
     BOP_BITOR,
     BOP_BITXOR,
@@ -43,7 +44,8 @@ typedef enum {
     BOP_COMPOUND_BITXOR,
     BOP_COMPOUND_LSHIFT,
     BOP_COMPOUND_RSHIFT,
-    BOP_LAST_COMPOUND_ASSIGN = BOP_COMPOUND_RSHIFT,
+    BOP_COMPOUND_URSHIFT,
+    BOP_LAST_COMPOUND_ASSIGN = BOP_COMPOUND_URSHIFT,
 
     BOP_FIRST_RELATIONAL,
     BOP_EQUALITY = BOP_FIRST_RELATIONAL,

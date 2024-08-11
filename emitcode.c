@@ -313,6 +313,7 @@ static void emit_binary(EmitState *state, AsmBinary *binary)
         case BOP_MULTIPLY:      opcode = "imul"; break;
         case BOP_LSHIFT:        opcode = "shl"; break;
         case BOP_RSHIFT:        opcode = "sar"; break;
+        case BOP_URSHIFT:       opcode = "shr"; break;
         case BOP_BITAND:        opcode = "and"; break;
         case BOP_BITOR:         opcode = "or"; break;
         case BOP_BITXOR:        opcode = "xor"; break;

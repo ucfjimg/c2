@@ -367,6 +367,7 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
 
             case BOP_LSHIFT:
             case BOP_RSHIFT:
+            case BOP_URSHIFT:
                 asm_fixop_shift(code, binopnode);
                 break;
 

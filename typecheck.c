@@ -266,6 +266,10 @@ static Expression *ast_check_binary_lhs_int(TypeCheckState *state, Expression *e
         err_report(EC_ERROR, &exp->loc, "neither operand to operator `%s` may be floating point.", bop_describe(binary->op));
     }
 
+    if (type_unsigned(binary->left->type) && binary->op == BOP_RSHIFT) {
+        binary->op = BOP_URSHIFT;
+    }
+
     exp_set_type(exp, type_clone(binary->left->type));
     return exp;
 }
@@ -355,6 +359,7 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
             case BOP_BITXOR:
             case BOP_LSHIFT:
             case BOP_RSHIFT:
+            case BOP_URSHIFT:
                 err_report(EC_ERROR, &exp->loc, "cannot apply bitwise operator to a pointer.");
                 exp_set_type(exp, type_int());
                 return exp;
@@ -384,6 +389,7 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
             case BOP_COMPOUND_BITXOR:
             case BOP_COMPOUND_LSHIFT:
             case BOP_COMPOUND_RSHIFT:
+            case BOP_COMPOUND_URSHIFT:
                 break;
         }
     } else {
@@ -401,7 +407,8 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
             case BOP_BITXOR:        return ast_check_binary_promote(state, exp, true);
 
             case BOP_LSHIFT:
-            case BOP_RSHIFT:        return ast_check_binary_lhs_int(state, exp);
+            case BOP_RSHIFT:
+            case BOP_URSHIFT:       return ast_check_binary_lhs_int(state, exp);
 
             case BOP_LOGAND:
             case BOP_LOGOR:         return ast_check_binary_bool(state, exp, false);
@@ -429,6 +436,7 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
             case BOP_COMPOUND_BITXOR:
             case BOP_COMPOUND_LSHIFT:
             case BOP_COMPOUND_RSHIFT:
+            case BOP_COMPOUND_URSHIFT:
                 break;
         }       
     }
