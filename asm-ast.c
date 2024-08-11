@@ -24,6 +24,7 @@ char *reg_name(Register reg)
         case REG_R10:   return "r10";
         case REG_R11:   return "r11";
         case REG_RSP:   return "rsp";
+        case REG_RBP:   return "rbp";
         case REG_XMM0:  return "xmm0";
         case REG_XMM1:  return "xmm1";
         case REG_XMM2:  return "xmm2";
@@ -43,6 +44,14 @@ char *reg_name(Register reg)
     }
 
     return "<invalid-reg>";
+}
+
+//
+// Return true if the given register is an XMM register.
+//
+bool is_xmm(Register reg)
+{
+    return reg >= REG_XMM0 && reg <= REG_XMM15;
 }
 
 //
@@ -173,9 +182,8 @@ AsmOperand *aoper_clone(AsmOperand *oper)
         case AOP_IMM:       return aoper_imm(oper->imm);
         case AOP_REG:       return aoper_reg(oper->reg);
         case AOP_PSEUDOREG: return aoper_pseudoreg(oper->pseudoreg);
-        case AOP_STACK:     return aoper_stack(oper->stack_offset);
         case AOP_DATA:      return aoper_data(oper->data);
-
+        case AOP_MEMORY:    return aoper_memory(oper->memory.reg, oper->memory.offset);
     default:
         ICE_ASSERT(((void)"invalid operand in aoper_clone", false));
     }
@@ -225,15 +233,16 @@ AsmOperand *aoper_imm(unsigned long val)
 }
 
 //
-// Allocate a stack operaand. The offset is a (negative) offset from 
-// the frame pointer RBP.
+// Allocate a memory operand. The offset is a (negative) offset from 
+// the given register.
 //
-AsmOperand *aoper_stack(int offset)
+AsmOperand *aoper_memory(Register reg, int offset)
 {
     AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
 
-    op->tag = AOP_STACK;
-    op->stack_offset = offset;
+    op->tag = AOP_MEMORY;
+    op->memory.reg = reg;
+    op->memory.offset = offset;
     return op;
 }
 
@@ -254,7 +263,7 @@ AsmOperand *aoper_data(char *name)
 //
 bool aoper_is_mem(AsmOperand *oper)
 {
-    return oper->tag == AOP_STACK || oper->tag == AOP_DATA;
+    return oper->tag == AOP_MEMORY || oper->tag == AOP_DATA;
 }
 
 //
@@ -283,7 +292,7 @@ void aoper_print(AsmOperand *op)
         case AOP_IMM: printf("%lu", op->imm); break;
         case AOP_REG: printf("$%s", reg_name(op->reg)); break;
         case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
-        case AOP_STACK: printf("[$rbp+%d]", op->stack_offset); break;
+        case AOP_MEMORY: printf("[%s+%d]", reg_name(op->memory.reg), op->memory.offset); break;
         case AOP_DATA: printf("%s", op->data); break;
     }
 }
@@ -397,6 +406,20 @@ AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc)
     return node;
 }
 
+//
+// Construct an assembly lea instruction.
+//
+AsmNode *asm_lea(AsmOperand *src, AsmOperand *dst, FileLine loc)
+{
+    AsmNode *node = safe_zalloc(sizeof(AsmNode));
+
+    node->tag = ASM_LEA;
+    node->loc = loc;
+    node->lea.src = src;
+    node->lea.dst = dst;
+
+    return node;
+}
 //
 // Construct an assembly unary operator instruction.
 //
@@ -693,6 +716,15 @@ static void asm_movzx_free(AsmMovsx *movzx)
 }
 
 //
+// Free an assembly lea instruction.
+//
+static void asm_lea_free(AsmLea *lea)
+{
+    aoper_free(lea->src);
+    aoper_free(lea->dst);
+}
+
+//
 // Free an assembly unary instruction.
 //
 static void asm_unary_free(AsmUnary *unary)
@@ -858,6 +890,7 @@ void asm_free(AsmNode *node)
             case ASM_MOV:           asm_mov_free(&node->mov); break;
             case ASM_MOVSX:         asm_movsx_free(&node->movsx); break;
             case ASM_MOVZX:         asm_movzx_free(&node->movsx); break;
+            case ASM_LEA:           asm_lea_free(&node->lea); break;
             case ASM_UNARY:         asm_unary_free(&node->unary); break;
             case ASM_BINARY:        asm_binary_free(&node->binary); break;
             case ASM_CMP:           asm_cmp_free(&node->cmp); break;
@@ -994,6 +1027,18 @@ static void asm_movzx_print(AsmMovzx *movzx)
     aoper_print(movzx->src);
     printf(" => ");
     aoper_print(movzx->dst);
+    printf("\n");
+}
+
+//
+// Print an lea instruction.
+//
+static void asm_lea_print(AsmLea *lea)
+{
+    printf("        lea ");
+    aoper_print(lea->src);
+    printf(" => ");
+    aoper_print(lea->dst);
     printf("\n");
 }
 
@@ -1197,6 +1242,7 @@ static void asm_print_recurse(AsmNode *node, FileLine *loc, bool locs)
         case ASM_MOV:           asm_mov_print(&node->mov); break;
         case ASM_MOVSX:         asm_movsx_print(&node->movsx); break;
         case ASM_MOVZX:         asm_movzx_print(&node->movzx); break;
+        case ASM_LEA:           asm_lea_print(&node->lea); break;
         case ASM_UNARY:         asm_unary_print(&node->unary); break;
         case ASM_BINARY:        asm_binary_print(&node->binary); break;
         case ASM_CMP:           asm_cmp_print(&node->cmp); break;

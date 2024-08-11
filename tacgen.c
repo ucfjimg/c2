@@ -66,7 +66,7 @@ static TacExpResult expres_deref(TacNode *deref)
 //
 static TacNode *tcg_deref_pointer(TacState *state, TacNode *ptr, Type *type)
 {
-    TacNode *value = tcg_temporary(state, type, ptr->loc);
+    TacNode *value = tcg_temporary(state, type_clone(type), ptr->loc);
     tcg_append(state, tac_load(ptr, value, ptr->loc));
     return tac_clone_operand(value);
 }
@@ -492,7 +492,7 @@ static TacExpResult tcg_addrof(TacState *state, Expression *exp)
 
     switch (value.tag) {
         case ER_PLAIN:
-            dst = tcg_temporary(state, exp->type, exp->loc);
+            dst = tcg_temporary(state, type_clone(exp->type), exp->loc);
             tcg_append(state, tac_get_address(value.plain, dst, exp->loc));
             return expres_plain(tac_clone_operand(dst));
 

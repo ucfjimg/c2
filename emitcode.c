@@ -65,6 +65,7 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
             case REG_R10:   fprintf(state->out, "%%r10"); break;
             case REG_R11:   fprintf(state->out, "%%r11"); break;
             case REG_RSP:   fprintf(state->out, "%%rsp"); break;
+            case REG_RBP:   fprintf(state->out, "%%rbp"); break;
             case REG_XMM0:  fprintf(state->out, "%%xmm0"); break;
             case REG_XMM1:  fprintf(state->out, "%%xmm1"); break;
             case REG_XMM2:  fprintf(state->out, "%%xmm2"); break;
@@ -94,6 +95,7 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
             case REG_R10:   fprintf(state->out, "%%r10d"); break;
             case REG_R11:   fprintf(state->out, "%%r11d"); break;
             case REG_RSP:   fprintf(state->out, "%%esp"); break;
+            case REG_RBP:   fprintf(state->out, "%%ebp"); break;
             case REG_XMM0:  
             case REG_XMM1:  
             case REG_XMM2:  
@@ -123,6 +125,7 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
             case REG_R10: fprintf(state->out, "%%r10b"); break;
             case REG_R11: fprintf(state->out, "%%r11b"); break;
             case REG_RSP: ICE_ASSERT(((void)"cannot byte address rsp in emitcode.", false));
+            case REG_RBP: ICE_ASSERT(((void)"cannot byte address rbp in emitcode.", false));
             case REG_XMM0:  
             case REG_XMM1:  
             case REG_XMM2:  
@@ -152,11 +155,13 @@ static void emit_imm(EmitState *state, unsigned long val)
 }
 
 //
-// Emit a stack frame reference.
+// Emit a memory reference.
 //
-static void emit_stack(EmitState *state, int offset)
+static void emit_memory(EmitState *state, AsmMemoryOperand *mem)
 {
-    fprintf(state->out, "%d(%%rbp)", offset);
+    fprintf(state->out, "%d(", mem->offset);
+    emit_reg(state, mem->reg, OS_QWORD);
+    fprintf(state->out, ")");
 }
 
 //
@@ -175,7 +180,7 @@ static void emit_asmoper(EmitState *state, AsmOperand *oper, OperandSize os)
     switch (oper->tag) {
         case AOP_IMM:   emit_imm(state, oper->imm); break;
         case AOP_REG:   emit_reg(state, oper->reg, os); break;
-        case AOP_STACK: emit_stack(state, oper->stack_offset); break;
+        case AOP_MEMORY:emit_memory(state, &oper->memory); break;
         case AOP_DATA:  emit_data(state, oper->data); break;
         
         case AOP_PSEUDOREG:
@@ -245,6 +250,18 @@ static void emit_movsx(EmitState *state, AsmMovsx *movsx)
     emit_asmoper(state, movsx->src, OS_DWORD);
     fprintf(state->out, ", ");
     emit_asmoper(state, movsx->dst, OS_QWORD);
+    fprintf(state->out, "\n");
+}
+
+//
+// Emit an lea instruction.
+//
+static void emit_lea(EmitState *state, AsmLea *lea)
+{
+    fprintf(state->out, "        leaq\t");
+    emit_asmoper(state, lea->src, OS_QWORD);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, lea->dst, OS_QWORD);
     fprintf(state->out, "\n");
 }
 
@@ -442,7 +459,6 @@ static void emit_call(EmitState *state, AsmCall *call)
 #endif
 }
 
-
 //
 // Emit a function.
 //
@@ -609,6 +625,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_MOV:           emit_mov(state, &node->mov); break;
         case ASM_MOVSX:         emit_movsx(state, &node->movsx); break;
         case ASM_MOVZX:         ICE_ASSERT(((void)"untranslated movzx in emitcode", false));
+        case ASM_LEA:           emit_lea(state, &node->lea); break;
         case ASM_UNARY:         emit_unary(state, &node->unary); break;
         case ASM_BINARY:        emit_binary(state, &node->binary); break;
         case ASM_CMP:           emit_cmp(state, &node->cmp); break;

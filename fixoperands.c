@@ -63,7 +63,7 @@ static void asm_fixop_mov(List *code, AsmNode *movnode)
 //
 // Fix a MOVSX instruction.
 //
-// - source operand cannot be an immdiate.
+// - source operand cannot be an immediate.
 // - destination operand cannot be in memory.
 //
 static void asm_fixop_movsx(List *code, AsmNode *movnode)
@@ -117,6 +117,32 @@ static void asm_fixop_movzx(List *code, AsmNode *movnode)
     }
 
     asm_free(movnode);
+}
+
+//
+// Fix an LEA instruction.
+//
+// - destination operand must be a register.
+//
+static void asm_fixop_lea(List *code, AsmNode *leanode)
+{
+    ICE_ASSERT(leanode->tag == ASM_LEA);
+    AsmLea *lea = &leanode->lea;
+    
+    //
+    // All pseudo-registers must have been replaced by the previous pass.
+    //
+    ICE_ASSERT(lea->src->tag != AOP_PSEUDOREG && lea->dst->tag != AOP_PSEUDOREG);
+
+    if (lea->dst->tag != AOP_REG) {
+        AsmOperand *dst = lea->dst;
+        lea->dst = aoper_reg(REG_R10);
+        list_push_back(code, &leanode->list);        
+        list_push_back(code, &asm_mov(aoper_reg(REG_R10), dst, asmtype_quad(), leanode->loc)->list);
+        return;
+    }
+
+    list_push_back(code, &leanode->list);
 }
 
 //
@@ -459,6 +485,23 @@ static void asm_fixop_cvtsi2sd(List *code, AsmNode *cvtnode)
 }
 
 //
+// Fix up a push instruction.
+//
+static void asm_fixop_push(List *code, AsmNode *pushnode)
+{
+    ICE_ASSERT(pushnode->tag == ASM_PUSH);
+    AsmPush *push = &pushnode->push;
+
+    if (push->value->tag == AOP_REG && is_xmm(push->value->reg)) {
+        list_push_back(code, &asm_binary(BOP_SUBTRACT, aoper_imm(8), aoper_reg(REG_RSP), asmtype_quad(), pushnode->loc)->list);
+        list_push_back(code, &asm_mov(aoper_reg(push->value->reg), aoper_memory(REG_RSP, 0), asmtype_double(), pushnode->loc)->list);
+        return;
+    }
+
+    list_push_back(code, &pushnode->list);
+}
+
+//
 // Fix instructions in a function.
 //
 static void asm_fixop_func(AsmNode *func)
@@ -490,6 +533,7 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_MOV:       asm_fixop_mov(&newcode, node); break;
             case ASM_MOVSX:     asm_fixop_movsx(&newcode, node); break;
             case ASM_MOVZX:     asm_fixop_movzx(&newcode, node); break;
+            case ASM_LEA:       asm_fixop_lea(&newcode, node); break;
             case ASM_IDIV:      asm_fixop_idiv(&newcode, node); break;
             case ASM_DIV:       asm_fixop_div(&newcode, node); break;
             case ASM_BINARY:    asm_fixop_binary(&newcode, node); break;
@@ -498,7 +542,8 @@ static void asm_fixop_func(AsmNode *func)
             case ASM_CVTTSD2SI: asm_fixop_cvttsd2si(&newcode, node); break;
             case ASM_CVTSI2SD:  asm_fixop_cvtsi2sd(&newcode, node); break;
 
-            case ASM_PUSH:
+            case ASM_PUSH:      asm_fixop_push(&newcode, node); break;
+
             case ASM_CALL:
             case ASM_PROG:
             case ASM_FUNC:

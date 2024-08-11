@@ -19,6 +19,7 @@ typedef enum {
     REG_R10,
     REG_R11,
     REG_RSP,
+    REG_RBP,
 
     REG_XMM0,
     REG_XMM1,
@@ -39,6 +40,7 @@ typedef enum {
 } Register;
 
 extern char *reg_name(Register reg);
+extern bool is_xmm(Register reg);
 
 typedef enum {
     AT_LONGWORD,
@@ -51,11 +53,11 @@ typedef struct {
 } AsmType;
 
 typedef enum  {
-    AOP_IMM,
-    AOP_REG,
-    AOP_PSEUDOREG,
-    AOP_STACK,          // a variable reference to a stack object
+    AOP_IMM,            // an immediate (constant) value
+    AOP_REG,            // the contents of a register
+    AOP_PSEUDOREG,      // a named variable used like a register
     AOP_DATA,           // a variable reference to a static object
+    AOP_MEMORY,         // reg + offset addressing, for RBP + xxx
 } AsmOperandTag;
 
 extern AsmType *asmtype_long(void);
@@ -84,24 +86,28 @@ typedef enum {
 extern const char *acc_describe(AsmConditionCode cc);
 
 typedef struct {
+    Register reg;           // base register
+    int offset;             // offset 
+} AsmMemoryOperand;
+
+typedef struct {
     AsmOperandTag tag;
 
     union {
-        Register reg;       // AOP_REG
-        unsigned long imm;  // AOP_IMM
-        char *pseudoreg;    // AOP_PSEUDOREG 
-        char *data;         // AOP_DATA
-        int stack_offset;   // AOP_STACK, offset from frame pointer
+        Register            reg;        // AOP_REG
+        unsigned long       imm;        // AOP_IMM
+        char               *pseudoreg;  // AOP_PSEUDOREG 
+        char               *data;       // AOP_DATA
+        AsmMemoryOperand    memory;     // AOP_MEMORY
     };
 } AsmOperand;
-
 
 extern AsmOperand *aoper_clone(AsmOperand *oper);
 extern AsmOperand *aoper_reg(Register reg);
 extern AsmOperand *aoper_pseudoreg(char *name);
 extern AsmOperand *aoper_imm(unsigned long val);
-extern AsmOperand *aoper_stack(int val);
 extern AsmOperand *aoper_data(char *name);
+extern AsmOperand *aoper_memory(Register reg, int offset);
 extern bool aoper_is_mem(AsmOperand *oper);
 extern void aoper_free(AsmOperand *op);
 extern void aoper_print(AsmOperand *op);
@@ -114,6 +120,7 @@ typedef enum {
     ASM_MOV,
     ASM_MOVSX,
     ASM_MOVZX,
+    ASM_LEA,
     ASM_UNARY,
     ASM_BINARY,
     ASM_CMP,
@@ -174,6 +181,11 @@ typedef struct {
     AsmOperand *src;        // source operand
     AsmOperand *dst;        // destination operand
 } AsmMovzx;
+
+typedef struct {
+    AsmOperand *src;        // source operand
+    AsmOperand *dst;        // destination operand
+} AsmLea;
 
 typedef struct {
     UnaryOp op;             // operator
@@ -268,6 +280,7 @@ struct AsmNode {
         AsmMovsx            movsx;              // ASM_MOVSX
         AsmMovzx            movzx;              // ASM_MOVZX
         AsmUnary            unary;              // ASM_UNARY
+        AsmLea              lea;                // ASM_LEA
         AsmBinary           binary;             // ASM_BINARY
         AsmCmp              cmp;                // ASM_CMP
         AsmIdiv             idiv;               // ASM_IDIV
@@ -293,6 +306,7 @@ extern AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_lea(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc);
 extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_cmp(AsmOperand *left, AsmOperand *right, AsmType *type, FileLine loc);

@@ -3,3 +3,4 @@
 * Fix extra credit
 * Do quiet NaN
 * Fix ability to free program AST w/ dup interior pointers in declarations
+* Remove explicit stack allocation operations and replace with add/sub to RSP

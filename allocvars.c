@@ -102,7 +102,7 @@ static void asm_alloc_operand(VarTable *vartab, AsmOperand **oper)
         // Replace with offset from stack frame.
         //
         aoper_free(*oper);
-        *oper = aoper_stack(var->offset);
+        *oper = aoper_memory(REG_RBP, var->offset);
     }
 }
 
@@ -137,6 +137,17 @@ static void asm_alloc_movzx(VarTable *vartab, AsmNode *instr)
 
     asm_alloc_operand(vartab, &instr->movzx.src);
     asm_alloc_operand(vartab, &instr->movzx.dst);
+}
+
+//
+// Apply pseudoregister replacement to an LEA instruction.
+//
+static void asm_alloc_lea(VarTable *vartab, AsmNode *instr)
+{
+    ICE_ASSERT(instr->tag == ASM_LEA);
+
+    asm_alloc_operand(vartab, &instr->lea.src);
+    asm_alloc_operand(vartab, &instr->lea.dst);
 }
 
 //
@@ -243,6 +254,7 @@ static void asm_alloc_instr(VarTable *vartab, AsmNode *instr)
         case ASM_MOV:           asm_alloc_mov(vartab, instr); break;
         case ASM_MOVSX:         asm_alloc_movsx(vartab, instr); break;
         case ASM_MOVZX:         asm_alloc_movzx(vartab, instr); break;
+        case ASM_LEA:           asm_alloc_lea(vartab, instr); break;
         case ASM_UNARY:         asm_alloc_unary(vartab, instr); break;
         case ASM_BINARY:        asm_alloc_binary(vartab, instr); break;
         case ASM_CMP:           asm_alloc_cmp(vartab, instr); break;

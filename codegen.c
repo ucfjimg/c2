@@ -132,7 +132,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_ULONG:      return asmtype_quad();
         case TT_DOUBLE:     return asmtype_double();
         case TT_FUNC:       ICE_ASSERT(((void)"function type found in codegen_type_to_asmtype.", false));
-        case TT_POINTER:    ICE_ASSERT(((void)"pointer symbol found in codegen_type_to_asmtype.", false));
+        case TT_POINTER:    return asmtype_quad();
     }
     
     ICE_ASSERT(false);
@@ -181,20 +181,20 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
 //
 // Return the alignment for a static variable.
 //
-static int codegen_align(Const *init)
+static int codegen_align(Type *type)
 {
-    if (init->tag == CON_FLOAT) {
-        return 8;
+    int align = 1;
+    AsmType *at = codegen_type_to_asmtype(type);
+
+    switch (at->tag) {
+        case AT_LONGWORD:   align = 4; break;
+        case AT_QUADWORD:   align = 8; break;
+        case AT_DOUBLE:     align = 8; break;
     }
 
-    if (init->tag == CON_INTEGRAL) {
-        switch (init->intval.size) {
-            case CIS_INT:       return 4;
-            case CIS_LONG:      return 8;
-        }
-    }
+    asmtype_free(at);
 
-    return 1;
+    return align;
 }
 
 //
@@ -715,8 +715,8 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
     codegen_push_static(state, 
         asm_static_var(
             decl->static_var.name, 
-            decl->static_var.global, 
-            codegen_align(&decl->static_var.init),
+            decl->static_var.global,
+            codegen_align(decl->static_var.type),
             decl->static_var.init, 
             decl->loc));
 }
@@ -888,6 +888,48 @@ static void codegen_uint_to_dbl(CodegenState *state, TacNode *tac)
 }
 
 //
+// Generate code for a get-address operation.
+//
+static void codegen_get_address(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_GET_ADDRESS);
+
+    AsmOperand *src = codegen_expression(state, tac->get_address.src);
+    AsmOperand *dst = codegen_expression(state, tac->get_address.dst);
+    codegen_push_instr(state, asm_lea(src, dst, tac->loc));
+}
+
+//
+// Generate code for a load operation.
+// 
+static void codegen_load(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_LOAD);
+
+    AsmOperand *src = codegen_expression(state, tac->load.src);
+    AsmOperand *dst = codegen_expression(state, tac->load.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->load.dst);
+
+    codegen_push_instr(state, asm_mov(src, aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+    codegen_push_instr(state, asm_mov(aoper_memory(REG_RDX, 0), dst, type, tac->loc));
+}
+
+//
+// Generate code for a store operation.
+// 
+static void codegen_store(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_STORE);
+
+    AsmOperand *src = codegen_expression(state, tac->store.src);
+    AsmOperand *dst = codegen_expression(state, tac->store.dst);
+    AsmType *type = codegen_tac_to_asmtype(state, tac->store.src);
+
+    codegen_push_instr(state, asm_mov(dst, aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
+    codegen_push_instr(state, asm_mov(src, aoper_memory(REG_RDX, 0), type, tac->loc));
+}
+
+//
 // Generate code for a single instruction.
 //
 static void codegen_single(CodegenState *state, TacNode *tac)
@@ -913,9 +955,9 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_INT_TO_DOUBLE:     codegen_int_to_dbl(state, tac); break;
         case TAC_UINT_TO_DOUBLE:    codegen_uint_to_dbl(state, tac); break;
 
-        case TAC_GET_ADDRESS:       ICE_NYI("codegen_single::get-address");
-        case TAC_LOAD:              ICE_NYI("codegen_single::load");
-        case TAC_STORE:             ICE_NYI("codegen_single::store");
+        case TAC_GET_ADDRESS:       codegen_get_address(state, tac); break;
+        case TAC_LOAD:              codegen_load(state, tac); break;
+        case TAC_STORE:             codegen_store(state, tac); break;
 
         case TAC_PROGRAM:           break;
         case TAC_CONST:             break;
@@ -1008,7 +1050,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
         codegen_push_instr(
             &funcstate,
             asm_mov(
-                aoper_stack(offset),
+                aoper_memory(REG_RBP, offset),
                 aoper_pseudoreg(param->name),
                 at,
                 tac->loc

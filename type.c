@@ -210,8 +210,11 @@ bool types_equal(Type *left, Type *right)
 //
 bool types_same_size(Type *left, Type *right)
 {
-    bool left_long = left->tag == TT_LONG || left->tag == TT_ULONG;
-    bool right_long = right->tag == TT_LONG || right->tag == TT_ULONG;
+    //
+    // $TARGET we are assumuing that sizeof(LONG) == sizeof(pointer)
+    //
+    bool left_long = left->tag == TT_LONG || left->tag == TT_ULONG || left->tag == TT_POINTER;
+    bool right_long = right->tag == TT_LONG || right->tag == TT_ULONG || right->tag == TT_POINTER;
 
     return left_long == right_long;
 }
