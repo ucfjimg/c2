@@ -144,8 +144,10 @@ char *token_type_describe(TokenType tt)
         case TOK_FENCE:
         case TOK_LBRACE:
         case TOK_LPAREN:
+        case TOK_LBRACKET:
         case TOK_RBRACE:
         case TOK_RPAREN:
+        case TOK_RBRACKET:
         case TOK_SEMI:
         case TOK_PLUS:
         case TOK_MINUS:

@@ -30,6 +30,7 @@ typedef enum {
     EXP_CAST,
     EXP_DEREF,
     EXP_ADDROF,
+    EXP_SUBSCRIPT,
 } ExpressionTag;
 
 typedef struct {
@@ -77,6 +78,11 @@ typedef struct {
     Expression *exp;
 } ExpAddrOf;
 
+typedef struct {
+    Expression *left;
+    Expression *right;
+} ExpSubscript;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;       
@@ -98,6 +104,7 @@ struct Expression {
         ExpCast cast;
         ExpDeref deref;
         ExpAddrOf addrof;
+        ExpSubscript subscript;
     };
 };
 
@@ -115,8 +122,30 @@ extern Expression *exp_function_call(char *name, List args, FileLine loc);
 extern Expression *exp_cast(Type *type, Expression *exp, FileLine loc);
 extern Expression *exp_deref(Expression *exp, FileLine loc);
 extern Expression *exp_addrof(Expression *exp, FileLine loc);
+extern Expression *exp_subscript(Expression *left, Expression *right, FileLine loc);
 extern void exp_free(Expression *exp);
 extern void exp_set_type(Expression *exp, Type *type);
+
+//
+// initializers
+//
+typedef enum {
+    INIT_SINGLE,
+    INIT_COMPOUND,
+} InitializerTag;
+
+typedef struct {
+    ListNode list;
+    InitializerTag tag;
+
+    union {
+        Expression  *single;        // INIT_SINGLE        
+        List        compound;       // INIT_COMPOUND of <Initializer>
+    };
+} Initializer;
+
+extern Initializer *init_single(Expression *exp);
+extern Initializer *init_compound(List inits);
 
 //
 // declarations
@@ -128,7 +157,7 @@ typedef enum {
 
 typedef struct {
     char *name;                 // variable name
-    Expression *init;           // optional initializer
+    Initializer *init;          // optional initializer
     Type *type;                 // variable type
     StorageClass storage_class; // if the declaration is marked as static or extern
 } DeclVariable;
@@ -161,7 +190,7 @@ struct Declaration {
     };
 };
 
-extern Declaration *decl_variable(char *name, Type *type, StorageClass sc, Expression *init, FileLine loc);
+extern Declaration *decl_variable(char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc);
 extern Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
 extern void declaration_free(Declaration *decl);
 

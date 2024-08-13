@@ -166,7 +166,9 @@ static void ast_resolve_var_decl(ResolveState *state, Declaration *decl)
     }
 
     if (var->init) {
+        #ifdef COMPLEX_INIT
         ast_resolve_expression(state, var->init);
+        #endif 
     }
 }
 
@@ -298,6 +300,7 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
         case EXP_DEREF:         ast_resolve_deref_exp(state, &exp->deref); break;
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
+        case EXP_SUBSCRIPT:     ICE_NYI("ast_resolve_expression::EXP_SUBSCRIPT");
         case EXP_INT:           break;
         case EXP_LONG:          break;
         case EXP_UINT:          break;

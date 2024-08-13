@@ -589,6 +589,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_CAST:          return tcg_cast(state, exp); break;
         case EXP_DEREF:         return tcg_deref(state, exp); break;
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
+        case EXP_SUBSCRIPT:     ICE_NYI("tcg_expression::EXP_SUBSCRIPT");
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -625,9 +626,11 @@ static void tcg_declaration(TacState *state, Declaration *decl)
     // For local variables, generate code for initializers
     //
     if (decl->var.init) {
+        #ifdef COMPLEX_INIT
         TacNode *initval = tcg_expression_and_convert(state, decl->var.init);
         TacNode *declvar = tac_var(decl->var.name, decl->loc);
         tcg_append(state, tac_copy(initval, declvar, decl->loc));
+        #endif
     }
 }
 

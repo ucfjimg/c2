@@ -22,6 +22,7 @@ typedef enum {
     DC_IDENT,
     DC_POINTER,
     DC_FUNCTION,
+    DC_ARRAY,
 } DeclaratorTag;
 
 typedef struct Declarator Declarator;
@@ -45,6 +46,11 @@ typedef struct {
     Declarator *decl;           // function itself 
 } DeclaratorFunction;
 
+typedef struct {
+    Declarator *decl;           // element declarator
+    size_t size;                // size of array
+} DeclaratorArray;
+
 struct Declarator {
     DeclaratorTag tag;
     FileLine loc;
@@ -53,6 +59,7 @@ struct Declarator {
         DeclaratorIdent         ident;
         DeclaratorPointer       ptr;
         DeclaratorFunction      func;
+        DeclaratorArray         array;
     };
 };
 
@@ -64,6 +71,7 @@ typedef struct {
 
 typedef enum {
     ADT_POINTER,
+    ADT_ARRAY,
     ADT_BASE,
 } AbstractDeclaratorTag;
 
@@ -73,11 +81,17 @@ typedef struct {
     AbstractDeclarator *decl;
 } AbstractDeclaratorPointer;
 
+typedef struct {
+    AbstractDeclarator *decl;
+    size_t size;
+} AbstractDeclaratorArray;
+
 struct AbstractDeclarator {
     AbstractDeclaratorTag tag;
 
     union {
         AbstractDeclaratorPointer ptr;
+        AbstractDeclaratorArray array;
     };
 };
 
@@ -153,6 +167,7 @@ static bool is_type_specifier(Parser *parser);
 static void declarator_free(Declarator *decl);
 static Declarator *parse_declarator(Parser *parser);
 static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base);
+static AbstractDeclarator *parse_abstract_declarator(Parser *parser);
 
 //
 // Create a parser bookmark at the current state.
@@ -364,8 +379,30 @@ static Expression *parse_function_call(Parser *parser, Expression *func)
 } 
 
 //
+// Parse a subscript operator.
+// <postfix> := <postfix> "[" <exp> "]"
+//
+static Expression *parse_subscript(Parser *parser, Expression *array)
+{
+    FileLine loc = parser->tok.loc;
+
+    ICE_ASSERT(parser->tok.type == '[');
+    parse_next_token(parser);
+
+    Expression *exp = parse_expression(parser, 0);
+
+    if (parser->tok.type != ']') {
+        report_expected_err(&parser->tok, "`]`");
+    }
+    parse_next_token(parser);
+
+    return exp_subscript(array, exp, loc);
+
+}
+
+//
 // Parse a postfix operator.
-// <postfix> := <primary> | <postfix> "++" | <postfix> "--" | <postfix> "(" <arg-list> ")" 
+// <postfix> := <primary> | <postfix> "++" | <postfix> "--" | <postfix> "(" <arg-list> ")" | <postfix> "[" <exp> "]"
 //
 static Expression *parse_postfix(Parser *parser)
 {
@@ -384,6 +421,7 @@ static Expression *parse_postfix(Parser *parser)
                 break;
             
             case '(':           exp = parse_function_call(parser, exp); break;
+            case '[':           exp = parse_subscript(parser, exp); break;
             default: goto done;
         }
     }
@@ -404,6 +442,18 @@ static AbstractDeclarator *abstract_declarator_pointer(AbstractDeclarator *inner
 }
 
 //
+// Construct an array abstract declarator.
+//
+static AbstractDeclarator *abstract_declarator_array(AbstractDeclarator *inner, size_t size)
+{
+    AbstractDeclarator *decl = safe_zalloc(sizeof(AbstractDeclarator));
+    decl->tag = ADT_ARRAY;
+    decl->array.decl = inner;
+    decl->array.size = size;
+    return decl;
+}
+
+//
 // Construct a base abstract declarator.
 // 
 static AbstractDeclarator *abstract_declarator_base(void)
@@ -420,10 +470,63 @@ static void abstract_declarator_free(AbstractDeclarator *decl)
 {
     switch (decl->tag) {
         case ADT_POINTER:   abstract_declarator_free(decl->ptr.decl); break;
+        case ADT_ARRAY:     abstract_declarator_free(decl->array.decl); break;
         case ADT_BASE:      break;
     }
 
     safe_free(decl);
+}
+
+//
+// Parse a sequence of abstract declarator array sizes.
+//
+static AbstractDeclarator *parse_abstract_declarator_array(Parser *parser, AbstractDeclarator *inner)
+{
+    while (parser->tok.type == '[') {
+        parse_next_token(parser);
+
+        size_t size = 1;
+        if (parser->tok.type == TOK_INT_CONST) {
+            size = parser->tok.int_const.intval;
+        } else {
+            report_expected_err(&parser->tok, "integral constant");
+        }
+        parse_next_token(parser);
+
+        if (parser->tok.type != ']') {
+            report_expected_err(&parser->tok, "`]`");
+        }
+        parse_next_token(parser);
+
+        inner = abstract_declarator_array(inner, size);
+    }
+
+    return inner;
+}
+
+//
+// Parse a direct abstract declarator.
+//
+// <direct-abstract-declarator> := 
+//      '(' <abstract-declarator> ')' { '[' <const> ']' }   |
+//      { '[' <const> ']' }+
+//
+static AbstractDeclarator *parse_direct_abstract_declarator(Parser *parser)
+{
+    AbstractDeclarator *inner = NULL;
+
+    if (parser->tok.type == '(') {
+        parse_next_token(parser);
+        inner = parse_abstract_declarator(parser);
+        if (parser->tok.type != ')') {
+            report_expected_err(&parser->tok, "`)`");
+        }
+        parse_next_token(parser);
+    } else {
+        inner = abstract_declarator_base();
+    }
+
+    return parse_abstract_declarator_array(parser, inner);
 }
 
 //
@@ -443,13 +546,8 @@ static AbstractDeclarator *parse_abstract_declarator(Parser *parser)
             return abstract_declarator_pointer(inner);
 
         case '(':
-            parse_next_token(parser);
-            inner = parse_abstract_declarator(parser);
-            if (parser->tok.type != ')') {
-                report_expected_err(&parser->tok, "`)`");
-            }
-            parse_next_token(parser);
-            return inner;
+        case '[':
+            return parse_direct_abstract_declarator(parser);
 
         default:
             break;
@@ -466,6 +564,7 @@ static Type *abstract_decl_to_type(AbstractDeclarator *decl, Type *base)
 {
     switch (decl->tag) {
         case ADT_POINTER:   return type_pointer(abstract_decl_to_type(decl->ptr.decl, base));
+        case ADT_ARRAY:     return type_array(abstract_decl_to_type(decl->array.decl, base), decl->array.size);
         case ADT_BASE:      return base;
     }
 
@@ -761,6 +860,47 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 }
 
 //
+// Parse a complex initializer.
+//
+// <initializer> := <exp> | '{' <initializer> { "," <initializer> } [ "," ] '}'
+//
+static Initializer *parse_initializer(Parser *parser)
+{
+    if (parser->tok.type == '{') {
+        parse_next_token(parser);
+        
+        List inits;
+        list_clear(&inits);
+
+        while (true) {
+            Initializer *init = parse_initializer(parser);
+            list_push_back(&inits, &init->list);
+
+            bool comma = parser->tok.type == ',';
+            if (comma) {
+                parse_next_token(parser);
+            }
+
+            if (parser->tok.type == '}') {
+                parse_next_token(parser);
+                break;
+            }
+
+            if (!comma) {
+                report_expected_err(&parser->tok, "`,` or `}`");
+                parse_next_token(parser);
+                break;
+            }
+        }
+
+        return init_compound(inits);
+    }
+
+    Expression *exp = parse_expression(parser, 0);
+    return init_single(exp);
+}
+
+//
 // Parse a variable declaration.
 // <declaration> := { <specifier> }+ <declarator> [ "=" <exp> ] ";"  |
 //
@@ -768,11 +908,11 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 //
 static Declaration *parse_decl_variable(Parser *parser, Type *type, StorageClass sc, char *name, FileLine loc)
 {
-    Expression *init = NULL;
+    Initializer *init = init_single(exp_int(0, loc));
 
     if (parser->tok.type == TOK_ASSIGN) {
         parse_next_token(parser);
-        init = parse_expression(parser, 0);
+        init = parse_initializer(parser);
     }
 
     if (parser->tok.type != ';') {
@@ -872,6 +1012,14 @@ static void declarator_func_free(DeclaratorFunction *func)
 }
 
 //
+// Free an array declarator.
+//
+static void declarator_array_free(DeclaratorArray *array)
+{
+    declarator_free(array->decl);
+}
+
+//
 // Free a declarator.
 //
 static void declarator_free(Declarator *decl)
@@ -880,6 +1028,7 @@ static void declarator_free(Declarator *decl)
         case DC_IDENT:          declarator_ident_free(&decl->ident); break;
         case DC_POINTER:        declarator_ptr_free(&decl->ptr); break;
         case DC_FUNCTION:       declarator_func_free(&decl->func); break;
+        case DC_ARRAY:          declarator_array_free(&decl->array); break;
     }
 }
 
@@ -917,6 +1066,19 @@ static Declarator *declarator_function(List params, Declarator *retdecl, FileLin
     decl->loc = loc;
     decl->func.params = params;
     decl->func.decl = retdecl; 
+    return decl;
+}
+
+//
+// Construct an array declarator.
+//
+static Declarator *declarator_array(Declarator *element, size_t size, FileLine loc)
+{
+    Declarator *decl = safe_zalloc(sizeof(Declarator));
+    decl->tag = DC_ARRAY;
+    decl->loc = loc;
+    decl->array.decl = element;
+    decl->array.size = size;
     return decl;
 }
  
@@ -1009,6 +1171,7 @@ static List parse_decl_params(Parser *parser)
 //
 // Parse a direct declarator.
 //
+// <declarator-suffix> := <param-list> | { '[' <const> ']' }+
 // <direct-declarator> := <simple-declarator> [ <param-list> ]
 //
 static Declarator *parse_direct_declarator(Parser *parser)
@@ -1020,6 +1183,27 @@ static Declarator *parse_direct_declarator(Parser *parser)
         FileLine loc = parser->tok.loc;
         List params = parse_decl_params(parser);
         return declarator_function(params, simple, loc);
+    } else if (parser->tok.type == '[') {
+        while (parser->tok.type == '[') {
+            FileLine loc = parser->tok.loc;
+    
+            parse_next_token(parser);
+
+            size_t size = 1;
+            if (parser->tok.type == TOK_INT_CONST) {
+                size = parser->tok.int_const.intval;
+            } else {
+                report_expected_err(&parser->tok, "integral constant");
+            }
+            parse_next_token(parser);
+
+            if (parser->tok.type != ']') {
+                report_expected_err(&parser->tok, "`]`");
+            }
+            parse_next_token(parser);
+
+            simple = declarator_array(simple, size, loc);
+        }
     }
     
     return simple;
@@ -1137,6 +1321,15 @@ static ProcessedDeclarator *process_function_declarator(List params, Declarator 
 }
 
 //
+// Process an array declarator.
+//
+static ProcessedDeclarator *process_array_declarator(Declarator *inner, size_t size, Type *base)
+{
+    Type *derived = type_array(base, size);
+    return process_declarator(inner, derived);
+}
+
+//
 // Given a parsed declarator, unwind it and return the declared name,
 // type, and function parameter names if any.
 //
@@ -1146,6 +1339,7 @@ static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base)
         case DC_IDENT:      return processed_declarator_ident(decl->ident.ident, base);
         case DC_POINTER:    return process_pointer_declarator(decl->ptr.decl, base);
         case DC_FUNCTION:   return process_function_declarator(decl->func.params, decl->func.decl, base);
+        case DC_ARRAY:      return process_array_declarator(decl->array.decl, decl->array.size, base);
     }
 
     ICE_ASSERT(((void)"unhandled tag in process_declarator", false));

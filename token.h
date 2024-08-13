@@ -10,8 +10,10 @@ typedef enum {
     //
     TOK_LBRACE = '{',    
     TOK_LPAREN = '(',
+    TOK_LBRACKET = '[',
     TOK_RBRACE = '}',
     TOK_RPAREN = ')',
+    TOK_RBRACKET = ']',
     TOK_SEMI = ';',
     TOK_PLUS = '+',
     TOK_MINUS = '-',

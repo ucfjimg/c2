@@ -133,6 +133,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         case TT_DOUBLE:     return asmtype_double();
         case TT_FUNC:       ICE_ASSERT(((void)"function type found in codegen_type_to_asmtype.", false));
         case TT_POINTER:    return asmtype_quad();
+        case TT_ARRAY:      ICE_NYI("codegen_type_to_asmtype::TT_ARRAY");
     }
     
     ICE_ASSERT(false);

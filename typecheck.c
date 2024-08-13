@@ -656,6 +656,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_CAST:          return ast_check_cast(state, exp); break;
         case EXP_DEREF:         return ast_check_deref(state, exp); break;
         case EXP_ADDROF:        return ast_check_addrof(state, exp); break;
+        case EXP_SUBSCRIPT:     ICE_NYI("ast_check_expression::EXP_SUBSCRIPT");
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -913,6 +914,7 @@ static Const ast_convert_const_to(Const *cn, Type *ty)
                 
             case TT_FUNC:       ICE_ASSERT(((void)"cannot convert function in ast_convert_const_to", false));
             case TT_POINTER:    ICE_ASSERT(((void)"cannot convert pointer in ast_convert_const_to", false));
+            case TT_ARRAY:      ICE_ASSERT(((void)"cannot convert array in ast_convert_const_to", false));
         }
     }
 
@@ -944,6 +946,7 @@ static Const ast_check_static_init(Type *type, Const init, FileLine loc)
 //
 static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
 {
+    #ifdef COMPLEX_INIT
     ICE_ASSERT(decl->tag == DECL_VARIABLE);
     DeclVariable *var = &decl->var;
 
@@ -1026,6 +1029,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
     init = ast_check_static_init(type, init, decl->loc);
 
     sym_update_static_var(sym, type, siv, init, globally_visible, decl->loc);
+    #endif
 }
 
 //
@@ -1070,6 +1074,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             init = ast_check_static_init(type, init, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
+            #ifdef COMPLEX_INIT
             switch (var->init->tag) {
                 case EXP_INT:   init = const_make_int(CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
                 case EXP_UINT:  init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
@@ -1082,6 +1087,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             }
             init = ast_check_static_init(type, init, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
+            #endif
         }
     } else {
         //
@@ -1089,8 +1095,10 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         //
         sym_update_local(sym, type);
         if (var->init) {
+            #ifdef COMPLEX_INIT
             ast_check_expression(state, var->init);
             var->init = convert_by_assignment(var->init, var->type);
+            #endif
         }
     }
 }

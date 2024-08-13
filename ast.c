@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 
+static void init_free(Initializer *init);
+static void init_print_recurse(Initializer *init, int tab, bool locs);
 static void stmt_print_recurse(Statement *ast, int tab, bool locs);
 static void exp_print_recurse(Expression *exp, int tab, bool locs);
 static void decl_print_declaration(Declaration *decl, int tab, bool locs);
@@ -263,6 +265,28 @@ static void exp_addrof_free(ExpAddrOf *addrof)
 }
 
 //
+// Construct a subscript operator.
+//
+Expression *exp_subscript(Expression *left, Expression *right, FileLine loc)
+{
+    Expression *subs = exp_alloc(EXP_SUBSCRIPT, loc);
+
+    subs->subscript.left = left;
+    subs->subscript.right = right;   
+
+    return subs;
+}
+
+//
+// Free a subscript operator.
+//
+static void exp_subscript_free(ExpSubscript *subs)
+{
+    exp_free(subs->left);
+    exp_free(subs->right);
+}
+
+//
 // Free an expression
 //
 void exp_free(Expression *exp)
@@ -278,6 +302,7 @@ void exp_free(Expression *exp)
             case EXP_CAST:          exp_cast_free(&exp->cast); break;
             case EXP_DEREF:         exp_deref_free(&exp->deref); break;
             case EXP_ADDROF:        exp_addrof_free(&exp->addrof); break;
+            case EXP_SUBSCRIPT:     exp_subscript_free(&exp->subscript); break;
 
             case EXP_INT:
             case EXP_UINT:
@@ -302,6 +327,54 @@ void exp_set_type(Expression *exp, Type *type)
     exp->type = type;
 }
 
+//
+// Constructor for a single initializer.
+//
+Initializer *init_single(Expression *exp)
+{
+    Initializer *init = safe_zalloc(sizeof(Initializer));
+
+    init->tag = INIT_SINGLE;
+    init->single = exp;
+
+    return init;
+}
+
+//
+// Constructor for a compound initializer.
+//
+Initializer *init_compound(List inits)
+{
+    Initializer *init = safe_zalloc(sizeof(Initializer));
+
+    init->tag = INIT_COMPOUND;
+    init->compound = inits;
+
+    return init;
+}
+
+//
+// Free a compound initializer
+//
+static void init_compound_free(List inits)
+{
+    ListNode *next = NULL;
+    for (ListNode *curr = inits.head; curr; curr = next) {
+        next = curr->next;
+        init_free(CONTAINER_OF(curr, Initializer, list));
+    }
+}
+
+//
+// Free an initializer.
+//
+static void init_free(Initializer *init)
+{
+    switch (init->tag) {
+        case INIT_SINGLE:   exp_free(init->single); break;
+        case INIT_COMPOUND: init_compound_free(init->compound); break;
+    }
+}
 
 //
 // Constructor for a variable declaration.
@@ -309,7 +382,7 @@ void exp_set_type(Expression *exp, Type *type)
 // Note that `init` is optional and will be NULL if the declaration
 // has no initializer.
 // 
-Declaration *decl_variable(char *name, Type *type, StorageClass sc, Expression *init, FileLine loc)
+Declaration *decl_variable(char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc)
 {
     Declaration *decl = safe_zalloc(sizeof(Declaration));
 
@@ -330,7 +403,7 @@ static void decl_variable_free(DeclVariable *var)
 {
     safe_free(var->name);
     type_free(var->type);
-    exp_free(var->init);
+    init_free(var->init);
 }
 
 //
@@ -1001,6 +1074,18 @@ static void print_exp_addrof(ExpAddrOf *addrof, int tab, bool locs)
 }
 
 //
+// Print a subscript expression.
+//
+static void print_exp_subscript(ExpSubscript *subs, int tab, bool locs)
+{
+    printf("subscript {\n");
+    exp_print_recurse(subs->left, tab + 2, locs);
+    printf("%*s}, {\n", tab, "");
+    exp_print_recurse(subs->right, tab + 2, locs);    
+    printf("%*s}\n", tab, "");
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -1033,6 +1118,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_CAST:          print_exp_cast(&exp->cast, tab, locs); break;
         case EXP_DEREF:         print_exp_deref(&exp->deref, tab, locs); break;
         case EXP_ADDROF:        print_exp_addrof(&exp->addrof, tab, locs); break;
+        case EXP_SUBSCRIPT:     print_exp_subscript(&exp->subscript, tab, locs); break;
     }
 }
 
@@ -1051,6 +1137,44 @@ static char *storage_class_describe(StorageClass sc)
 }
 
 //
+// Print a single item initializer.
+//
+static void init_print_single(Expression *exp, int tab, bool locs)
+{
+    printf("%*ssingle-init {\n", tab, "");
+    exp_print_recurse(exp, tab + 2, locs);
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print a compound initializer.
+//
+static void init_print_compound(List items, int tab, bool locs)
+{
+    printf("%*scompound-init {\n", tab, "");
+
+    for (ListNode *curr = items.head; curr; curr = curr->next) {
+        init_print_recurse(CONTAINER_OF(curr, Initializer, list), tab + 2, locs);
+        if (curr->next) {
+            printf("%*s,\n", tab + 2, "");
+        }
+    }
+
+    printf("%*s}\n", tab, "");
+}
+
+//
+// Print an initializer.
+//
+static void init_print_recurse(Initializer *init, int tab, bool locs)
+{
+    switch (init->tag) {
+        case INIT_SINGLE:   init_print_single(init->single, tab, locs); break;
+        case INIT_COMPOUND: init_print_compound(init->compound, tab, locs); break;
+    }
+}
+
+//
 // Print a variable declaration.
 //
 static void decl_print_variable(DeclVariable *var, int tab, bool locs)
@@ -1060,7 +1184,7 @@ static void decl_print_variable(DeclVariable *var, int tab, bool locs)
     safe_free(type);
     if (var->init) {
         printf(" = {\n");
-        exp_print_recurse(var->init, tab + 2, locs);
+        init_print_recurse(var->init, tab + 2, locs);
         printf("%*s}", tab, "");
     }
     printf(";\n");

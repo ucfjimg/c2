@@ -98,6 +98,17 @@ Type *type_pointer(Type *ref)
 }
 
 //
+// Constructor for an array.
+//
+Type *type_array(Type *element, size_t size)
+{
+    Type *type = type_alloc(TT_ARRAY);
+    type->array.element = element;
+    type->array.size = size;
+    return type;
+}
+
+//
 // Clone a function parameter.
 //
 static TypeFuncParam *type_func_param_clone(TypeFuncParam *parm)
@@ -133,6 +144,14 @@ static Type *type_clone_pointer(TypePointer *ptr)
 }
 
 //
+// Clone an array type.
+//
+static Type *type_clone_array(TypeArray *array)
+{
+    return type_array(type_clone(array->element), array->size);
+}
+
+//
 // Clone a type.
 //
 Type *type_clone(Type *type)
@@ -145,6 +164,7 @@ Type *type_clone(Type *type)
         case TT_DOUBLE: return type_double();
         case TT_FUNC:   return type_clone_func(&type->func);
         case TT_POINTER:return type_clone_pointer(&type->ptr);
+        case TT_ARRAY:  return type_clone_array(&type->array);
     }
 
     ICE_ASSERT(((void)"invalid type tag in type_clone", false));
@@ -179,6 +199,18 @@ bool types_func_equal(TypeFunction *left, TypeFunction *right)
 }
 
 //
+// Return true if the two array types are identical.
+//
+bool types_array_equal(TypeArray *left, TypeArray *right)
+{
+    if (!types_equal(left->element, right->element)) {
+        return false;
+    }
+
+    return left->size == right->size;
+}
+
+//
 // Return true if the two types are identical.
 //
 bool types_equal(Type *left, Type *right)
@@ -199,6 +231,7 @@ bool types_equal(Type *left, Type *right)
         case TT_DOUBLE: return true;
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
         case TT_POINTER:return types_equal(left->ptr.ref, right->ptr.ref);
+        case TT_ARRAY:  return types_array_equal(&left->array, &right->array);
     }
 
     ICE_ASSERT(((void)"invalid type tag in types_equal", false));
@@ -232,7 +265,8 @@ bool type_unsigned(Type *type)
         case TT_LONG:
         case TT_DOUBLE:
         case TT_FUNC:   
-        case TT_POINTER:return false;
+        case TT_POINTER:
+        case TT_ARRAY:  return false;
     }
 
     return false;
@@ -250,7 +284,8 @@ bool type_arithmetic(Type *type)
         case TT_LONG:
         case TT_DOUBLE: return true;
         case TT_FUNC:   
-        case TT_POINTER:return false;
+        case TT_POINTER:
+        case TT_ARRAY:  return false;
     }
 
     return false;
@@ -268,7 +303,8 @@ bool type_integral(Type *type)
         case TT_LONG:   return true;
         case TT_DOUBLE:
         case TT_FUNC:   
-        case TT_POINTER:return false;
+        case TT_POINTER:
+        case TT_ARRAY:  return false;
     }
 
     return false;
@@ -286,10 +322,36 @@ int type_rank(Type *type)
         case TT_LONG:   return 3;
         case TT_UINT:   return 2;
         case TT_INT:    return 1;
-        case TT_FUNC:   ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
+        case TT_FUNC:   
+        case TT_ARRAY:  ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
 
     return 0;
+}
+
+//
+// Free a function type.
+//
+static void type_free_function(TypeFunction *func)
+{
+    type_free(func->ret);
+
+    ListNode *next = NULL;
+    for (ListNode *curr = func->parms.head; curr; curr = next) {
+        next = curr->next;
+
+        TypeFuncParam *tfp = CONTAINER_OF(curr, TypeFuncParam, list);
+        type_free(tfp->parmtype);
+        safe_free(tfp);
+    }
+}
+
+//
+// Free an array type.
+//
+static void type_free_array(TypeArray *array)
+{
+    type_free(array->element);
 }
 
 //
@@ -297,7 +359,20 @@ int type_rank(Type *type)
 //
 void type_free(Type *type)
 {
-    safe_free(type);
+    if (type) {
+        switch (type->tag) {
+            case TT_INT:
+            case TT_LONG:
+            case TT_UINT:
+            case TT_ULONG:
+            case TT_DOUBLE:     break;
+            case TT_FUNC:       type_free_function(&type->func); break;
+            case TT_POINTER:    break;
+            case TT_ARRAY:      type_free_array(&type->array); break;       
+        }
+
+        safe_free(type);
+    }
 }
 
 //
@@ -311,7 +386,7 @@ static char *type_describe_func(TypeFunction *func)
         stb_printf(desc, "void (");
     } else {
         char *ret = type_describe(func->ret);
-        stb_printf(desc, "%s (", ret);
+        stb_printf(desc, "(%s)(", ret);
         safe_free(ret);
     }
     
@@ -344,8 +419,19 @@ static char *type_describe_func(TypeFunction *func)
 static char *type_describe_ptr(TypePointer *ptr)
 {
     char *ref = type_describe(ptr->ref);
-    char *desc = saprintf("%s*", ref);
+    char *desc = saprintf("(%s)*", ref);
     safe_free(ref);
+    return desc;
+}
+
+//
+// Return an allocated string describing an array type.
+//
+static char *type_describe_array(TypeArray *array)
+{
+    char *ele = type_describe(array->element);
+    char *desc = saprintf("(%s)[%zd]", ele, array->size);
+    safe_free(ele);
     return desc;
 }
 
@@ -362,6 +448,7 @@ char *type_describe(Type *type)
         case TT_DOUBLE: return saprintf("double");
         case TT_FUNC:   return type_describe_func(&type->func); break;
         case TT_POINTER:return type_describe_ptr(&type->ptr); break;
+        case TT_ARRAY:  return type_describe_array(&type->array); break;
     }
 
     return saprintf("<invalid-type>");
