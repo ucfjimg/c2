@@ -12,12 +12,9 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs);
 static void decl_print_declaration(Declaration *decl, int tab, bool locs);
 static void ast_print_blockitem_list(List block, int tab, bool locs);
 
-//
-// Allocator for all expression objects.
-// 
-static Expression *exp_alloc(ExpressionTag tag, FileLine loc)
+static Expression *exp_pool_alloc(AstState *state, ExpressionTag tag, FileLine loc)
 {
-    Expression *exp = safe_zalloc(sizeof(Expression));
+    Expression *exp = mp_alloc(state->exp_pool);
     exp->tag = tag;
     exp->loc = loc;
     return exp;
@@ -26,9 +23,9 @@ static Expression *exp_alloc(ExpressionTag tag, FileLine loc)
 //
 // Construct an integer constant expression.
 //
-Expression *exp_int(unsigned long intval, FileLine loc)
+Expression *exp_int(AstState *state, unsigned long intval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_INT, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_INT, loc);
     exp->intval = intval;
     return exp;
 }
@@ -36,9 +33,9 @@ Expression *exp_int(unsigned long intval, FileLine loc)
 //
 // Construct an long constant expression.
 //
-Expression *exp_long(unsigned long longval, FileLine loc)
+Expression *exp_long(AstState *state, unsigned long longval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_LONG, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_LONG, loc);
     exp->longval = longval;
     return exp;
 }
@@ -46,9 +43,9 @@ Expression *exp_long(unsigned long longval, FileLine loc)
 //
 // Construct an unsigned integer constant expression.
 //
-Expression *exp_uint(unsigned long intval, FileLine loc)
+Expression *exp_uint(AstState *state, unsigned long intval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_UINT, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_UINT, loc);
     exp->intval = intval;
     return exp;
 }
@@ -56,9 +53,9 @@ Expression *exp_uint(unsigned long intval, FileLine loc)
 //
 // Construct an unsigned long constant expression.
 //
-Expression *exp_ulong(unsigned long longval, FileLine loc)
+Expression *exp_ulong(AstState *state, unsigned long longval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_ULONG, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_ULONG, loc);
     exp->longval = longval;
     return exp;
 }
@@ -66,9 +63,9 @@ Expression *exp_ulong(unsigned long longval, FileLine loc)
 //
 // Construct a floating point constant expression.
 //
-Expression *exp_float(double floatval, FileLine loc)
+Expression *exp_float(AstState *state, double floatval, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_FLOAT, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_FLOAT, loc);
     exp->floatval = floatval;
     return exp;
 }
@@ -76,46 +73,30 @@ Expression *exp_float(double floatval, FileLine loc)
 //
 // Construct a variable reference expression.
 //
-Expression *exp_var(char *name, FileLine loc)
+Expression *exp_var(AstState *state, char *name, FileLine loc)
 {
-    Expression *exp = exp_alloc(EXP_VAR, loc);
+    Expression *exp = exp_pool_alloc(state, EXP_VAR, loc);
     exp->var.name = safe_strdup(name);
     return exp;
 }
 
 //
-// Free a variable reference expression.
-//
-static void exp_var_free(ExpVar *var)
-{
-    safe_free(var->name);
-}
-
-//
 // Construct a unary operator.
 //
-Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc)
+Expression *exp_unary(AstState *state, UnaryOp op, Expression *exp, FileLine loc)
 {
-    Expression *uexp = exp_alloc(EXP_UNARY, loc);
+    Expression *uexp = exp_pool_alloc(state, EXP_UNARY, loc);
     uexp->unary.op = op;
     uexp->unary.exp = exp;
     return uexp;
 }
 
 //
-// Free a unary expression.
-//
-static void exp_unary_free(ExpUnary *unary)
-{
-    exp_free(unary->exp);
-}
-
-//
 // Construct a binary operator.
 //
-Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc)
+Expression *exp_binary(AstState *state, BinaryOp op, Expression *left, Expression *right, FileLine loc)
 {
-    Expression *bexp = exp_alloc(EXP_BINARY, loc);
+    Expression *bexp = exp_pool_alloc(state, EXP_BINARY, loc);
     bexp->binary.op = op;
     bexp->binary.left = left;
     bexp->binary.right = right;
@@ -124,20 +105,11 @@ Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLin
 }
 
 //
-// Free a binary expression.
-//
-static void exp_binary_free(ExpBinary *binary)
-{
-    exp_free(binary->left);
-    exp_free(binary->right);
-}
-
-//
 // Construct a conditional operator (i.e. a ? b : c).
 //
-Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc)
+Expression *exp_conditional(AstState *state, Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc)
 {
-    Expression *cexp = exp_alloc(EXP_CONDITIONAL, loc);
+    Expression *cexp = exp_pool_alloc(state, EXP_CONDITIONAL, loc);
 
     cexp->conditional.cond = conditional;
     cexp->conditional.trueval = trueval;
@@ -147,22 +119,12 @@ Expression *exp_conditional(Expression *conditional, Expression *trueval, Expres
 }
 
 //
-// Free a conditional expression.
-//
-static void exp_conditional_free(ExpConditional *cond)
-{
-    exp_free(cond->cond);
-    exp_free(cond->trueval);
-    exp_free(cond->falseval);
-}
-
-//
 // Construct an assignment expression.
 //
-Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc)
+Expression *exp_assignment(AstState *state, BinaryOp op, Expression *left, Expression *right, FileLine loc)
 {
     ICE_ASSERT(op == BOP_ASSIGN || bop_is_compound_assign(op));
-    Expression *assign = exp_alloc(EXP_ASSIGNMENT, loc);
+    Expression *assign = exp_pool_alloc(state, EXP_ASSIGNMENT, loc);
 
     assign->assignment.op = op;
     assign->assignment.left = left;
@@ -176,16 +138,14 @@ Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, Fil
 //
 void exp_assignment_free(ExpAssignment *assign)
 {
-    exp_free(assign->left);
-    exp_free(assign->right);
 }
 
 //
 // Construct a function call.
 //
-Expression *exp_function_call(char *name, List args, FileLine loc)
+Expression *exp_function_call(AstState *state, char *name, List args, FileLine loc)
 {
-    Expression *call = exp_alloc(EXP_FUNCTION_CALL, loc);
+    Expression *call = exp_pool_alloc(state, EXP_FUNCTION_CALL, loc);
 
     call->call.name = safe_strdup(name);
     call->call.args = args;
@@ -194,24 +154,11 @@ Expression *exp_function_call(char *name, List args, FileLine loc)
 }
 
 //
-// Free a function call.
-//
-static void exp_function_call_free(ExpFunctionCall *call)
-{
-    for (ListNode *curr = call->args.head; curr; curr = curr->next) {
-        Expression *arg = CONTAINER_OF(curr, Expression, list);
-        exp_free(arg);
-    }
-
-    safe_free(call->name);
-}
-
-//
 // Construct a cast operator.
 //
-Expression *exp_cast(Type *type, Expression *exp, FileLine loc)
+Expression *exp_cast(AstState *state, Type *type, Expression *exp, FileLine loc)
 {
-    Expression *cast = exp_alloc(EXP_CAST, loc);
+    Expression *cast = exp_pool_alloc(state, EXP_CAST, loc);
 
     cast->cast.type = type;
     cast->cast.exp = exp;
@@ -220,100 +167,36 @@ Expression *exp_cast(Type *type, Expression *exp, FileLine loc)
 }
 
 //
-// Free a cast operator.
-//
-static void exp_cast_free(ExpCast *cast)
-{
-    type_free(cast->type);
-    exp_free(cast->exp);
-}
-
-//
 // Construct a deref operator.
 //
-Expression *exp_deref(Expression *exp, FileLine loc)
+Expression *exp_deref(AstState *state, Expression *exp, FileLine loc)
 {
-    Expression *deref = exp_alloc(EXP_DEREF, loc);
+    Expression *deref = exp_pool_alloc(state, EXP_DEREF, loc);
     deref->deref.exp = exp;
     return deref;
 }
 
 //
-// Free a deref operator.
-//
-static void exp_deref_free(ExpDeref *deref)
-{
-    exp_free(deref->exp);
-}
-
-//
 // Construct an addrof operator.
 //
-Expression *exp_addrof(Expression *exp, FileLine loc)
+Expression *exp_addrof(AstState *state, Expression *exp, FileLine loc)
 {
-    Expression *addrof = exp_alloc(EXP_ADDROF, loc);
+    Expression *addrof = exp_pool_alloc(state, EXP_ADDROF, loc);
     addrof->addrof.exp = exp;
     return addrof;
 }
 
 //
-// Free an addrof operator.
-//
-static void exp_addrof_free(ExpAddrOf *addrof)
-{
-    exp_free(addrof->exp);
-}
-
-//
 // Construct a subscript operator.
 //
-Expression *exp_subscript(Expression *left, Expression *right, FileLine loc)
+Expression *exp_subscript(AstState *state, Expression *left, Expression *right, FileLine loc)
 {
-    Expression *subs = exp_alloc(EXP_SUBSCRIPT, loc);
+    Expression *subs = exp_pool_alloc(state, EXP_SUBSCRIPT, loc);
 
     subs->subscript.left = left;
     subs->subscript.right = right;   
 
     return subs;
-}
-
-//
-// Free a subscript operator.
-//
-static void exp_subscript_free(ExpSubscript *subs)
-{
-    exp_free(subs->left);
-    exp_free(subs->right);
-}
-
-//
-// Free an expression
-//
-void exp_free(Expression *exp)
-{
-    if (exp) {
-        switch (exp->tag) {
-            case EXP_VAR:           exp_var_free(&exp->var); break;
-            case EXP_UNARY:         exp_unary_free(&exp->unary); break;
-            case EXP_BINARY:        exp_binary_free(&exp->binary); break;
-            case EXP_CONDITIONAL:   exp_conditional_free(&exp->conditional); break;
-            case EXP_ASSIGNMENT:    exp_assignment_free(&exp->assignment); break;
-            case EXP_FUNCTION_CALL: exp_function_call_free(&exp->call); break;
-            case EXP_CAST:          exp_cast_free(&exp->cast); break;
-            case EXP_DEREF:         exp_deref_free(&exp->deref); break;
-            case EXP_ADDROF:        exp_addrof_free(&exp->addrof); break;
-            case EXP_SUBSCRIPT:     exp_subscript_free(&exp->subscript); break;
-
-            case EXP_INT:
-            case EXP_UINT:
-            case EXP_LONG:
-            case EXP_ULONG:
-            case EXP_FLOAT:         break;
-        }
-
-        type_free(exp->type);
-        safe_free(exp);
-    }
 }
 
 //
@@ -371,7 +254,7 @@ static void init_compound_free(List inits)
 static void init_free(Initializer *init)
 {
     switch (init->tag) {
-        case INIT_SINGLE:   exp_free(init->single); break;
+        case INIT_SINGLE:   break;
         case INIT_COMPOUND: init_compound_free(init->compound); break;
     }
 }
@@ -382,9 +265,9 @@ static void init_free(Initializer *init)
 // Note that `init` is optional and will be NULL if the declaration
 // has no initializer.
 // 
-Declaration *decl_variable(char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc)
+Declaration *decl_variable(AstState *state, char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc)
 {
-    Declaration *decl = safe_zalloc(sizeof(Declaration));
+    Declaration *decl = mp_alloc(state->decl_pool);
 
     decl->tag = DECL_VARIABLE;
     decl->loc = loc;
@@ -394,16 +277,6 @@ Declaration *decl_variable(char *name, Type *type, StorageClass sc, Initializer 
     decl->var.init = init;
 
     return decl;
-}
-
-//
-// Free a variable declaration.
-//
-static void decl_variable_free(DeclVariable *var)
-{
-    safe_free(var->name);
-    type_free(var->type);
-    init_free(var->init);
 }
 
 //
@@ -428,9 +301,9 @@ void func_parm_free(FuncParameter *parm)
 //
 // Constructor for a function declaration.
 //
-Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc)
+Declaration *decl_function(AstState *state, char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc)
 {
-    Declaration *decl = safe_zalloc(sizeof(Declaration));
+    Declaration *decl = mp_alloc(state->decl_pool);
 
     decl->tag = DECL_FUNCTION;
     decl->loc = loc;
@@ -445,49 +318,11 @@ Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, 
 }
 
 //
-// Free a function declaration.
-//
-static void decl_function_free(DeclFunction *func)
-{
-    type_free(func->type);
-    safe_free(func->name);
-
-    for (ListNode *curr = func->parms.head; curr; ) {
-        ListNode *next = curr->next;
-        FuncParameter *parm = CONTAINER_OF(curr, FuncParameter, list);
-        func_parm_free(parm);
-        curr = next;
-    }
-
-    for (ListNode *curr = func->body.head; curr; ) {
-        ListNode *next = curr->next;
-        BlockItem *blki = CONTAINER_OF(curr, BlockItem, list);
-        blki_free(blki);
-        curr = next;
-    }
-}
-
-//
-// Free a declaration.
-//
-void declaration_free(Declaration *decl)
-{
-    if (decl) {
-        switch (decl->tag) {
-            case DECL_FUNCTION: decl_function_free(&decl->func); break;
-            case DECL_VARIABLE: decl_variable_free(&decl->var); break;
-        }
-
-        safe_free(decl);
-    }
-}   
-
-//
 // Allocator for all statement objects.
 //
-static Statement *stmt_alloc(StatementTag tag, FileLine loc)
+static Statement *stmt_alloc(AstState *state, StatementTag tag, FileLine loc)
 {
-    Statement *stmt = safe_zalloc(sizeof(Statement));
+    Statement *stmt = mp_alloc(state->stmt_pool);
     stmt->tag = tag;
     stmt->loc = loc;
     return stmt;
@@ -496,130 +331,74 @@ static Statement *stmt_alloc(StatementTag tag, FileLine loc)
 //
 // Construct a null statement.
 //
-Statement *stmt_null(FileLine loc)
+Statement *stmt_null(AstState *state, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_NULL, loc);
+    Statement *stmt = stmt_alloc(state, STMT_NULL, loc);
     return stmt;
 }
 
 //
 // Construct a return statement around an expression (which may be NULL).
 //
-Statement *stmt_return(Expression *exp, FileLine loc)
+Statement *stmt_return(AstState *state, Expression *exp, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_RETURN, loc);
+    Statement *stmt = stmt_alloc(state, STMT_RETURN, loc);
     stmt->ret.exp = exp;
     return stmt;
 }
 
 //
-// Free a return statement.
-//
-static void stmt_return_free(StmtReturn *ret)
-{
-    exp_free(ret->exp);
-}
-
-//
 // Construct an if statement.
 //
-Statement *stmt_if(Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc)
+Statement *stmt_if(AstState *state, Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_IF, loc);
+    Statement *stmt = stmt_alloc(state, STMT_IF, loc);
     stmt->ifelse.condition = condition;
     stmt->ifelse.thenpart = thenpart;
     stmt->ifelse.elsepart = elsepart;
 
     return stmt;
-
-}
-
-//
-// Free an if statement.
-// 
-static void stmt_if_free(StmtIf *ifelse)
-{
-    exp_free(ifelse->condition);
-    stmt_free(ifelse->thenpart);
-    stmt_free(ifelse->elsepart);
 }
 
 //
 // Construct an expression used as a statement.
 //
-Statement *stmt_expression(Expression *exp, FileLine loc)
+Statement *stmt_expression(AstState *state, Expression *exp, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_EXPRESSION, loc);
+    Statement *stmt = stmt_alloc(state, STMT_EXPRESSION, loc);
     stmt->exp.exp = exp;
     return stmt;
 }
 
 //
-// Free an expression statement.
-//
-static void stmt_expression_free(StmtExpression *exp)
-{
-    exp_free(exp->exp);
-}
-
-//
 // Constructor for a label statment (e.g. `label:`).
 //
-Statement *stmt_label(char *name, Statement *labeled_stmt, FileLine loc)
+Statement *stmt_label(AstState *state, char *name, Statement *labeled_stmt, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_LABEL, loc);
+    Statement *stmt = stmt_alloc(state, STMT_LABEL, loc);
     stmt->label.name = safe_strdup(name);
     stmt->label.stmt = labeled_stmt;
     return stmt;
 }
 
 //
-// Free a label statement.
-//
-static void stmt_label_free(StmtLabel *label)
-{
-    safe_free(label->name);
-    stmt_free(label->stmt);
-}
-
-//
 // Constructor for a goto statement.
 //
-Statement *stmt_goto(char *target, FileLine loc)
+Statement *stmt_goto(AstState *state, char *target, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_GOTO, loc);
+    Statement *stmt = stmt_alloc(state, STMT_GOTO, loc);
     stmt->goto_.target = safe_strdup(target);
     return stmt;
 }
 
 //
-// Free a goto statement.
-//
-static void stmt_goto_free(StmtGoto *goto_)
-{
-    safe_free(goto_->target);
-}
-
-//
 // Constructor for a compound statement.
 //
-Statement *stmt_compound(List items, FileLine loc)
+Statement *stmt_compound(AstState *state, List items, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_COMPOUND, loc);
+    Statement *stmt = stmt_alloc(state, STMT_COMPOUND, loc);
     stmt->compound.items = items;
     return stmt;
-}
-
-//
-// Free a compound statement.
-//
-static void stmt_compound_free(StmtCompound *compound)
-{
-    for (ListNode *curr = compound->items.head; curr; ) {
-        ListNode *next = curr->next;
-        blki_free(CONTAINER_OF(curr, BlockItem, list));
-        curr = next;
-    }
 }
 
 //
@@ -665,8 +444,8 @@ void forinit_free(ForInit *fi)
 {
     if (fi) {
         switch (fi->tag) {
-            case FI_EXPRESSION:     exp_free(fi->exp); break;
-            case FI_DECLARATION:    declaration_free(fi->decl); break;
+            case FI_EXPRESSION:     break;
+            case FI_DECLARATION:    break;
             case FI_NONE:           break;
         }
     }
@@ -675,9 +454,9 @@ void forinit_free(ForInit *fi)
 //
 // Constuctor for a for loop.
 //
-Statement *stmt_for(ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc)
+Statement *stmt_for(AstState *state, ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_FOR, loc);
+    Statement *stmt = stmt_alloc(state, STMT_FOR, loc);
 
     stmt->for_.init = init;
     stmt->for_.cond = cond;
@@ -689,22 +468,11 @@ Statement *stmt_for(ForInit *init, Expression *cond, Expression *post, Statement
 }
 
 //
-// Free a for loop.
-//
-static void stmt_for_free(StmtFor *for_) 
-{
-    forinit_free(for_->init);
-    exp_free(for_->cond);
-    exp_free(for_->post);
-    stmt_free(for_->body);
-}
-
-//
 // Constructor for a while loop.
 //
-Statement *stmt_while(Expression *cond, Statement *body, FileLine loc)
+Statement *stmt_while(AstState *state, Expression *cond, Statement *body, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_WHILE, loc);
+    Statement *stmt = stmt_alloc(state, STMT_WHILE, loc);
 
     stmt->while_.cond = cond;
     stmt->while_.body = body;
@@ -713,21 +481,13 @@ Statement *stmt_while(Expression *cond, Statement *body, FileLine loc)
     return stmt;
 }
 
-//
-// Free a while loop.
-//
-void stmt_while_free(StmtWhile *while_)
-{
-    exp_free(while_->cond);
-    stmt_free(while_->body);
-}
 
 //
 // Constructor for a do-while loop.
 //
-Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc)
+Statement *stmt_do_while(AstState *state, Expression *cond, Statement *body, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_DOWHILE, loc);
+    Statement *stmt = stmt_alloc(state, STMT_DOWHILE, loc);
 
     stmt->dowhile.cond = cond;
     stmt->dowhile.body = body;
@@ -737,20 +497,11 @@ Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc)
 }
 
 //
-// Free a do-while loop.
-//
-void stmt_do_while_free(StmtDoWhile *dowhile)
-{
-    exp_free(dowhile->cond);
-    stmt_free(dowhile->body);
-}
-
-//
 // Constructor for a break statement.
 //
-Statement *stmt_break(FileLine loc)
+Statement *stmt_break(AstState *state, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_BREAK, loc);
+    Statement *stmt = stmt_alloc(state, STMT_BREAK, loc);
     stmt->break_.label = -1;
     return stmt;
 }
@@ -758,9 +509,9 @@ Statement *stmt_break(FileLine loc)
 //
 // Constructor for a continue statement.
 //
-Statement *stmt_continue(FileLine loc)
+Statement *stmt_continue(AstState *state, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_CONTINUE, loc);
+    Statement *stmt = stmt_alloc(state, STMT_CONTINUE, loc);
     stmt->continue_.label = -1;
     return stmt;
 }
@@ -768,9 +519,9 @@ Statement *stmt_continue(FileLine loc)
 //
 // Constructor for a switch statement.
 //
-Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc)
+Statement *stmt_switch(AstState *state, Expression *cond, Statement *body, FileLine loc)
 {
-    Statement *stmt = stmt_alloc(STMT_SWITCH, loc);
+    Statement *stmt = stmt_alloc(state, STMT_SWITCH, loc);
     stmt->switch_.cond = cond;
     stmt->switch_.body = body;
     stmt->switch_.label = -1;
@@ -778,83 +529,25 @@ Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc)
 }
 
 //
-// Free a switch statement.
-//
-void stmt_switch_free(StmtSwitch *switch_)
-{
-    for (ListNode *curr = switch_->cases.head; curr; ) {
-        ListNode *next = curr->next;
-        CaseLabel *label = CONTAINER_OF(curr, CaseLabel, list);
-        safe_free(label);
-        curr = next;
-    }
-    exp_free(switch_->cond);
-    stmt_free(switch_->body);
-}
-
-//
 // Constructor for a case statement.
 //
-Statement *stmt_case(unsigned long value, Statement *stmt, FileLine loc)
+Statement *stmt_case(AstState *state, unsigned long value, Statement *stmt, FileLine loc)
 {
-    Statement *casestmt = stmt_alloc(STMT_CASE, loc);
+    Statement *casestmt = stmt_alloc(state, STMT_CASE, loc);
     casestmt->case_.value = value;
     casestmt->case_.stmt = stmt;
     return casestmt;
 }
 
 //
-// Free a case statement.
-//
-void stmt_case_free(StmtCase *case_)
-{
-    stmt_free(case_->stmt);
-}
-
-//
 // Constructor for a default statement.
 //
-Statement *stmt_default(Statement *stmt, FileLine loc)
+Statement *stmt_default(AstState *state, Statement *stmt, FileLine loc)
 {
-    Statement *defstmt = stmt_alloc(STMT_DEFAULT, loc);
+    Statement *defstmt = stmt_alloc(state, STMT_DEFAULT, loc);
     defstmt->default_.label = -1;
     defstmt->default_.stmt = stmt;
     return defstmt;
-}
-//
-// Free a default statement.
-//
-void stmt_default_free(StmtDefault *default_)
-{
-    stmt_free(default_->stmt);
-}
-
-//
-// Free a statement.
-//
-void stmt_free(Statement *stmt)
-{
-    if (stmt) {
-        switch (stmt->tag) {
-            case STMT_RETURN:       stmt_return_free(&stmt->ret); break;
-            case STMT_IF:           stmt_if_free(&stmt->ifelse); break;
-            case STMT_EXPRESSION:   stmt_expression_free(&stmt->exp); break;
-            case STMT_NULL:         break;
-            case STMT_LABEL:        stmt_label_free(&stmt->label); break;
-            case STMT_GOTO:         stmt_goto_free(&stmt->goto_); break;
-            case STMT_COMPOUND:     stmt_compound_free(&stmt->compound); break;
-            case STMT_FOR:          stmt_for_free(&stmt->for_); break;
-            case STMT_WHILE:        stmt_while_free(&stmt->while_); break;
-            case STMT_DOWHILE:      stmt_do_while_free(&stmt->dowhile); break;
-            case STMT_BREAK:        break;
-            case STMT_CONTINUE:     break;
-            case STMT_SWITCH:       stmt_switch_free(&stmt->switch_); break;
-            case STMT_CASE:         stmt_case_free(&stmt->case_); break;
-            case STMT_DEFAULT:      stmt_default_free(&stmt->default_); break;
-        }
-
-        safe_free(stmt);
-    }
 }
 
 //
@@ -888,20 +581,6 @@ BlockItem *blki_statement(Statement *stmt)
 }
 
 //
-// Free a block item.
-//
-void blki_free(BlockItem *blki)
-{
-    if (blki) {
-        switch (blki->tag) {
-            case BI_DECLARATION:    declaration_free(blki->decl); break;
-            case BI_STATEMENT:      stmt_free(blki->stmt); break;
-        }
-        safe_free(blki);
-    }
-}
-
-//
 // Construct a program.
 //
 AstProgram *ast_program(List decls, FileLine loc)
@@ -921,8 +600,6 @@ void ast_free_program(AstProgram *prog)
         ListNode *next = NULL;
         for (ListNode *curr = prog->decls.head; curr; curr = next) {
             next = curr->next;
-            Declaration *decl = CONTAINER_OF(curr, Declaration, list);
-            declaration_free(decl);
         }
         safe_free(prog);
     }
@@ -1471,4 +1148,30 @@ void ast_print(AstProgram *prog, bool locs)
         decl_print_declaration(decl, 2, locs);
     }
     printf("}\n");
+}
+
+//
+// Allocate an AST state with pools for the different node types.
+//
+AstState *ast_alloc(void)
+{
+    AstState *state = safe_zalloc(sizeof(AstState));
+
+    state->exp_pool = mp_create(sizeof(Expression));
+    state->decl_pool = mp_create(sizeof(Declaration));
+    state->stmt_pool = mp_create(sizeof(Statement));
+
+    return state;
+}
+
+//
+// Free an AST state, which also invalidates all nodes.
+//
+void ast_free(AstState *state)
+{
+    if (state) {
+        mp_destroy(state->exp_pool);
+        mp_destroy(state->decl_pool);
+        mp_destroy(state->stmt_pool);
+    }
 }

@@ -2,10 +2,17 @@
 
 #include "fileline.h"
 #include "list.h"
+#include "mempool.h"
 #include "operators.h"
 #include "type.h"
 
 #include <stdbool.h>
+
+typedef struct {
+    MemPool *exp_pool;
+    MemPool *decl_pool;
+    MemPool *stmt_pool;
+} AstState;
 
 typedef struct Expression Expression;
 typedef struct Declaration Declaration;
@@ -108,22 +115,21 @@ struct Expression {
     };
 };
 
-extern Expression *exp_int(unsigned long intval, FileLine loc);
-extern Expression *exp_long(unsigned long intval, FileLine loc);
-extern Expression *exp_uint(unsigned long intval, FileLine loc);
-extern Expression *exp_ulong(unsigned long intval, FileLine loc);
-extern Expression *exp_float(double floatval, FileLine loc);
-extern Expression *exp_var(char *name, FileLine loc);
-extern Expression *exp_unary(UnaryOp op, Expression *exp, FileLine loc);
-extern Expression *exp_binary(BinaryOp op, Expression *left, Expression *right, FileLine loc);
-extern Expression *exp_conditional(Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc);
-extern Expression *exp_assignment(BinaryOp op, Expression *left, Expression *right, FileLine loc);
-extern Expression *exp_function_call(char *name, List args, FileLine loc);
-extern Expression *exp_cast(Type *type, Expression *exp, FileLine loc);
-extern Expression *exp_deref(Expression *exp, FileLine loc);
-extern Expression *exp_addrof(Expression *exp, FileLine loc);
-extern Expression *exp_subscript(Expression *left, Expression *right, FileLine loc);
-extern void exp_free(Expression *exp);
+extern Expression *exp_int(AstState *state, unsigned long intval, FileLine loc);
+extern Expression *exp_long(AstState *state, unsigned long intval, FileLine loc);
+extern Expression *exp_uint(AstState *state, unsigned long intval, FileLine loc);
+extern Expression *exp_ulong(AstState *state, unsigned long intval, FileLine loc);
+extern Expression *exp_float(AstState *state, double floatval, FileLine loc);
+extern Expression *exp_var(AstState *state, char *name, FileLine loc);
+extern Expression *exp_unary(AstState *state, UnaryOp op, Expression *exp, FileLine loc);
+extern Expression *exp_binary(AstState *state, BinaryOp op, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_conditional(AstState *state, Expression *conditional, Expression *trueval, Expression *falseval, FileLine loc);
+extern Expression *exp_assignment(AstState *state, BinaryOp op, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_function_call(AstState *state, char *name, List args, FileLine loc);
+extern Expression *exp_cast(AstState *state, Type *type, Expression *exp, FileLine loc);
+extern Expression *exp_deref(AstState *state, Expression *exp, FileLine loc);
+extern Expression *exp_addrof(AstState *state, Expression *exp, FileLine loc);
+extern Expression *exp_subscript(AstState *state, Expression *left, Expression *right, FileLine loc);
 extern void exp_set_type(Expression *exp, Type *type);
 
 //
@@ -190,9 +196,8 @@ struct Declaration {
     };
 };
 
-extern Declaration *decl_variable(char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc);
-extern Declaration *decl_function(char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
-extern void declaration_free(Declaration *decl);
+extern Declaration *decl_variable(AstState *state, char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc);
+extern Declaration *decl_function(AstState *state, char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
 
 //
 // statemements
@@ -331,27 +336,27 @@ struct Statement {
     };
 };
 
-extern Statement *stmt_null(FileLine loc);
-extern Statement *stmt_return(Expression *exp, FileLine loc);
-extern Statement *stmt_if(Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc);
-extern Statement *stmt_expression(Expression *exp, FileLine loc);
-extern Statement *stmt_label(char *name, Statement *stmt, FileLine loc);
-extern Statement *stmt_goto(char *target, FileLine loc);
-extern Statement *stmt_compound(List items, FileLine loc);
+extern Statement *stmt_null(AstState *state, FileLine loc);
+extern Statement *stmt_return(AstState *state, Expression *exp, FileLine loc);
+extern Statement *stmt_if(AstState *state, Expression *condition, Statement *thenpart, Statement *elsepart, FileLine loc);
+extern Statement *stmt_expression(AstState *state, Expression *exp, FileLine loc);
+extern Statement *stmt_label(AstState *state, char *name, Statement *stmt, FileLine loc);
+extern Statement *stmt_goto(AstState *state, char *target, FileLine loc);
+extern Statement *stmt_compound(AstState *state, List items, FileLine loc);
+
 extern ForInit *forinit(void);
 extern ForInit *forinit_exp(Expression *exp);
 extern ForInit *forinit_decl(Declaration *decl);
 extern void forinit_free(ForInit *fi);
-extern Statement *stmt_for(ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc);
-extern Statement *stmt_while(Expression *cond, Statement *body, FileLine loc);
-extern Statement *stmt_do_while(Expression *cond, Statement *body, FileLine loc);
-extern Statement *stmt_break(FileLine loc);
-extern Statement *stmt_continue(FileLine loc);
-extern Statement *stmt_switch(Expression *cond, Statement *body, FileLine loc);
-extern Statement *stmt_case(unsigned long value, Statement *stmt, FileLine loc);
-extern Statement *stmt_default(Statement *stmt, FileLine loc);
 
-extern void stmt_free(Statement *stmt);
+extern Statement *stmt_for(AstState *state, ForInit *init, Expression *cond, Expression *post, Statement *body, FileLine loc);
+extern Statement *stmt_while(AstState *state, Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_do_while(AstState *state, Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_break(AstState *state, FileLine loc);
+extern Statement *stmt_continue(AstState *state, FileLine loc);
+extern Statement *stmt_switch(AstState *state, Expression *cond, Statement *body, FileLine loc);
+extern Statement *stmt_case(AstState *state, unsigned long value, Statement *stmt, FileLine loc);
+extern Statement *stmt_default(AstState *state, Statement *stmt, FileLine loc);
 
 //
 // A block item is either a declaration or a statement.
@@ -382,6 +387,9 @@ typedef struct {
     FileLine loc;
     List decls;                 // A list of <Declaration>
 } AstProgram;
+
+extern AstState *ast_alloc(void);
+extern void ast_free(AstState *ast);
 
 extern AstProgram *ast_program(List decls, FileLine loc);
 extern void ast_free_program(AstProgram *prog);

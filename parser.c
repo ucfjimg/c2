@@ -10,6 +10,7 @@
 typedef struct {
     Lexer *lex;                 // the lexer
     Token tok;                  // the current token
+    AstState *ast;              // state for building AST
 } Parser;
 
 typedef struct {
@@ -262,13 +263,13 @@ static Expression *parse_primary(Parser *parser)
         Expression *exp;
         
         if (parser->tok.int_const.is_long && parser->tok.int_const.is_unsigned) {
-            exp = exp_ulong(parser->tok.int_const.intval, loc);
+            exp = exp_ulong(parser->ast, parser->tok.int_const.intval, loc);
         } else if (parser->tok.int_const.is_long) {
-            exp = exp_long(parser->tok.int_const.intval, loc);
+            exp = exp_long(parser->ast, parser->tok.int_const.intval, loc);
         } else if (parser->tok.int_const.is_unsigned) {
-            exp = exp_uint(parser->tok.int_const.intval, loc);
+            exp = exp_uint(parser->ast, parser->tok.int_const.intval, loc);
         } else {
-            exp = exp_int(parser->tok.int_const.intval, loc);
+            exp = exp_int(parser->ast, parser->tok.int_const.intval, loc);
         }
         parse_next_token(parser);
         return exp;
@@ -278,7 +279,7 @@ static Expression *parse_primary(Parser *parser)
     // <primary> := <float>
     //
     if (parser->tok.type == TOK_FLOAT_CONST) {
-        Expression *exp = exp_float(parser->tok.float_const, loc);
+        Expression *exp = exp_float(parser->ast, parser->tok.float_const, loc);
         parse_next_token(parser);
         return exp;
     }
@@ -287,7 +288,7 @@ static Expression *parse_primary(Parser *parser)
     // <primary> := <identifier>
     //
     if (parser->tok.type == TOK_ID) {
-        Expression *exp = exp_var(parser->tok.id, loc);
+        Expression *exp = exp_var(parser->ast, parser->tok.id, loc);
         parse_next_token(parser);
         return exp;
     }
@@ -312,7 +313,7 @@ static Expression *parse_primary(Parser *parser)
     report_expected_err(&parser->tok, "constant, unary operator, or (");
     parse_next_token(parser);
 
-    Expression *exp = exp_int(0, loc);
+    Expression *exp = exp_int(parser->ast, 0, loc);
     return exp;
 }
 
@@ -367,14 +368,13 @@ static Expression *parse_function_call(Parser *parser, Expression *func)
         name = safe_strdup(func->var.name);
     }
 
-    Expression *exp = exp_function_call(name, args, loc);
+    Expression *exp = exp_function_call(parser->ast, name, args, loc);
 
     //
     // We only needed the name from the function expression, free it since
     // we will not hold a reference to it.
     //
     safe_free(name);
-    exp_free(func);
     return exp;
 } 
 
@@ -396,7 +396,7 @@ static Expression *parse_subscript(Parser *parser, Expression *array)
     }
     parse_next_token(parser);
 
-    return exp_subscript(array, exp, loc);
+    return exp_subscript(parser->ast, array, exp, loc);
 
 }
 
@@ -411,12 +411,12 @@ static Expression *parse_postfix(Parser *parser)
     while (true) {
         switch (parser->tok.type) {
             case TOK_INCREMENT: 
-                exp = exp_unary(UOP_POSTINCREMENT, exp, parser->tok.loc); 
+                exp = exp_unary(parser->ast, UOP_POSTINCREMENT, exp, parser->tok.loc); 
                 parse_next_token(parser);
                 break;
 
             case TOK_DECREMENT: 
-                exp = exp_unary(UOP_POSTDECREMENT, exp, parser->tok.loc); 
+                exp = exp_unary(parser->ast, UOP_POSTDECREMENT, exp, parser->tok.loc); 
                 parse_next_token(parser);
                 break;
             
@@ -600,21 +600,21 @@ static Expression *parse_factor(Parser *parser)
     UnaryOp uop;
     if (parse_unary_op(parser, &uop)) {
         Expression *rhs = parse_factor(parser);
-        Expression *exp = exp_unary(uop, rhs, loc);
+        Expression *exp = exp_unary(parser->ast, uop, rhs, loc);
         return exp;
     }
 
     if (parser->tok.type == '*') {
         parse_next_token(parser);
         Expression *rhs = parse_factor(parser);
-        Expression *exp = exp_deref(rhs, loc);
+        Expression *exp = exp_deref(parser->ast, rhs, loc);
         return exp;
     }
 
     if (parser->tok.type == '&') {
         parse_next_token(parser);
         Expression *rhs = parse_factor(parser);
-        Expression *exp = exp_addrof(rhs, loc);
+        Expression *exp = exp_addrof(parser->ast, rhs, loc);
         return exp;
     }
 
@@ -645,7 +645,7 @@ static Expression *parse_factor(Parser *parser)
             }
 
             Expression *exp = parse_factor(parser);
-            Expression *cast = exp_cast(typespec_take_type(ts), exp, parser->tok.loc);
+            Expression *cast = exp_cast(parser->ast, typespec_take_type(ts), exp, parser->tok.loc);
 
             typespec_free(ts);
             return cast;
@@ -719,16 +719,16 @@ static Expression *parse_expression(Parser *parser, int min_prec)
             //
             Expression *trueval = parse_conditional_trueval(parser);
             Expression *falseval = parse_expression(parser, binop->prec_level);
-            left = exp_conditional(left, trueval, falseval, loc);
+            left = exp_conditional(parser->ast, left, trueval, falseval, loc);
         } else if (binop->assoc == AS_RIGHT) {
             //
             // right associative
             //
             Expression *right = parse_expression(parser, binop->prec_level);
-            left = exp_assignment(binop->op, left, right, loc);
+            left = exp_assignment(parser->ast, binop->op, left, right, loc);
         } else {
             Expression *right = parse_expression(parser, binop->prec_level + 1);
-            left = exp_binary(binop->op, left, right, loc);
+            left = exp_binary(parser->ast, binop->op, left, right, loc);
         }
     }
     return left;
@@ -908,7 +908,7 @@ static Initializer *parse_initializer(Parser *parser)
 //
 static Declaration *parse_decl_variable(Parser *parser, Type *type, StorageClass sc, char *name, FileLine loc)
 {
-    Initializer *init = init_single(exp_int(0, loc));
+    Initializer *init = init_single(exp_int(parser->ast, 0, loc));
 
     if (parser->tok.type == TOK_ASSIGN) {
         parse_next_token(parser);
@@ -921,7 +921,7 @@ static Declaration *parse_decl_variable(Parser *parser, Type *type, StorageClass
         parse_next_token(parser);
     }
 
-    return decl_variable(name, type, sc, init, loc);
+    return decl_variable(parser->ast, name, type, sc, init, loc);
 }
 
 //
@@ -955,7 +955,7 @@ static Declaration *parse_function_body(Parser *parser, char *name, Type *functy
         report_expected_err(&parser->tok, "`{` or `;`");
     }
 
-    return decl_function(name, functype, sc, parms, body, has_body, loc);    
+    return decl_function(parser->ast, name, functype, sc, parms, body, has_body, loc);    
 }
 
 // 
@@ -1427,7 +1427,7 @@ static Statement *parse_compound_statement(Parser *parser)
         parse_next_token(parser);
     }
 
-    return stmt_compound(items, loc);
+    return stmt_compound(parser->ast, items, loc);
 }
 
 //
@@ -1439,7 +1439,6 @@ static Statement *parse_compound_statement(Parser *parser)
 static Statement *parse_stmt_return(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
-    Expression *retval = NULL;
 
     Expression *exp = parse_expression(parser, 0);
     
@@ -1449,10 +1448,8 @@ static Statement *parse_stmt_return(Parser *parser)
         parse_next_token(parser);
     }
 
-    Statement *stmt = stmt_return(exp, loc);
-    exp = NULL;
+    Statement *stmt = stmt_return(parser->ast, exp, loc);
 
-    exp_free(retval);
     return stmt;
 }
 
@@ -1490,7 +1487,7 @@ static Statement *parse_stmt_if(Parser *parser)
         elsepart = parse_statement(parser);
     }    
 
-    Statement *stmt = stmt_if(condition, thenpart, elsepart, loc);
+    Statement *stmt = stmt_if(parser->ast, condition, thenpart, elsepart, loc);
 
     return stmt;
 }
@@ -1508,7 +1505,7 @@ static Statement *parse_label(Parser *parser, char *label, FileLine loc)
     //
     Statement *labeled_stmt = parse_statement(parser);
 
-    return stmt_label(label, labeled_stmt, loc);
+    return stmt_label(parser->ast, label, labeled_stmt, loc);
 }
 
 //
@@ -1537,10 +1534,10 @@ static Statement *parse_goto(Parser *parser)
 
     Statement *stmt = NULL;
     if (label) {
-        stmt = stmt_goto(label, loc);
+        stmt = stmt_goto(parser->ast, label, loc);
         safe_free(label);
     } else {
-        stmt = stmt_null(loc);
+        stmt = stmt_null(parser->ast, loc);
     }
 
     return stmt;
@@ -1559,7 +1556,7 @@ static Statement *parse_break(Parser *parser, FileLine loc)
         parse_next_token(parser);
     }
 
-    return stmt_break(loc);
+    return stmt_break(parser->ast, loc);
 }
 
 //
@@ -1575,7 +1572,7 @@ static Statement *parse_continue(Parser *parser, FileLine loc)
         parse_next_token(parser);
     }
 
-    return stmt_continue(loc);
+    return stmt_continue(parser->ast, loc);
 }
 
 //
@@ -1604,7 +1601,7 @@ static Statement *parse_while(Parser *parser, FileLine loc)
 
     body = parse_statement(parser);
 
-    return stmt_while(cond, body, loc);
+    return stmt_while(parser->ast, cond, body, loc);
 }
 
 //
@@ -1645,7 +1642,7 @@ static Statement *parse_do_while(Parser *parser, FileLine loc)
         parse_next_token(parser);
     }
 
-    return stmt_do_while(cond, body, loc);
+    return stmt_do_while(parser->ast, cond, body, loc);
 }
 
 //
@@ -1737,7 +1734,7 @@ static Statement *parse_for(Parser *parser, FileLine loc)
     //
     Statement *body = parse_statement(parser);
 
-    return stmt_for(fi, cond, post, body, loc);
+    return stmt_for(parser->ast, fi, cond, post, body, loc);
 }
 
 //
@@ -1763,7 +1760,7 @@ static Statement *parse_switch(Parser *parser, FileLine loc)
 
     Statement *body = parse_statement(parser);
 
-    return stmt_switch(cond, body, loc);
+    return stmt_switch(parser->ast, cond, body, loc);
 }
 
 //
@@ -1790,7 +1787,7 @@ static Statement *parse_case(Parser *parser, FileLine loc)
 
     Statement *stmt = parse_statement(parser);
 
-    return stmt_case(value, stmt, loc);
+    return stmt_case(parser->ast, value, stmt, loc);
 }
 
 //
@@ -1808,7 +1805,7 @@ static Statement *parse_default(Parser *parser, FileLine loc)
 
     Statement *stmt = parse_statement(parser);
 
-    return stmt_default(stmt, loc);
+    return stmt_default(parser->ast, stmt, loc);
 }
 
 //
@@ -1848,7 +1845,7 @@ static Statement *parse_statement(Parser *parser)
     //
     if (parser->tok.type == ';') {
         parse_next_token(parser);
-        return stmt_null(loc);
+        return stmt_null(parser->ast, loc);
     }
 
     //
@@ -1968,18 +1965,19 @@ static Statement *parse_statement(Parser *parser)
     } else {
         parse_next_token(parser);
     }
-    return stmt_expression(exp, loc);
+    return stmt_expression(parser->ast, exp, loc);
 }
 
 //
 // Top level entry to the parser. Initialize, parse, and return an
 // AST tree.
 //
-AstProgram *parser_parse(Lexer *lex)
+AstProgram *parser_parse(AstState *ast_state, Lexer *lex)
 {
     Parser parser;
 
     parser.lex = lex;
+    parser.ast = ast_state;
 
     lexer_token(lex, &parser.tok);
 

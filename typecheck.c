@@ -10,6 +10,7 @@
 typedef struct {
     SymbolTable *stab;
     Type *func_type;
+    AstState *ast;
 } TypeCheckState;
 
 static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool filescope);
@@ -42,7 +43,6 @@ static void exp_replace(Expression **old_exp, Expression *new_exp)
         return;
     }
 
-    exp_free(*old_exp);
     *old_exp = new_exp;
 }
 
@@ -53,13 +53,13 @@ static void exp_replace(Expression **old_exp, Expression *new_exp)
 // Unlike many other calls, we do not consume the passed type here, as 
 // it is unclear to the caller if the type object is used or not.
 //
-static Expression *convert_to(Expression *exp, Type *type)
+static Expression *convert_to(TypeCheckState *state, Expression *exp, Type *type)
 {
     if (types_equal(exp->type, type)) {
         return exp;
     }
 
-    return exp_cast(type_clone(type), exp, exp->loc);
+    return exp_cast(state->ast, type_clone(type), exp, exp->loc);
 }
 
 //
@@ -88,18 +88,18 @@ static bool exp_is_null_pointer(Expression *exp)
 //
 // Implement the rules described in the standard as "convert as if by assigment."
 //
-static Expression *convert_by_assignment(Expression *exp, Type *type)
+static Expression *convert_by_assignment(TypeCheckState *state, Expression *exp, Type *type)
 {
     if (types_equal(exp->type, type)) {
         return exp;
     }
 
     if (type_arithmetic(exp->type) && type_arithmetic(type)) {
-        return convert_to(exp, type);
+        return convert_to(state, exp, type);
     }
 
     if (exp_is_null_pointer(exp) && type->tag == TT_POINTER) {
-        return convert_to(exp, type);
+        return convert_to(state, exp, type);
     }
 
     err_report(EC_ERROR, &exp->loc, "invalid type conversion.");
@@ -126,6 +126,22 @@ static Type *ptr_type_common(Expression *left, Expression *right)
 
     err_report(EC_ERROR, &left->loc, "incompatible pointer types.");
     return type_clone(left->type);
+}
+
+//
+// Typecheck an expression, and then apply array-to-pointer decay as needed.
+//
+static Expression *typecheck_and_convert(TypeCheckState *state, Expression *exp)
+{
+    Expression *typed_exp = ast_check_expression(state, exp);
+
+    if (typed_exp->type->tag == TT_ARRAY) {
+        Expression *addrof = exp_addrof(state->ast, exp, exp->loc);
+        exp_set_type(addrof, type_pointer(type_clone(typed_exp->type->array.element)));
+        return addrof;
+    }
+
+    return typed_exp;
 }
 
 //
@@ -203,7 +219,7 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_UNARY);
     ExpUnary *unary = &exp->unary;
 
-    exp_replace(&unary->exp, ast_check_expression(state, unary->exp));
+    exp_replace(&unary->exp, typecheck_and_convert(state, unary->exp));
 
     if (
         unary->op == UOP_COMPLEMENT && (unary->exp->type->tag == TT_DOUBLE || unary->exp->type->tag == TT_POINTER)) {
@@ -260,8 +276,8 @@ static Expression *ast_check_binary_promote(TypeCheckState *state, Expression *e
     // Do not use exp_replace here as the original expression object is
     // guaranteed to still be in use.
     //
-    binary->left = convert_to(binary->left, common);
-    binary->right = convert_to(binary->right, common);
+    binary->left = convert_to(state, binary->left, common);
+    binary->right = convert_to(state, binary->right, common);
 
     exp_set_type(exp, common);
     return exp;
@@ -306,8 +322,8 @@ static Expression *ast_check_binary_bool(TypeCheckState *state, Expression *exp,
         // Do not use exp_replace here as the original expression object is
         // guaranteed to still be in use.
         //
-        binary->left = convert_to(binary->left, common);
-        binary->right = convert_to(binary->right, common);
+        binary->left = convert_to(state, binary->left, common);
+        binary->right = convert_to(state, binary->right, common);
 
         type_free(common);
     }
@@ -330,8 +346,8 @@ static Expression *ast_check_pointer_equality(TypeCheckState *state, Expression 
     // Do not use exp_replace here as the original expression object is
     // guaranteed to still be in use.
     //
-    binary->left = convert_to(binary->left, common);
-    binary->right = convert_to(binary->right, common);
+    binary->left = convert_to(state, binary->left, common);
+    binary->right = convert_to(state, binary->right, common);
 
     type_free(common);
 
@@ -347,8 +363,8 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
         
-    exp_replace(&binary->left, ast_check_expression(state, binary->left));
-    exp_replace(&binary->right, ast_check_expression(state, binary->right));
+    exp_replace(&binary->left, typecheck_and_convert(state, binary->left));
+    exp_replace(&binary->right, typecheck_and_convert(state, binary->right));
 
     bool pointers = binary->left->type->tag == TT_POINTER || binary->right->type->tag == TT_POINTER;
 
@@ -467,9 +483,9 @@ static Expression *ast_check_conditional(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_CONDITIONAL);
     ExpConditional *cond = &exp->conditional;
 
-    exp_replace(&cond->cond, ast_check_expression(state, cond->cond));
-    exp_replace(&cond->trueval, ast_check_expression(state, cond->trueval));
-    exp_replace(&cond->falseval, ast_check_expression(state, cond->falseval));
+    exp_replace(&cond->cond, typecheck_and_convert(state, cond->cond));
+    exp_replace(&cond->trueval, typecheck_and_convert(state, cond->trueval));
+    exp_replace(&cond->falseval, typecheck_and_convert(state, cond->falseval));
 
     Type *common;
     
@@ -483,8 +499,8 @@ static Expression *ast_check_conditional(TypeCheckState *state, Expression *exp)
     // Do not use exp_replace here as the original expression object is
     // guaranteed to still be in use.
     //
-    cond->trueval = convert_to(cond->trueval, common);
-    cond->falseval = convert_to(cond->falseval, common);
+    cond->trueval = convert_to(state, cond->trueval, common);
+    cond->falseval = convert_to(state, cond->falseval, common);
 
     exp_set_type(exp, common);
     return exp;
@@ -498,14 +514,14 @@ static Expression *ast_check_assignment(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_ASSIGNMENT);
     ExpAssignment *assign = &exp->assignment;
 
-    exp_replace(&assign->left, ast_check_expression(state, assign->left));
-    exp_replace(&assign->right, ast_check_expression(state, assign->right));
+    exp_replace(&assign->left, typecheck_and_convert(state, assign->left));
+    exp_replace(&assign->right, typecheck_and_convert(state, assign->right));
 
     if (!exp_is_lvalue(assign->left)) {
         err_report(EC_ERROR, &exp->loc, "l-value required for assignment.");
     }
 
-    assign->right = convert_by_assignment(assign->right, assign->left->type);
+    assign->right = convert_by_assignment(state, assign->right, assign->left->type);
 
     exp_set_type(exp, type_clone(assign->left->type));
     return exp;
@@ -554,8 +570,8 @@ static Expression *ast_check_function_call(TypeCheckState *state, Expression *ex
         Expression *arg = CONTAINER_OF(argcurr, Expression, list);    
         TypeFuncParam *parm = CONTAINER_OF(parmcurr, TypeFuncParam, list);
 
-        exp_replace(&arg, ast_check_expression(state, arg));
-        arg = convert_by_assignment(arg, parm->parmtype);
+        exp_replace(&arg, typecheck_and_convert(state, arg));
+        arg = convert_by_assignment(state, arg, parm->parmtype);
 
         list_push_back(&new_args, &arg->list);
 
@@ -582,7 +598,7 @@ static Expression *ast_check_cast(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_CAST);
     ExpCast *cast = &exp->cast;
 
-    exp_replace(&cast->exp, ast_check_expression(state, cast->exp));
+    exp_replace(&cast->exp, typecheck_and_convert(state, cast->exp));
 
     if (
         (cast->type->tag == TT_POINTER && cast->exp->type->tag == TT_DOUBLE) ||
@@ -603,7 +619,7 @@ static Expression *ast_check_deref(TypeCheckState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_DEREF);
     ExpDeref *deref = &exp->deref;
 
-    exp_replace(&deref->exp, ast_check_expression(state, deref->exp));
+    exp_replace(&deref->exp, typecheck_and_convert(state, deref->exp));
 
     if (deref->exp->type->tag == TT_POINTER) {
         exp_set_type(exp, type_clone(deref->exp->type->ptr.ref));
@@ -668,9 +684,9 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
 //
 static void ast_check_return(TypeCheckState *state, StmtReturn *ret)
 {
-    exp_replace(&ret->exp, ast_check_expression(state, ret->exp));
+    exp_replace(&ret->exp, typecheck_and_convert(state, ret->exp));
 
-    ret->exp = convert_by_assignment(ret->exp, type_clone(state->func_type->func.ret));
+    ret->exp = convert_by_assignment(state, ret->exp, type_clone(state->func_type->func.ret));
 }
 
 //
@@ -678,7 +694,7 @@ static void ast_check_return(TypeCheckState *state, StmtReturn *ret)
 //
 static void ast_check_if(TypeCheckState *state, StmtIf *ifelse)
 {
-    ast_check_expression(state, ifelse->condition);
+    exp_replace(&ifelse->condition, typecheck_and_convert(state, ifelse->condition));
     ast_check_statement(state, ifelse->thenpart);
     if (ifelse->elsepart) {
         ast_check_statement(state, ifelse->elsepart);
@@ -706,7 +722,7 @@ static void ast_check_compound(TypeCheckState *state, StmtCompound *compound)
 //
 static void ast_check_while(TypeCheckState *state, StmtWhile *while_)
 {
-    ast_check_expression(state, while_->cond);
+    exp_replace(&while_->cond, typecheck_and_convert(state, while_->cond));
     ast_check_statement(state, while_->body);
 }
 
@@ -718,7 +734,7 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
     switch (for_->init->tag) {
         case FI_NONE:           break;
         case FI_DECLARATION:    ast_check_declaration(state, for_->init->decl, false); break;
-        case FI_EXPRESSION:     ast_check_expression(state, for_->init->exp); break;
+        case FI_EXPRESSION:     exp_replace(&for_->init->exp, typecheck_and_convert(state, for_->init->exp)); break;
     }
 
     if (for_->init->tag == FI_DECLARATION) {
@@ -734,11 +750,11 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
     }
 
     if (for_->cond) {
-        ast_check_expression(state, for_->cond);
+        exp_replace(&for_->cond, typecheck_and_convert(state, for_->cond));
     }
 
     if (for_->post) {
-        ast_check_expression(state, for_->post);
+        exp_replace(&for_->post, typecheck_and_convert(state, for_->post));
     }
 
     ast_check_statement(state, for_->body);
@@ -749,7 +765,7 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
 //
 static void ast_check_do_while(TypeCheckState *state, StmtDoWhile *dowhile)
 {
-    ast_check_expression(state, dowhile->cond);
+    exp_replace(&dowhile->cond, typecheck_and_convert(state, dowhile->cond));
     ast_check_statement(state, dowhile->body);
 }
 
@@ -761,7 +777,7 @@ static void ast_check_switch(TypeCheckState *state, Statement *stmt)
     ICE_ASSERT(stmt->tag == STMT_SWITCH);
     StmtSwitch *switch_ = &stmt->switch_;
 
-    ast_check_expression(state, switch_->cond);
+    exp_replace(&switch_->cond, typecheck_and_convert(state, switch_->cond));
 
     if (!type_integral(switch_->cond->type)) {
         err_report(EC_ERROR, &stmt->loc, "switch conditional must be of integral type.");
@@ -795,7 +811,7 @@ static void ast_check_statement(TypeCheckState *state, Statement *stmt)
         case STMT_NULL:         break;
         case STMT_RETURN:       ast_check_return(state, &stmt->ret); break;
         case STMT_IF:           ast_check_if(state, &stmt->ifelse); break;
-        case STMT_EXPRESSION:   ast_check_expression(state, stmt->exp.exp); break;
+        case STMT_EXPRESSION:   exp_replace(&stmt->exp.exp, typecheck_and_convert(state, stmt->exp.exp)); break;
         case STMT_LABEL:        ast_check_label(state, &stmt->label); break;
         case STMT_GOTO:         break;
         case STMT_COMPOUND:     ast_check_compound(state, &stmt->compound); break;

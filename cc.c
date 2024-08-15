@@ -421,6 +421,7 @@ static int preprocess(Args *args)
 static int compile(Args *args)
 {
     int status = 0;
+    AstState *ast_state = NULL;
     AstProgram *ast = NULL;
     AsmNode *asmcode = NULL;
     TacNode *taccode = NULL;
@@ -436,7 +437,8 @@ static int compile(Args *args)
     //
     // Parse.
     //
-    ast = parser_parse(lex);
+    ast_state = ast_alloc();
+    ast = parser_parse(ast_state, lex);
 
     if (err_has_errors()) {
         status = 1;
@@ -537,6 +539,7 @@ done:
     asm_free(asmcode);
     // TODO fix this - current scheme leads to duplicate free's
     //  ast_free_program(ast);
+    ast_free(ast_state);
     lexer_close(lex);
     return status;
 }

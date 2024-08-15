@@ -21,6 +21,7 @@ add_executable(cc
     lexer.c
     list.c
     looplabel.c
+    mempool.c
     operators.c
     parser.c
     resolve.c
