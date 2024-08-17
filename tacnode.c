@@ -478,7 +478,7 @@ TacNode *tac_copy_to_offset(TacNode *src, char *dst, int offset, FileLine loc)
     TacNode *tac = tac_alloc(TAC_COPY_TO_OFFSET, loc);
 
     tac->copy_to_offset.src = src;
-    tac->copy_to_offset.dst = dst;
+    tac->copy_to_offset.dst = safe_strdup(dst);
     tac->copy_to_offset.offset = offset;
 
     return tac;

@@ -716,6 +716,42 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for a nested initializer.
+//
+static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Type *type, char *var, FileLine loc)
+{
+    Type *inner;
+
+    if (init->tag == INIT_COMPOUND) {
+        switch (type->tag) {
+            case TT_ARRAY:   inner = type->array.element; break;
+
+            case TT_INT:
+            case TT_LONG:
+            case TT_UINT:
+            case TT_ULONG:
+            case TT_DOUBLE:
+            case TT_FUNC:
+            case TT_POINTER:    ICE_ASSERT(((void)"invalid type tag for compound initializer in tcg_nested_init", false));
+        }
+
+        for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
+            Initializer *subinit = CONTAINER_OF(curr, Initializer, list);
+            tcg_nested_init(state, subinit, offset, inner, var, loc);
+        }
+
+        return;
+    }
+
+    //
+    // Single initializer
+    //
+    TacNode *val = tcg_expression_and_convert(state, init->single);
+    tcg_append(state, tac_copy_to_offset(val, var, *offset, loc));
+    *offset += type_size(type);
+}
+
+//
 // Generate TAC for a declaration.
 //
 // The declaration itself was taken care of in the previous pass.
@@ -741,11 +777,8 @@ static void tcg_declaration(TacState *state, Declaration *decl)
     // For local variables, generate code for initializers
     //
     if (decl->var.init) {
-        #ifdef COMPLEX_INIT
-        TacNode *initval = tcg_expression_and_convert(state, decl->var.init);
-        TacNode *declvar = tac_var(decl->var.name, decl->loc);
-        tcg_append(state, tac_copy(initval, declvar, decl->loc));
-        #endif
+        int offset = 0;
+        tcg_nested_init(state, decl->var.init, &offset, decl->var.type, decl->var.name, decl->loc);
     }
 }
 
@@ -1124,18 +1157,19 @@ static void tcg_statics(List *code, SymbolTable *stab)
         if (sym->tag == ST_STATIC_VAR) {
             TacNode *var = NULL;
             
-            #ifdef COMPLEX_INIT
             bool global = sym->stvar.global;
             FileLine loc = sym->stvar.loc;
-
-            Const zero = const_make_zero();
+            List zeroes;
+            list_clear(&zeroes);
 
             switch (sym->stvar.siv) {
                 case SIV_INIT:      var = tac_static_var(node->key, global, type_clone(sym->type), sym->stvar.initial, loc); break;
                 case SIV_NO_INIT:   break;
-                case SIV_TENTATIVE: var = tac_static_var(node->key, global, type_clone(sym->type), zero, loc); break;
+                case SIV_TENTATIVE:
+                    list_push_back(&zeroes, &sinit_make_zero(type_size(sym->type))->list);
+                    var = tac_static_var(node->key, global, type_clone(sym->type), zeroes, loc); 
+                    break;
             }
-            #endif
 
             if (var) {
                 list_push_back(code, &var->list);
