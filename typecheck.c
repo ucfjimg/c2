@@ -60,8 +60,10 @@ static Expression *convert_to(TypeCheckState *state, Expression *exp, Type *type
         return exp;
     }
 
-    return exp_cast(state->ast, type_clone(type), exp, exp->loc);
-}
+    Expression *cast = exp_cast(state->ast, type_clone(type), exp, exp->loc);
+    cast->type = type_clone(type);
+    return cast;
+} 
 
 //
 // Return true if the given expression is an l-value.

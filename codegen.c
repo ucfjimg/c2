@@ -713,6 +713,9 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
 {
     ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
 
+    codegen_align(decl->static_var.type);
+
+#ifdef COMPLEX_INIT
     codegen_push_static(state, 
         asm_static_var(
             decl->static_var.name, 
@@ -720,6 +723,7 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
             codegen_align(decl->static_var.type),
             decl->static_var.init, 
             decl->loc));
+#endif
 }
 
 //
@@ -959,6 +963,9 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_GET_ADDRESS:       codegen_get_address(state, tac); break;
         case TAC_LOAD:              codegen_load(state, tac); break;
         case TAC_STORE:             codegen_store(state, tac); break;
+
+        case TAC_ADDPTR:            ICE_NYI("codegen_single::add-ptr");
+        case TAC_COPY_TO_OFFSET:    ICE_NYI("codegen_single::copy-to-offset");
 
         case TAC_PROGRAM:           break;
         case TAC_CONST:             break;

@@ -34,6 +34,8 @@ typedef enum {
     TAC_GET_ADDRESS,
     TAC_LOAD,
     TAC_STORE,
+    TAC_ADDPTR,
+    TAC_COPY_TO_OFFSET,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -62,7 +64,7 @@ typedef struct {
     char *name;                     // name
     bool global;                    // is the variable globally visible
     Type *type;                     // variable type
-    Const init;                     // the initial value
+    List init;                      // the initial values, of <StaticInitializer>
 } TacStaticVar;
 
 //
@@ -226,6 +228,26 @@ typedef struct {
 } TacStore;
 
 //
+// Add a scaled value to a pointer.
+//
+typedef struct {
+    TacNode *ptr;
+    TacNode *index;
+    size_t scale;
+    TacNode *dst;
+} TacAddPtr;
+
+//
+// Copy data to an aggregate. The dst is NOT a pointer but the actual
+// label of the object.
+// 
+typedef struct {
+    TacNode *src;
+    char *dst;
+    int offset;
+} TacCopyToOffset;
+
+//
 // A TAC node -- discriminated union based on `tag`
 //
 typedef struct TacNode {
@@ -258,12 +280,14 @@ typedef struct TacNode {
         TacGetAddress   get_address;
         TacLoad         load;
         TacStore        store;
+        TacAddPtr       add_ptr;
+        TacCopyToOffset copy_to_offset;
     };
 } TacNode;
 
 extern TacNode *tac_program(List decls, FileLine loc);
 extern TacNode *tac_function_def(char *name, bool global, List parms, List body, FileLine loc);
-extern TacNode *tac_static_var(char *name, bool global, Type *type, Const init, FileLine loc);
+extern TacNode *tac_static_var(char *name, bool global, Type *type, List init, FileLine loc);
 extern TacNode *tac_return(TacNode *val, FileLine loc);
 extern TacNode *tac_copy(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_jump(char *target, FileLine loc);
@@ -285,6 +309,8 @@ extern TacNode *tac_uint_to_double(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_get_address(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_load(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_store(TacNode *src, TacNode *dst, FileLine loc);
+extern TacNode *tac_add_ptr(TacNode *ptr, TacNode *index, size_t scale, TacNode *dst, FileLine loc);
+extern TacNode *tac_copy_to_offset(TacNode *src, char *dst, int offset, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

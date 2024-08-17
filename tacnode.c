@@ -83,7 +83,7 @@ static void tac_function_def_free(TacFuncDef *funcdef)
 //
 // Constructor for a TAC static variable declaration.
 //
-TacNode *tac_static_var(char *name, bool global, Type *type, Const init, FileLine loc)
+TacNode *tac_static_var(char *name, bool global, Type *type, List init, FileLine loc)
 {
     TacNode *tac = tac_alloc(TAC_STATIC_VAR, loc);
     tac->static_var.name = safe_strdup(name);
@@ -456,6 +456,35 @@ TacNode *tac_store(TacNode *src, TacNode *dst, FileLine loc)
 }
 
 //
+// Constructor for a TAC add to pointer operation.
+//
+TacNode *tac_add_ptr(TacNode *ptr, TacNode *index, size_t scale, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_ADDPTR, loc);
+
+    tac->add_ptr.ptr = ptr;
+    tac->add_ptr.index = index;
+    tac->add_ptr.scale = scale;
+    tac->add_ptr.dst = dst;
+
+    return tac;
+}
+
+//
+// Constructor for a TAC copy to offset operation.
+//
+TacNode *tac_copy_to_offset(TacNode *src, char *dst, int offset, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_COPY_TO_OFFSET, loc);
+
+    tac->copy_to_offset.src = src;
+    tac->copy_to_offset.dst = dst;
+    tac->copy_to_offset.offset = offset;
+
+    return tac;
+}
+
+//
 // Free a TAC function call.
 //
 static void tac_function_call_free(TacFunctionCall *call)
@@ -565,6 +594,25 @@ static void tac_store_free(TacStore *store)
 }
 
 //
+// Free a TAC add pointer operation.
+//
+static void tac_add_ptr_free(TacAddPtr *addptr)
+{
+    tac_free(addptr->ptr);
+    tac_free(addptr->index);
+    tac_free(addptr->dst);
+}
+
+//
+// Free a TAC copy to offset operation.
+//
+static void tac_copy_to_offset_free(TacCopyToOffset *copy)
+{
+    tac_free(copy->src);
+    safe_free(copy->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST.
 //
@@ -613,6 +661,8 @@ void tac_free(TacNode *tac)
             case TAC_GET_ADDRESS:   tac_get_address_free(&tac->get_address); break;
             case TAC_LOAD:          tac_load_free(&tac->load); break;
             case TAC_STORE:         tac_store_free(&tac->store); break;
+            case TAC_ADDPTR:        tac_add_ptr_free(&tac->add_ptr); break;
+            case TAC_COPY_TO_OFFSET:tac_copy_to_offset_free(&tac->copy_to_offset); break;
         }
 
         safe_free(tac);
@@ -684,13 +734,33 @@ static void tac_print_static_var(TacStaticVar *var, int tab)
     if (var->global) {
         printf("global ");
     }
-    printf("= %lu", var->init.intval.value);
-    if (var->init.intval.size == CIS_LONG) {
-        printf("l");
+
+    if (var->init.head) {
+        printf("= [");
+
+        for (ListNode *curr = var->init.head; curr; curr = curr->next) {
+            StaticInitializer *init = CONTAINER_OF(curr, StaticInitializer, list);
+            switch (init->tag) {
+                case SI_ZERO: 
+                    printf("zero[%zd]", init->bytes);
+                    break;
+
+                case SI_CONST:
+                    switch (init->cval.tag) {
+                        case CON_INTEGRAL:  printf("%lu", init->cval.intval.value); break;
+                        case CON_FLOAT:     printf("%g", init->cval.floatval); break;
+                    }
+                    break;
+            }
+
+            if (curr->next) {
+                printf(", ");
+            }
+        }
+
+        printf("]");
     }
-    if (var->init.intval.sign == CIS_UNSIGNED) {
-        printf("u");
-    }
+
     printf("\n");
 }
 
@@ -938,6 +1008,30 @@ static void tac_print_store(TacStore *store, int tab, bool locs)
 }
 
 //
+// Print a TAC add to pointer operation.
+//
+static void tac_print_add_ptr(TacAddPtr *addptr, int tab, bool locs)
+{
+    printf("%*sadd-ptr(\n", tab, "");
+    tac_print_recurse(addptr->ptr, tab + 2, locs);
+    printf("%*s+\n", tab, "");
+    tac_print_recurse(addptr->index, tab + 2, locs);
+    printf("%*s* %zd =>\n", tab, "", addptr->scale);
+    tac_print_recurse(addptr->dst, tab + 2, locs);
+    printf("%*s)\n", tab, "");
+}
+
+//
+// Print a TAC copy to offset operation.
+//
+static void tac_print_copy_to_offset(TacCopyToOffset *copy, int tab, bool locs)
+{
+    printf("%*scopy-to-offset(\n", tab, "");
+    tac_print_recurse(copy->src, tab + 2, locs);
+    printf("%*s=> %s at %d)\n", tab, "", copy->dst, copy->offset);
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -970,6 +1064,8 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_GET_ADDRESS:   tac_print_get_address(&tac->get_address, tab, locs); break;
         case TAC_LOAD:          tac_print_load(&tac->load, tab, locs); break;
         case TAC_STORE:         tac_print_store(&tac->store, tab, locs); break;
+        case TAC_ADDPTR:        tac_print_add_ptr(&tac->add_ptr, tab, locs); break;
+        case TAC_COPY_TO_OFFSET:tac_print_copy_to_offset(&tac->copy_to_offset, tab, locs); break;
     }
 }
 

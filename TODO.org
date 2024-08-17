@@ -4,3 +4,4 @@
 * Do quiet NaN
 * Fix ability to free program AST w/ dup interior pointers in declarations
 * Remove explicit stack allocation operations and replace with add/sub to RSP
+* Check to make sure static initializers are printed out in the symbol table

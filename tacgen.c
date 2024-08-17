@@ -318,6 +318,76 @@ static TacExpResult tcg_short_circuit_op(TacState *state, Expression *binary)
 }
 
 //
+// Generate TAC for pointer addition.
+// 
+static TacExpResult tcg_pointer_add(TacState *state, Expression *binary)
+{
+    //
+    // From typecheck, we know that exacly one of the operands is a pointer.
+    //
+    bool lptr = binary->binary.left->type->tag == TT_POINTER;
+    bool rptr = binary->binary.right->type->tag == TT_POINTER;
+
+    ICE_ASSERT(lptr ^ rptr);
+
+    Expression *eptr = lptr ? binary->binary.left : binary->binary.right;
+    Expression *eidx = rptr ? binary->binary.left : binary->binary.right;
+
+    size_t element_size = type_size(eptr->type->ptr.ref);
+
+    TacNode *ptr = tcg_expression_and_convert(state, eptr);
+    TacNode *idx = tcg_expression_and_convert(state, eidx);
+    TacNode *dst = tcg_temporary(state, type_clone(binary->type), binary->loc);
+
+    tcg_append(state, tac_add_ptr(ptr, idx, element_size, dst, binary->loc));
+
+    return expres_plain(tac_var(dst->var.name, binary->loc));
+}
+
+//
+// Generate TAC for pointer subtraction (either ptr - ptr, or ptr - integral).
+//
+static TacExpResult tcg_pointer_sub(TacState *state, Expression *binary)
+{
+    size_t element_size = type_size(binary->binary.left->type->ptr.ref);
+
+    if (binary->binary.right->type->tag == TT_POINTER)
+    {
+        //
+        // ptr - ptr
+        //
+        TacNode *left = tcg_expression_and_convert(state, binary->binary.left);
+        TacNode *right = tcg_expression_and_convert(state, binary->binary.right);
+        TacNode *diff = tcg_temporary(state, type_long(), binary->loc);
+        TacNode *result = tcg_temporary(state, type_long(), binary->loc);
+
+        Const scale;
+        scale = const_make_int(CIS_LONG, CIS_UNSIGNED, element_size);
+
+        tcg_append(state, tac_binary(BOP_SUBTRACT, left, right, diff, binary->loc));
+        tcg_append(state, tac_binary(BOP_DIVIDE, tac_var(diff->var.name, binary->loc), tac_const(scale, binary->loc), result, binary->loc));
+
+        return expres_plain(tac_var(result->var.name, binary->loc));
+    }
+    else
+    {
+        //
+        // ptr - integral
+        //
+        TacNode *ptr = tcg_expression_and_convert(state, binary->binary.left);
+        TacNode *idx = tcg_expression_and_convert(state, binary->binary.right);
+
+        TacNode *neg = tcg_temporary(state, type_clone(binary->binary.right->type), binary->loc);
+        TacNode *dst = tcg_temporary(state, type_clone(binary->binary.left->type), binary->loc);
+    
+        tcg_append(state, tac_unary(UOP_MINUS, idx, neg, binary->loc));
+
+        tcg_append(state, tac_add_ptr(ptr, tac_var(neg->var.name, binary->loc), element_size, dst, binary->loc));
+        return expres_plain(tac_var(dst->var.name, binary->loc));
+    }
+}
+
+//
 // Generate TAC for a binary expression.
 // 
 static TacExpResult tcg_binary_op(TacState *state, Expression *binary)
@@ -331,9 +401,24 @@ static TacExpResult tcg_binary_op(TacState *state, Expression *binary)
         return tcg_short_circuit_op(state, binary);
     }
 
+    //
+    // Some operators have special cases for pointers.
+    //
+    bool pointers = binary->binary.left->type->tag == TT_POINTER || binary->binary.right->type->tag == TT_POINTER;
+
+    if (pointers) {
+        switch (binary->binary.op) {
+            case BOP_ADD:       return tcg_pointer_add(state, binary);
+            case BOP_SUBTRACT:  return tcg_pointer_sub(state, binary);
+
+            default: break;
+        }
+    }
+    
     TacNode *left = tcg_expression_and_convert(state, binary->binary.left);
     TacNode *right = tcg_expression_and_convert(state, binary->binary.right);
     TacNode *dst = tcg_temporary(state, type_clone(binary->type), binary->loc);
+
 
     tcg_append(state, tac_binary(binary->binary.op, left, right, dst, binary->loc));
 
@@ -570,6 +655,36 @@ static TacExpResult tcg_addrof(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for a subscript operator.
+//
+// This is like pointer addition, but we return that the result should be 
+// a dereferenced pointer.
+//
+static TacExpResult tcg_subscript(TacState *state, Expression *exp)
+{
+    //
+    // From typecheck, we know that exacly one of the operands is a pointer.
+    //
+    bool lptr = exp->subscript.left->type->tag == TT_POINTER;
+    bool rptr = exp->subscript.right->type->tag == TT_POINTER;
+
+    ICE_ASSERT(lptr ^ rptr);
+
+    Expression *eptr = lptr ? exp->subscript.left : exp->subscript.right;
+    Expression *eidx = rptr ? exp->subscript.left : exp->subscript.right;
+
+    size_t element_size = type_size(eptr->type->ptr.ref);
+
+    TacNode *ptr = tcg_expression_and_convert(state, eptr);
+    TacNode *idx = tcg_expression_and_convert(state, eidx);
+    TacNode *dst = tcg_temporary(state, type_clone(exp->type), exp->loc);
+
+    tcg_append(state, tac_add_ptr(ptr, idx, element_size, dst, exp->loc));
+
+    return expres_deref(tac_var(dst->var.name, exp->loc));
+}
+
+//
 // Generate TAC for an expression.
 //
 static TacExpResult tcg_expression(TacState *state, Expression *exp)
@@ -589,7 +704,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_CAST:          return tcg_cast(state, exp); break;
         case EXP_DEREF:         return tcg_deref(state, exp); break;
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
-        case EXP_SUBSCRIPT:     ICE_NYI("tcg_expression::EXP_SUBSCRIPT");
+        case EXP_SUBSCRIPT:     return tcg_subscript(state, exp); break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
