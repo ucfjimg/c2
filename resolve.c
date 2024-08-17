@@ -127,6 +127,21 @@ static void update_map_node(IdentifierMapNode *mapnode, char *name, bool from_cu
 }
 
 //
+// Resolve expressions in a nested variable initializer.
+//
+static void ast_resolve_init(ResolveState *state, Initializer *init)
+{
+    if (init->tag == INIT_SINGLE) {
+        ast_resolve_expression(state, init->single);
+    } else {
+        for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
+            Initializer *sub = CONTAINER_OF(curr, Initializer, list);
+            ast_resolve_init(state, sub);
+        }
+    }
+}
+
+//
 // Resolve a global variable declaration.
 //
 static void ast_resolve_global_var_decl(ResolveState *state, Declaration *decl)
@@ -136,6 +151,10 @@ static void ast_resolve_global_var_decl(ResolveState *state, Declaration *decl)
 
     IdentifierMapNode *mapnode = restab_get(state, var->name);
     update_map_node(mapnode, var->name, true, true);
+
+    if (var->init) {
+        ast_resolve_init(state, var->init);
+    }
 }
 
 //
@@ -166,9 +185,7 @@ static void ast_resolve_var_decl(ResolveState *state, Declaration *decl)
     }
 
     if (var->init) {
-        #ifdef COMPLEX_INIT
-        ast_resolve_expression(state, var->init);
-        #endif 
+        ast_resolve_init(state, var->init);
     }
 }
 
@@ -286,6 +303,15 @@ static void ast_resolve_addrof_exp(ResolveState *state, ExpAddrOf *addrof)
 }
 
 //
+// Resolve a subscript expression.
+//
+static void ast_resolve_subscript_exp(ResolveState *state, ExpSubscript *subs)
+{
+    ast_resolve_expression(state, subs->left);
+    ast_resolve_expression(state, subs->right);
+}
+
+//
 // Resolve variable references in an expression.
 //
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
@@ -300,7 +326,7 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
         case EXP_DEREF:         ast_resolve_deref_exp(state, &exp->deref); break;
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
-        case EXP_SUBSCRIPT:     ICE_NYI("ast_resolve_expression::EXP_SUBSCRIPT");
+        case EXP_SUBSCRIPT:     ast_resolve_subscript_exp(state, &exp->subscript); break;
         case EXP_INT:           break;
         case EXP_LONG:          break;
         case EXP_UINT:          break;

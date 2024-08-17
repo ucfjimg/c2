@@ -79,6 +79,7 @@ static void stab_print_static_var(SymStaticVar *svar)
 
     char *loc = fileline_describe(&svar->loc);
 
+#if 0
     switch (svar->initial.tag) {
         case CON_INTEGRAL:
             printf(
@@ -98,6 +99,7 @@ static void stab_print_static_var(SymStaticVar *svar)
                 loc);
             break;
     }
+    #endif
     safe_free(loc);
 }
 
@@ -147,7 +149,7 @@ void sym_update_func(Symbol *sym, Type *type, bool defined, bool global)
 //
 // Update the given symbol to be a static variable.
 //
-void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, Const init, bool global, FileLine loc)
+void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, List init, bool global, FileLine loc)
 {
     sym->tag = ST_STATIC_VAR;
 
@@ -173,4 +175,30 @@ extern void sym_update_local(Symbol *sym, Type *type)
         type_free(sym->type);
         sym->type = type;
     }
+}
+
+//
+// Construct a constant static initializer.
+//
+StaticInitializer *sinit_make_const(Const cn)
+{
+    StaticInitializer *si = safe_zalloc(sizeof(StaticInitializer));
+
+    si->tag = SI_CONST;
+    si->cval = cn;
+
+    return si;
+}
+
+//
+// Construct a zero-fill static initializer.
+//
+StaticInitializer *sinit_make_zero(size_t bytes)
+{
+    StaticInitializer *si = safe_zalloc(sizeof(StaticInitializer));
+
+    si->tag = SI_ZERO;
+    si->bytes = bytes;
+
+    return si;
 }

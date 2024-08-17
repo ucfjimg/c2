@@ -143,6 +143,7 @@ typedef enum {
 typedef struct {
     ListNode list;
     InitializerTag tag;
+    Type *type;
 
     union {
         Expression  *single;        // INIT_SINGLE        

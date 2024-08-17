@@ -24,9 +24,24 @@ typedef enum {
     SIV_NO_INIT,                    // no initializer
 } StaticInitialValue;
 
+typedef enum {
+    SI_CONST,
+    SI_ZERO,
+} StaticInitializerTag;
+
+typedef struct {
+    StaticInitializerTag tag;
+    ListNode list;
+
+    union {
+        Const cval;                 // SI_CONST
+        size_t bytes;               // SI_ZERO, bytes of zeroes
+    };
+} StaticInitializer;
+
 typedef struct {
     StaticInitialValue siv;         // initializer type
-    Const initial;                  // if SIV_INIT, the initial value
+    List initial;                   // if SIV_INIT, the initial value of <StaticInitializer>
     bool global;                    // variable is globally visible
     FileLine loc;                   // where declared
 } SymStaticVar;
@@ -53,8 +68,8 @@ extern void stab_print(SymbolTable *stab);
 
 extern void sym_update_func(Symbol *sym, Type *type, bool defined, bool global);
 
-extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, Const init, bool global, FileLine loc);
+extern void sym_update_static_var(Symbol *sym, Type *type, StaticInitialValue siv, List init, bool global, FileLine loc);
 extern void sym_update_local(Symbol *sym, Type *type);
 
-
-
+extern StaticInitializer *sinit_make_const(Const cn);
+extern StaticInitializer *sinit_make_zero(size_t bytes);

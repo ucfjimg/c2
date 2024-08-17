@@ -169,6 +169,7 @@ static void declarator_free(Declarator *decl);
 static Declarator *parse_declarator(Parser *parser);
 static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base);
 static AbstractDeclarator *parse_abstract_declarator(Parser *parser);
+static Type *abstract_decl_to_type(AbstractDeclarator *decl, Type *base);
 
 //
 // Create a parser bookmark at the current state.
@@ -557,14 +558,32 @@ static AbstractDeclarator *parse_abstract_declarator(Parser *parser)
 }
 
 //
+// Convert an abstract array declarator to a type.
+//
+static Type *abstract_array_decl_to_type(AbstractDeclaratorArray *array, Type *base)
+{    
+    Type *inner = type_array(type_clone(base), array->size);
+    return abstract_decl_to_type(array->decl, inner);
+}
+
+//
+// Convert an abstract pointer declarator to a type.
+//
+static Type *abstract_pointer_decl_to_type(AbstractDeclaratorPointer *ptr, Type *base)
+{
+    Type *inner = type_pointer(type_clone(base));
+    return abstract_decl_to_type(ptr->decl, inner);
+}
+
+//
 // Convert an abstract declarator to a type. `base` will be used in the 
 // construction of `type`.
 //
 static Type *abstract_decl_to_type(AbstractDeclarator *decl, Type *base)
 {
     switch (decl->tag) {
-        case ADT_POINTER:   return type_pointer(abstract_decl_to_type(decl->ptr.decl, base));
-        case ADT_ARRAY:     return type_array(abstract_decl_to_type(decl->array.decl, base), decl->array.size);
+        case ADT_ARRAY:     return abstract_array_decl_to_type(&decl->array, base);
+        case ADT_POINTER:   return abstract_pointer_decl_to_type(&decl->ptr, base);
         case ADT_BASE:      return base;
     }
 
@@ -588,7 +607,7 @@ static TypeSpecifier *parse_type_name(Parser *parser)
 
 //
 // Parse a factor.
-// <factor> := <unop> <factor> | "(" { <specifier> }+ [ <abstract-declarator> ] ")" <fcator> | <postfix>
+// <factor> := <unop> <factor> | "(" { <specifier> }+ [ <abstract-declarator> ] ")" <factor> | <postfix>
 //
 static Expression *parse_factor(Parser *parser)
 {
@@ -908,7 +927,7 @@ static Initializer *parse_initializer(Parser *parser)
 //
 static Declaration *parse_decl_variable(Parser *parser, Type *type, StorageClass sc, char *name, FileLine loc)
 {
-    Initializer *init = init_single(exp_int(parser->ast, 0, loc));
+    Initializer *init = NULL;
 
     if (parser->tok.type == TOK_ASSIGN) {
         parse_next_token(parser);

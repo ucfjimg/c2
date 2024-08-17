@@ -816,21 +816,25 @@ static char *storage_class_describe(StorageClass sc)
 //
 // Print a single item initializer.
 //
-static void init_print_single(Expression *exp, int tab, bool locs)
+static void init_print_single(Initializer *init, int tab, bool locs)
 {
-    printf("%*ssingle-init {\n", tab, "");
-    exp_print_recurse(exp, tab + 2, locs);
+    char *desc = init->type ? type_describe(init->type) : safe_strdup("<no-type>");
+    printf("%*ssingle-init (%s) {\n", tab, "", desc);
+    safe_free(desc);
+    exp_print_recurse(init->single, tab + 2, locs);
     printf("%*s}\n", tab, "");
 }
 
 //
 // Print a compound initializer.
 //
-static void init_print_compound(List items, int tab, bool locs)
+static void init_print_compound(Initializer *init, int tab, bool locs)
 {
-    printf("%*scompound-init {\n", tab, "");
+    char *desc = init->type ? type_describe(init->type) : safe_strdup("<no-type>");
+    printf("%*scompound-init (%s) {\n", tab, "", desc);
+    safe_free(desc);
 
-    for (ListNode *curr = items.head; curr; curr = curr->next) {
+    for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
         init_print_recurse(CONTAINER_OF(curr, Initializer, list), tab + 2, locs);
         if (curr->next) {
             printf("%*s,\n", tab + 2, "");
@@ -846,8 +850,8 @@ static void init_print_compound(List items, int tab, bool locs)
 static void init_print_recurse(Initializer *init, int tab, bool locs)
 {
     switch (init->tag) {
-        case INIT_SINGLE:   init_print_single(init->single, tab, locs); break;
-        case INIT_COMPOUND: init_print_compound(init->compound, tab, locs); break;
+        case INIT_SINGLE:   init_print_single(init, tab, locs); break;
+        case INIT_COMPOUND: init_print_compound(init, tab, locs); break;
     }
 }
 

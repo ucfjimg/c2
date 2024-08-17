@@ -9,6 +9,8 @@
 
 #define TARGET_INT_SIZE         4
 #define TARGET_LONG_SIZE        8
+#define TARGET_DOUBLE_SIZE      8
+#define TARGET_POINTER_SIZE     8
 
 extern bool tgt_signed_fits_in_int(uint64_t val);
 extern bool tgt_signed_fits_in_long(uint64_t val);

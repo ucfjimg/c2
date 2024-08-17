@@ -653,7 +653,7 @@ static void tcg_return(TacState *state, Statement *ret)
     tcg_append(state, tac_return(exp, loc));
 }
 
-//
+//g
 // Generate code for an if statement
 //
 static void tcg_if(TacState *state, Statement *ifstmt)
@@ -1009,6 +1009,7 @@ static void tcg_statics(List *code, SymbolTable *stab)
         if (sym->tag == ST_STATIC_VAR) {
             TacNode *var = NULL;
             
+            #ifdef COMPLEX_INIT
             bool global = sym->stvar.global;
             FileLine loc = sym->stvar.loc;
 
@@ -1019,6 +1020,7 @@ static void tcg_statics(List *code, SymbolTable *stab)
                 case SIV_NO_INIT:   break;
                 case SIV_TENTATIVE: var = tac_static_var(node->key, global, type_clone(sym->type), zero, loc); break;
             }
+            #endif
 
             if (var) {
                 list_push_back(code, &var->list);

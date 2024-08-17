@@ -20,7 +20,7 @@ extern void list_push_back(List *list, ListNode *node);
 extern void list_push_front(List *list, ListNode *node);
 extern void list_append(List *list, ListNode *head);
 extern void list_reverse(List *list);
-extern int list_count(List *list);
+extern size_t list_count(List *list);
 
 //
 // CONTAINER_OF(listnode, container_type, listnode_member)

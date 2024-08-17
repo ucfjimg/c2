@@ -3,6 +3,7 @@
 #include "ice.h"
 #include "safemem.h"
 #include "strbuilder.h"
+#include "target.h"
 
 #include <stdbool.h>
 
@@ -308,6 +309,52 @@ bool type_integral(Type *type)
     }
 
     return false;
+}
+
+//
+// Return the base element type of a (possibly nested) array.
+//
+Type *type_array_element(Type *type)
+{
+    if (type->tag == TT_ARRAY) {
+        return type_array_element(type->array.element);
+    }
+    return type;
+}
+
+//
+// Return the number of the elements in the (potentially nested) array.
+// If the type is not an array, returns 1.
+//
+size_t type_array_size(Type *type)
+{
+    if (type->tag == TT_ARRAY) {
+        return type->array.size * type_array_size(type->array.element);
+    }
+
+    return 1;
+}
+
+//
+// Return the total size of the type, in bytes.
+//
+size_t type_size(Type *type)
+{
+    switch (type->tag) {
+        case TT_INT:        return TARGET_INT_SIZE;
+        case TT_LONG:       return TARGET_LONG_SIZE; 
+        case TT_UINT:       return TARGET_INT_SIZE;
+        case TT_ULONG:      return TARGET_LONG_SIZE;
+        case TT_DOUBLE:     return TARGET_DOUBLE_SIZE;
+        case TT_POINTER:    return TARGET_POINTER_SIZE;
+
+        case TT_ARRAY:      return type->array.size * type_size(type->array.element);
+
+        case TT_FUNC:       ICE_ASSERT(((void)"type_size asked for size of function", false));
+    }
+
+    ICE_ASSERT(((void)"invalid type tag in type_size", false));    
+    return 0;
 }
 
 //

@@ -17,6 +17,7 @@ static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool
 static void ast_check_statement(TypeCheckState *state, Statement *stmt);
 static void ast_check_block(TypeCheckState *state, List block);
 static Expression* ast_check_expression(TypeCheckState *state, Expression *exp);
+static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc);
 
 //
 // Perform the usual and customary arithmetic conversions between two types and
@@ -69,7 +70,8 @@ static bool exp_is_lvalue(Expression *exp)
 {
     return
         exp->tag == EXP_VAR ||
-        exp->tag == EXP_DEREF;
+        exp->tag == EXP_DEREF || 
+        exp->tag == EXP_SUBSCRIPT;
 }
 
 //
@@ -356,6 +358,93 @@ static Expression *ast_check_pointer_equality(TypeCheckState *state, Expression 
 }
 
 //
+// Type check addition that involves pointers.
+//
+static Expression *ast_check_add_pointers(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_BINARY);
+    ExpBinary *binary = &exp->binary;
+    ICE_ASSERT(binary->op == BOP_ADD);    
+
+    //
+    // The caller has verified that at least one operand is a pointer.
+    //
+    if (type_integral(binary->right->type)) {
+        //
+        // pointer + integer
+        //
+        exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
+        exp_set_type(exp, type_clone(binary->left->type));
+    } else if (type_integral(binary->left->type)) {
+        //
+        // integer + pointer
+        //
+        exp_replace(&binary->left, convert_to(state, binary->left, type_long()));
+        exp_set_type(exp, type_clone(binary->right->type));
+    } else {
+        err_report(EC_ERROR, &exp->loc, "invalid operands for `+`.");
+        exp_set_type(exp, type_int());
+    }
+
+    return exp;
+}
+
+//
+// Type check subtraction that involves pointers.
+//
+static Expression *ast_check_sub_pointers(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_BINARY);
+    ExpBinary *binary = &exp->binary;
+    ICE_ASSERT(binary->op == BOP_SUBTRACT);    
+
+    //
+    // The caller has verified that at least one operand is a pointer.
+    //
+    if (type_integral(binary->right->type)) {
+        //
+        // pointer - integer
+        //
+        exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
+        exp_set_type(exp, type_clone(binary->left->type));
+    } else if (binary->left->type->tag == TT_POINTER && binary->right->type->tag == TT_POINTER) {
+        if (!types_equal(binary->left->type, binary->right->type)) {
+            err_report(EC_ERROR, &exp->loc, "cannot subtract pointers of different types.");
+        }
+        //
+        // pointer - pointer
+        //
+        exp_set_type(exp, type_long());
+    } else {
+        err_report(EC_ERROR, &exp->loc, "invalid operands for `-`.");
+        exp_set_type(exp, type_int());
+    }
+
+    return exp;
+}
+
+//
+// Type check a non-equality pointer relationship.
+//
+static Expression *ast_check_compare_pointers(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_BINARY);
+    ExpBinary *binary = &exp->binary;
+
+    exp_set_type(exp, type_int());
+
+    if (binary->left->type->tag != TT_POINTER || binary->right->type->tag != TT_POINTER) {
+        err_report(EC_ERROR, &exp->loc, "invalid operands for `%s`", bop_describe(binary->op));
+    }
+
+    if (!types_equal(binary->left->type, binary->right->type)) {
+        err_report(EC_ERROR, &exp->loc, "cannot compare pointers of different types.");
+    }
+
+    return exp;
+}
+
+//
 // Type check a binary expression.
 //
 static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
@@ -395,13 +484,14 @@ static Expression *ast_check_binary(TypeCheckState *state, Expression *exp)
                 return exp;
 
 
-            case BOP_ADD:
-            case BOP_SUBTRACT:
+            case BOP_ADD:       return ast_check_add_pointers(state, exp);
+            case BOP_SUBTRACT:  return ast_check_sub_pointers(state, exp);
+
             case BOP_LESSTHAN:
             case BOP_GREATERTHAN:
             case BOP_LESSEQUAL:
             case BOP_GREATEREQUAL:
-                ICE_NYI("ast_check_binary::pointer-ops");
+                                return ast_check_compare_pointers(state, exp);
 
             //
             // It is a bug for any of these operators to be in a binary
@@ -607,6 +697,10 @@ static Expression *ast_check_cast(TypeCheckState *state, Expression *exp)
         err_report(EC_ERROR, &exp->loc, "cannot cast between a double and a pointer.");
     }
 
+    if (cast->type->tag == TT_ARRAY) {
+        err_report(EC_ERROR, &exp->loc, "cannot cast to an array type.");
+    }
+
     exp_set_type(exp, type_clone(cast->type));
     return exp;
 }
@@ -652,27 +746,52 @@ static Expression *ast_check_addrof(TypeCheckState *state, Expression *exp)
 }
 
 //
+// Type check a subscript expression.
+//
+static Expression *ast_check_subscript(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_SUBSCRIPT);
+    ExpSubscript *subs = &exp->subscript;
+
+    exp_replace(&subs->left, typecheck_and_convert(state, subs->left));
+    exp_replace(&subs->right, typecheck_and_convert(state, subs->right));
+
+    if (subs->left->type->tag == TT_POINTER && type_integral(subs->right->type)) {
+        exp_replace(&subs->right, convert_to(state, subs->right, type_long()));
+        exp_set_type(exp, subs->left->type->ptr.ref);        
+    } else if (type_integral(subs->left->type) && subs->right->type->tag == TT_POINTER) {
+        exp_replace(&subs->left, convert_to(state, subs->left, type_long()));
+        exp_set_type(exp, subs->right->type->ptr.ref);        
+    } else {
+        err_report(EC_ERROR, &exp->loc, "invalid types for `[]`.");
+        exp_set_type(exp, type_int());
+    }
+
+    return exp;
+}
+
+//
 // Type check an expression, and return the type checked expression (which may be
 // the same object, or a new object).
 //
 static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
 {
     switch (exp->tag) {
-        case EXP_INT:           return ast_check_int(state, exp); break;
-        case EXP_LONG:          return ast_check_long(state, exp); break;
-        case EXP_UINT:          return ast_check_uint(state, exp); break;
-        case EXP_ULONG:         return ast_check_ulong(state, exp); break;
-        case EXP_FLOAT:         return ast_check_float(state, exp); break;
-        case EXP_VAR:           return ast_check_var(state, exp); break;
-        case EXP_UNARY:         return ast_check_unary(state, exp); break;
-        case EXP_BINARY:        return ast_check_binary(state, exp); break;
-        case EXP_CONDITIONAL:   return ast_check_conditional(state, exp); break;
-        case EXP_ASSIGNMENT:    return ast_check_assignment(state, exp); break;
-        case EXP_FUNCTION_CALL: return ast_check_function_call(state, exp); break;
-        case EXP_CAST:          return ast_check_cast(state, exp); break;
-        case EXP_DEREF:         return ast_check_deref(state, exp); break;
-        case EXP_ADDROF:        return ast_check_addrof(state, exp); break;
-        case EXP_SUBSCRIPT:     ICE_NYI("ast_check_expression::EXP_SUBSCRIPT");
+        case EXP_INT:           return ast_check_int(state, exp);
+        case EXP_LONG:          return ast_check_long(state, exp);
+        case EXP_UINT:          return ast_check_uint(state, exp);
+        case EXP_ULONG:         return ast_check_ulong(state, exp);
+        case EXP_FLOAT:         return ast_check_float(state, exp);
+        case EXP_VAR:           return ast_check_var(state, exp);
+        case EXP_UNARY:         return ast_check_unary(state, exp);
+        case EXP_BINARY:        return ast_check_binary(state, exp);
+        case EXP_CONDITIONAL:   return ast_check_conditional(state, exp);
+        case EXP_ASSIGNMENT:    return ast_check_assignment(state, exp);
+        case EXP_FUNCTION_CALL: return ast_check_function_call(state, exp);
+        case EXP_CAST:          return ast_check_cast(state, exp);
+        case EXP_DEREF:         return ast_check_deref(state, exp);
+        case EXP_ADDROF:        return ast_check_addrof(state, exp);
+        case EXP_SUBSCRIPT:     return ast_check_subscript(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -841,6 +960,37 @@ static void ast_check_block(TypeCheckState *state, List block)
 }
 
 //
+// Type check a function declaration parameter list. Types will be added to
+// the symbol table for the parameters, and the declaration type will be 
+// updated if needed.
+//
+static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func)
+{
+    ICE_ASSERT(func->type->tag == TT_FUNC);
+
+    ListNode *pcurr = func->parms.head;
+    ListNode *tcurr = func->type->func.parms.head;
+
+    for (; pcurr && tcurr; pcurr = pcurr->next, tcurr = tcurr->next) {
+        FuncParameter *parm = CONTAINER_OF(pcurr, FuncParameter, list);
+        TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
+
+        if (ptype->parmtype->tag == TT_ARRAY) {
+            ptype->parmtype = type_pointer(ptype->parmtype->ptr.ref);
+        }
+
+        Symbol *sym = stab_lookup(state->stab, parm->name);
+
+        if (sym->type == NULL) {
+            Type *symtype = type_clone(ptype->parmtype);
+            sym_update_local(sym, symtype);
+        }
+    }
+
+    ICE_ASSERT(pcurr == NULL && tcurr == NULL);
+}
+
+//
 // Type check a function declaration.
 //
 static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
@@ -850,6 +1000,12 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
     Symbol *sym = stab_lookup(state->stab, func->func.name);
     bool global = func->func.storage_class != SC_STATIC;
     bool had_body = false;
+
+    if (func->func.type->func.ret->tag == TT_ARRAY) {
+        err_report(EC_ERROR, &func->loc, "function may not return array type.");
+    }
+
+    ast_check_func_param_list(state, &func->func);
 
     if (sym->type) {
         if (sym->type->tag != TT_FUNC) {
@@ -876,85 +1032,99 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 
     sym_update_func(sym, sym->type, had_body || func->func.has_body, global);
 
-    Type *old_func_type = state->func_type;
-    state->func_type = sym->type;
-
+ 
     if (func->func.has_body) {
-        ICE_ASSERT(func->func.type->tag == TT_FUNC);
+        Type *old_func_type = state->func_type;
+        state->func_type = sym->type;
+        ast_check_block(state, func->func.body);
+        state->func_type = old_func_type;
+    }
+}
 
-        ListNode *pcurr = func->func.parms.head;
-        ListNode *tcurr = func->func.type->func.parms.head;
+//
+// Given a possibly nested initializer, return a flattened list of static initializers.
+//
+// Returns true if initializer was a scalar, else false.
+//
+static bool ast_flatten_compound_init_for_static(Initializer *init, List *out, FileLine loc)
+{
+    if (init->tag == INIT_SINGLE) {
+        Const cn;
 
-        for (; pcurr && tcurr; pcurr = pcurr->next, tcurr = tcurr->next) {
-            FuncParameter *parm = CONTAINER_OF(pcurr, FuncParameter, list);
-            TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
+        switch (init->single->tag) {
+            case EXP_INT:       cn = const_make_int(CIS_INT, CIS_SIGNED, init->single->intval); break;
+            case EXP_UINT:      cn = const_make_int(CIS_INT, CIS_UNSIGNED, init->single->intval); break;
+            case EXP_LONG:      cn = const_make_int(CIS_LONG, CIS_SIGNED, init->single->intval); break;
+            case EXP_ULONG:     cn = const_make_int(CIS_LONG, CIS_UNSIGNED, init->single->intval); break;
+            case EXP_FLOAT:     cn = const_make_double(init->single->floatval); break;
 
-            Symbol *sym = stab_lookup(state->stab, parm->name);
+            default:
+                err_report(EC_ERROR, &loc, "static initializers must be constant.");
+                cn = const_make_int(CIS_INT, CIS_SIGNED, 0);
+        }
 
-            if (sym->type == NULL) {
-                sym_update_local(sym, type_clone(ptype->parmtype));
+        StaticInitializer *si = sinit_make_const(cn);
+        list_push_back(out, &si->list);
+
+        return true;
+    }
+
+    for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
+        Initializer *sub = CONTAINER_OF(curr, Initializer, list);
+        ast_flatten_compound_init_for_static(sub, out, loc);
+    }
+
+    return false;
+}
+
+//
+// Type check a static initializer list against the declaration type.
+//
+// If the type is not an array, the list must have at most one element, which must be
+// convertible to the declaration type.
+//
+// If the type is an array, then the list must not be longer than the number of the elements
+// in the array, and each initializer must be convertible to the element tyoe.
+//
+// If the initializer is too short, it will be padded with a zero initializer.
+//
+static void ast_check_static_init(Type *type, List *init, bool init_scalar, FileLine loc)
+{
+    Type *base = type_array_element(type);
+    int size = type_array_size(type);
+    int init_size = list_count(init);
+
+    if (init_size > size) {
+        err_report(EC_ERROR, &loc, "too many initializers.");
+        init_size = size;
+    }
+
+    if (type->tag == TT_ARRAY && init_scalar) {
+        err_report(EC_ERROR, &loc, "cannot initialize an array with a scalar initializer.");
+    }
+
+    if (base->tag == TT_POINTER) {
+        ListNode *curr = init->head;
+        for (int i = 0; i < init_size; i++, curr = curr->next) {
+            StaticInitializer *init = CONTAINER_OF(curr, StaticInitializer, list);
+
+            if (init->tag == SI_CONST) {
+                if (init->cval.tag == CON_FLOAT) {
+                    err_report(EC_ERROR, &loc, "cannot initialize pointer with double.");
+                } else if (init->cval.intval.value != 0) {
+                    err_report(EC_ERROR, &loc, "cannot initialize pointer with nonzero value.");
+                }
             }
         }
-
-        ICE_ASSERT(pcurr == NULL && tcurr == NULL);
-
-        ast_check_block(state, func->func.body);
     }
 
-    state->func_type = old_func_type;
-}
-
-//
-// Convert a constant to a type.
-//
-static Const ast_convert_const_to(Const *cn, Type *ty)
-{
-    Const out = *cn;
-
-    if (cn->tag == CON_INTEGRAL && ty->tag == TT_DOUBLE) {
-        out.tag = CON_FLOAT;
-        if (cn->intval.sign == CIS_SIGNED) {
-            out.floatval = (double)(long)cn->intval.value;
-        } else {
-            out.floatval = (double)cn->intval.value;
-        }
+    if (size > init_size) {
+        size_t init_bytes = type_size(base) * init_size;
+        size_t decl_bytes = type_size(type);
+        ICE_ASSERT(decl_bytes > init_bytes);
+        StaticInitializer *zeroes = sinit_make_zero(decl_bytes - init_bytes);
+        list_push_back(init, &zeroes->list);
     }
-
-    if (cn->tag == CON_FLOAT) {
-        switch (ty->tag) {
-            case TT_INT:        out = const_make_int(CIS_INT,  CIS_SIGNED,   (int)cn->floatval); break;
-            case TT_UINT:       out = const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned)cn->floatval); break;
-            case TT_LONG:       out = const_make_int(CIS_LONG, CIS_SIGNED,   (long)cn->floatval); break;
-            case TT_ULONG:      out = const_make_int(CIS_LONG, CIS_UNSIGNED, (unsigned long)cn->floatval); break;
-            case TT_DOUBLE:     break;
-                
-            case TT_FUNC:       ICE_ASSERT(((void)"cannot convert function in ast_convert_const_to", false));
-            case TT_POINTER:    ICE_ASSERT(((void)"cannot convert pointer in ast_convert_const_to", false));
-            case TT_ARRAY:      ICE_ASSERT(((void)"cannot convert array in ast_convert_const_to", false));
-        }
-    }
-
-    return out;
-}
-
-//
-// Check and update a static initializer.
-//
-static Const ast_check_static_init(Type *type, Const init, FileLine loc)
-{
-    if (type->tag == TT_POINTER) {
-        if (init.tag == CON_FLOAT) {
-            err_report(EC_ERROR, &loc, "cannot initialize pointer with double.");
-        } else if (init.intval.value != 0) {
-            err_report(EC_ERROR, &loc, "cannot initialize pointer with nonzero value.");
-        } else {
-            init = const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
-        }
-    } else {
-        init = ast_convert_const_to(&init, type);
-    }
-
-    return init;
 }
 
 //
@@ -962,13 +1132,14 @@ static Const ast_check_static_init(Type *type, Const init, FileLine loc)
 //
 static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
 {
-    #ifdef COMPLEX_INIT
     ICE_ASSERT(decl->tag == DECL_VARIABLE);
     DeclVariable *var = &decl->var;
 
     StaticInitialValue siv = SIV_NO_INIT;
+    bool init_scalar = false;
 
-    Const init = const_make_int(CIS_INT, CIS_SIGNED, 0);
+    List init;
+    list_clear(&init);
 
     if (var->init == NULL) {
         if (var->storage_class == SC_EXTERN) {
@@ -976,30 +1147,11 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         } else {
             siv = SIV_TENTATIVE;
         }
-    } else if (
-        var->init->tag == EXP_INT || 
-        var->init->tag == EXP_LONG || 
-        var->init->tag == EXP_UINT || 
-        var->init->tag == EXP_ULONG ||
-        var->init->tag == EXP_FLOAT) {
-
+    } else {
         siv = SIV_INIT;
 
-        switch (var->init->tag) {
-            case EXP_INT:       init = const_make_int(CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
-            case EXP_UINT:      init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
-            case EXP_LONG:      init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
-            case EXP_ULONG:     init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
-            case EXP_FLOAT:     init = const_make_double(var->init->floatval); break;
-
-            //
-            // Checked above
-            //
-            default:
-                break;
-        }
-    } else {
-        err_report(EC_ERROR, &decl->loc, "non-constant initializer not allowed for static `%s`.", var->name);
+        list_clear(&init);
+        init_scalar = ast_flatten_compound_init_for_static(var->init, &init, decl->loc);
     }
 
     bool globally_visible = var->storage_class != SC_STATIC;
@@ -1042,11 +1194,99 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         type = type_clone(var->type);
     }
 
-    init = ast_check_static_init(type, init, decl->loc);
+    ast_check_static_init(type, &init, init_scalar, decl->loc);
 
     sym_update_static_var(sym, type, siv, init, globally_visible, decl->loc);
-    #endif
 }
+
+//
+// Create a scalar zero initializer.
+//
+static Initializer *make_zero_init_scalar(Type *type, Expression *exp)
+{
+    Initializer *init = init_single(exp);
+    init->type = type_clone(type);
+    return init;
+}
+
+//
+// Create a zero initializer for an array.
+//
+static Initializer *make_zero_init_array(TypeCheckState *state, Type *type, FileLine loc)
+{
+    ICE_ASSERT(type->tag == TT_ARRAY);
+
+    List inits;
+    list_clear(&inits);
+
+    for (int i = 0; i < type->array.size; i++) {
+        Initializer *init = make_zero_init(state, type->array.element, loc);
+        list_push_back(&inits, &init->list);
+    }
+
+    Initializer *init = init_compound(inits);
+    init->type = type_clone(type);
+
+    return init;
+}
+
+//
+// Create an initialize of the shape of the given type.
+//
+static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc)
+{
+    switch (type->tag) {
+        case TT_ARRAY:      return make_zero_init_array(state, type, loc);
+        case TT_INT:        return make_zero_init_scalar(type, exp_int(state->ast, 0, loc));
+        case TT_UINT:       return make_zero_init_scalar(type, exp_uint(state->ast, 0, loc));
+        case TT_LONG:       return make_zero_init_scalar(type, exp_long(state->ast, 0, loc));
+        case TT_ULONG:      return make_zero_init_scalar(type, exp_ulong(state->ast, 0, loc));
+        case TT_DOUBLE:     return make_zero_init_scalar(type, exp_float(state->ast, 0.0, loc));
+        case TT_POINTER:    return make_zero_init_scalar(type, exp_ulong(state->ast, 0, loc));
+        case TT_FUNC:       ICE_ASSERT(((void)"TT_FUNC type is invalid in make_zero_init", false));
+    }
+
+    return make_zero_init_scalar(type_int(), exp_int(state->ast, 0, loc));
+}
+
+//
+// Check the initializer of a non-static variable.
+//
+static void ast_check_var_init(TypeCheckState *state, Type *target, Initializer *init, FileLine loc)
+{
+    if (init->tag == INIT_SINGLE) {
+        Expression *exp = typecheck_and_convert(state, init->single);
+        exp = convert_by_assignment(state, exp, target);
+        exp_replace(&init->single, exp);
+        init->type = type_clone(target);
+        
+        return;
+    }
+
+    //
+    // Compound initializer
+    //
+    if (target->tag != TT_ARRAY) {
+        err_report(EC_ERROR, &loc, "cannot initialize scalar with compound initializer.");
+        return;
+    }
+
+    int init_count = list_count(&init->compound);
+    if (init_count > target->array.size) {
+        err_report(EC_ERROR, &loc, "too many initializers for array.");
+        return;
+    }
+
+    for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
+        Initializer *subinit = CONTAINER_OF(curr, Initializer, list);
+        ast_check_var_init(state, target->array.element, subinit, loc);
+    }
+
+    for (int i = 0; i < target->array.size - init_count; i++) {
+        Initializer *zero = make_zero_init(state, target->array.element, loc);
+        list_push_back(&init->compound, &zero->list);
+    }
+}   
 
 //
 // Type check a variable declaration.
@@ -1060,6 +1300,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
 
     ICE_ASSERT(decl->tag == DECL_VARIABLE);
     DeclVariable *var = &decl->var;
+    bool init_scalar = false;
 
     Symbol *sym = stab_lookup(state->stab, var->name);
     
@@ -1069,8 +1310,9 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
 
     Type *type = type_clone(var->type);
 
-    Const init = const_make_zero();
-    
+    List init;
+    list_clear(&init);
+
     if (var->storage_class == SC_EXTERN) {
         if (var->init != NULL) {
             err_report(EC_ERROR, &decl->loc, "local extern variable `%s` may not have an initializer.", var->name);
@@ -1082,28 +1324,17 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             }
             type_free(type);
         } else {
-            init = ast_convert_const_to(&init, type);
+            ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_NO_INIT, init, true, decl->loc);
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            init = ast_check_static_init(type, init, decl->loc);
+            ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
-            #ifdef COMPLEX_INIT
-            switch (var->init->tag) {
-                case EXP_INT:   init = const_make_int(CIS_INT, CIS_SIGNED, (int)var->init->intval); break;
-                case EXP_UINT:  init = const_make_int(CIS_INT, CIS_UNSIGNED, (unsigned)var->init->intval); break;
-                case EXP_LONG:  init = const_make_int(CIS_LONG, CIS_SIGNED, var->init->intval); break;
-                case EXP_ULONG: init = const_make_int(CIS_LONG, CIS_UNSIGNED, var->init->intval); break;
-                case EXP_FLOAT: init = const_make_double(var->init->floatval); break;
-
-                default:
-                    err_report(EC_ERROR, &decl->loc, "static initializer for `%s` must be a constant.", var->name);
-            }
-            init = ast_check_static_init(type, init, decl->loc);
+            init_scalar = ast_flatten_compound_init_for_static(var->init, &init, decl->loc);
+            ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
-            #endif
         }
     } else {
         //
@@ -1111,10 +1342,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         //
         sym_update_local(sym, type);
         if (var->init) {
-            #ifdef COMPLEX_INIT
-            ast_check_expression(state, var->init);
-            var->init = convert_by_assignment(var->init, var->type);
-            #endif
+            ast_check_var_init(state, type, var->init, decl->loc);
         }
     }
 }
@@ -1133,11 +1361,12 @@ static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool
 //
 // Type check an entire program.
 //
-void ast_typecheck(AstProgram *prog, SymbolTable *stab)
+void ast_typecheck(AstProgram *prog, SymbolTable *stab, AstState *ast)
 {
     TypeCheckState state;
 
     state.stab = stab;
+    state.ast = ast;
 
     for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {
         Declaration *decl = CONTAINER_OF(curr, Declaration, list);
