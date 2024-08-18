@@ -106,6 +106,18 @@ AsmType *asmtype_double(void)
 }
 
 //
+// Allocate a byte array assembly type.
+//
+AsmType *asmtype_bytearray(size_t bytes, int align)
+{
+    AsmType *at = safe_zalloc(sizeof(AsmType));
+    at->tag = AT_BYTEARRAY;
+    at->array.size = bytes;
+    at->array.align = align;
+    return at;
+}
+
+//
 // Free an assembly type object.
 //
 void asmtype_free(AsmType *type)
@@ -122,6 +134,7 @@ AsmType *asmtype_clone(AsmType *type)
         case AT_LONGWORD:       return asmtype_long();
         case AT_QUADWORD:       return asmtype_quad();
         case AT_DOUBLE:         return asmtype_double();
+        case AT_BYTEARRAY:      return asmtype_bytearray(type->array.size, type->array.align);
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_clone", false));
@@ -137,6 +150,7 @@ char *asmtype_describe(AsmType *at)
         case AT_LONGWORD: return saprintf("longword");
         case AT_QUADWORD: return saprintf("quadword");
         case AT_DOUBLE:   return saprintf("double");
+        case AT_BYTEARRAY:return saprintf("bytearray[%zu,%u]", at->array.size, at->array.align);
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_describe", false));
@@ -152,6 +166,7 @@ int asmtype_size(AsmType *type)
         case AT_LONGWORD: return 4;
         case AT_QUADWORD: return 8;
         case AT_DOUBLE:   return 8;
+        case AT_BYTEARRAY:return type->array.size;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_size", false));
@@ -167,6 +182,7 @@ int asmtype_alignment(AsmType *type)
         case AT_LONGWORD: return 4;
         case AT_QUADWORD: return 8;
         case AT_DOUBLE:   return 8;
+        case AT_BYTEARRAY:return type->array.align;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_alignment", false));
@@ -247,6 +263,37 @@ AsmOperand *aoper_memory(Register reg, int offset)
 }
 
 //
+// Allocate a scale-index-base (SIB) operand.
+//
+AsmOperand *aoper_indexed(Register base, Register index, int scale)
+{
+    AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
+
+    op->tag = AOP_INDEXED;
+
+    op->indexed.base = base;
+    op->indexed.index = index;
+    op->indexed.scale = scale;
+
+    return op;
+}
+
+//
+// Allocate a pseudo-mem operand.
+//
+AsmOperand *aoper_pseudomem(char *name, int offset)
+{
+    AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
+
+    op->tag = AOP_PSEUDOMEM;
+
+    op->pseudomem.name = safe_strdup(name);
+    op->pseudomem.offset = offset;
+
+    return op;
+}
+
+//
 // Allocate a static operand.
 //
 AsmOperand *aoper_data(char *name)
@@ -263,7 +310,7 @@ AsmOperand *aoper_data(char *name)
 //
 bool aoper_is_mem(AsmOperand *oper)
 {
-    return oper->tag == AOP_MEMORY || oper->tag == AOP_DATA;
+    return oper->tag == AOP_MEMORY || oper->tag == AOP_DATA || oper->tag == AOP_INDEXED;
 }
 
 //
@@ -275,6 +322,7 @@ void aoper_free(AsmOperand *op)
         switch (op->tag) { 
             case AOP_PSEUDOREG: safe_free(op->pseudoreg); break;
             case AOP_DATA: safe_free(op->data); break;
+            case AOP_PSEUDOMEM: safe_free(op->pseudomem.name); break;
 
             default:
                 break;
@@ -292,8 +340,10 @@ void aoper_print(AsmOperand *op)
         case AOP_IMM: printf("%lu", op->imm); break;
         case AOP_REG: printf("$%s", reg_name(op->reg)); break;
         case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
-        case AOP_MEMORY: printf("[%s+%d]", reg_name(op->memory.reg), op->memory.offset); break;
+        case AOP_MEMORY: printf("mem[%s+%d]", reg_name(op->memory.reg), op->memory.offset); break;
         case AOP_DATA: printf("%s", op->data); break;
+        case AOP_INDEXED: printf("[%s+%s*%u]", reg_name(op->indexed.base), reg_name(op->indexed.index), op->indexed.scale); break;
+        case AOP_PSEUDOMEM: printf("pseudomem[%s+%d]", op->pseudomem.name, op->pseudomem.offset); break;
     }
 }
 
@@ -330,7 +380,7 @@ AsmNode *asm_func(char *name, List body, bool global, FileLine loc)
 //
 // Construct an assembly static variable.
 //
-AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, FileLine loc)
+AsmNode *asm_static_var(char *name, bool global, int alignment, List init, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -956,13 +1006,25 @@ static void asm_static_var_print(AsmStaticVar *var)
     }
 
     printf(".align %d\n", var->alignment);
-    
-    if (var->init.tag == CON_FLOAT) {
-        printf("%s: .double %.13g\n", var->name, var->init.floatval);
-    } else if (var->init.intval.size == CIS_LONG) {
-        printf("%s: .quad %lu\n", var->name, var->init.intval.value);
-    } else {
-        printf("%s: .long %lu\n", var->name, var->init.intval.value);
+    printf("%s:\n", var->name);
+    for (ListNode *curr = var->init.head; curr; curr = curr->next) {
+        StaticInitializer *init = CONTAINER_OF(curr, StaticInitializer, list);
+
+        switch (init->tag) {
+            case SI_CONST:
+                if (init->cval.tag == CON_FLOAT) {
+                    printf("        .double %.13g\n", init->cval.floatval);
+                } else if (init->cval.intval.size == CIS_LONG) {
+                    printf("        .quad %lu\n", init->cval.intval.value);
+                } else {
+                    printf("        .long %lu\n", init->cval.intval.value);
+                }
+                break;
+
+            case SI_ZERO:
+                printf("        .zero %zd\n", init->bytes);
+                break;
+        }
     }
 }
 

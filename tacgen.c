@@ -677,7 +677,7 @@ static TacExpResult tcg_subscript(TacState *state, Expression *exp)
 
     TacNode *ptr = tcg_expression_and_convert(state, eptr);
     TacNode *idx = tcg_expression_and_convert(state, eidx);
-    TacNode *dst = tcg_temporary(state, type_clone(exp->type), exp->loc);
+    TacNode *dst = tcg_temporary(state, type_clone(eptr->type), exp->loc);
 
     tcg_append(state, tac_add_ptr(ptr, idx, element_size, dst, exp->loc));
 

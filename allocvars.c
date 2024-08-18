@@ -66,43 +66,99 @@ static void vartab_free(VarTable *table)
 }
 
 //
-// Apply pseudoregister replacement to an operand.
+// Handle a pseudoreg operand.
+//
+static void asm_alloc_pseudoreg(VarTable *vartab, AsmOperand **oper)
+{
+    char *name = (*oper)->pseudoreg;
+
+    VarTableNode *var = vartab_get(vartab, (*oper)->pseudoreg);
+    if (!var->allocated) {
+        BackEndSymbol *sym = bstab_lookup(vartab->bstab, name);
+
+        ICE_ASSERT(sym->tag == BST_OBJECT);
+        if (sym->object.is_static) {
+            AsmOperand *old = *oper;
+            *oper = aoper_data(name);
+            aoper_free(old);
+            return;
+        }
+
+        int size = asmtype_size(sym->object.type);
+        int align = asmtype_alignment(sym->object.type);
+
+        vartab->next_offset -= size;
+        
+        int pad = (-vartab->next_offset) % align;
+        if (pad) {
+            pad = align - pad;
+        }
+
+        vartab->next_offset -= pad;
+        var->allocated = true;
+        var->offset = vartab->next_offset;
+    }
+
+    //
+    // Replace with offset from stack frame.
+    //
+    aoper_free(*oper);
+    *oper = aoper_memory(REG_RBP, var->offset);
+}
+
+//
+// Handle a pseudomem operand.
+//
+static void asm_alloc_pseudomem(VarTable *vartab, AsmOperand **oper)
+{
+    AsmPseudoMem *pm = &((*oper)->pseudomem);
+
+    VarTableNode *var = vartab_get(vartab, pm->name);
+    if (!var->allocated) {
+        BackEndSymbol *sym = bstab_lookup(vartab->bstab, pm->name);
+
+        ICE_ASSERT(sym->tag == BST_OBJECT);
+        if (sym->object.is_static) {
+            AsmOperand *old = *oper;
+            *oper = aoper_data(pm->name);
+            aoper_free(old);
+            return;
+        }
+
+        int size = asmtype_size(sym->object.type);
+        int align = asmtype_alignment(sym->object.type);
+
+        vartab->next_offset -= size;
+        
+        int pad = (-vartab->next_offset) % align;
+        if (pad) {
+            pad = align - pad;
+        }
+
+        vartab->next_offset -= pad;
+        var->allocated = true;
+        var->offset = vartab->next_offset;
+    }
+
+    //
+    // Replace with offset from stack frame.
+    //
+    aoper_free(*oper);
+    *oper = aoper_memory(REG_RBP, var->offset + pm->offset);
+}
+
+//
+// Apply pseudoregister or pseudomem replacement to an operand.
 // The operand pointer may be free'd and reallocated.
 //
 static void asm_alloc_operand(VarTable *vartab, AsmOperand **oper)
 {
-    if ((*oper)->tag == AOP_PSEUDOREG) {
-        char *name = (*oper)->pseudoreg;
+    switch ((*oper)->tag) {
+        case AOP_PSEUDOREG: asm_alloc_pseudoreg(vartab, oper); break;
+        case AOP_PSEUDOMEM: asm_alloc_pseudomem(vartab, oper); break;
 
-        VarTableNode *var = vartab_get(vartab, (*oper)->pseudoreg);
-        if (!var->allocated) {
-            BackEndSymbol *sym = bstab_lookup(vartab->bstab, name);
-
-            ICE_ASSERT(sym->tag == BST_OBJECT);
-            if (sym->object.is_static) {
-                AsmOperand *old = *oper;
-                *oper = aoper_data(name);
-                aoper_free(old);
-                return;
-            }
-
-            int size = asmtype_size(sym->object.type);
-            int align = asmtype_alignment(sym->object.type);
-
-            vartab->next_offset -= size;
-            
-            int pad = (-vartab->next_offset) % align;
-
-            vartab->next_offset -= pad;
-            var->allocated = true;
-            var->offset = vartab->next_offset;
-        }
-
-        //
-        // Replace with offset from stack frame.
-        //
-        aoper_free(*oper);
-        *oper = aoper_memory(REG_RBP, var->offset);
+        default:
+            break;
     }
 }
 

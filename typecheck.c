@@ -1044,25 +1044,125 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 }
 
 //
+// Given a an integer constant source, cast to a numeric target type.
+//
+static Const ast_cast_int_value_to_const(ExpressionTag src_tag, unsigned long src, Type *target)
+{
+    //
+    // $TARGET all of this code assumes we are building native
+    //
+    if (target->tag == TT_DOUBLE) {
+        switch (src_tag) {
+            case EXP_INT:       return const_make_double((double)(int)src); break;
+            case EXP_UINT:      return const_make_double((double)(unsigned)src); break;
+            case EXP_LONG:      return const_make_double((double)(long)src); break;
+            case EXP_ULONG:     return const_make_double((double)src); break;
+
+            default:
+                ICE_ASSERT(((void)"ast_cast_int_value_to_const: invalid source type tag", false));
+                return const_make_double(0.0);
+        }
+    }
+
+    unsigned long val = 0;
+
+    //
+    // integral -> integral
+    //
+    // first, make sure we have an unsigned long that is properly truncated/
+    // extended based on the source type.
+    //
+    switch (src_tag) {
+        case EXP_INT:       val = (int)src; break;
+        case EXP_UINT:      val = (unsigned)src; break;
+        case EXP_LONG:      val = (long)src; break;
+        case EXP_ULONG:     val = src; break;
+
+        default:
+            ICE_ASSERT(((void)"ast_cast_int_value_to_const: invalid source type tag", false));
+    }
+
+    //
+    // return a constant based on the requested target type.
+    //
+    switch (target->tag) {
+        case TT_INT:    return const_make_int(CIS_INT,  CIS_SIGNED,   val);
+        case TT_UINT:   return const_make_int(CIS_INT,  CIS_UNSIGNED, val);
+        case TT_LONG:   return const_make_int(CIS_LONG, CIS_SIGNED,   val);
+        case TT_ULONG:  return const_make_int(CIS_LONG, CIS_UNSIGNED, val);
+
+        default:
+            ICE_ASSERT(((void)"ast_cast_int_value_to_const: invalid target type tag", false));
+    }
+
+    return const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
+}
+
+//
+// Given a an floating point source, cast to a numeric target type.
+//
+static Const ast_cast_float_value_to_const(ExpressionTag src_tag, double src, Type *target)
+{
+    ICE_ASSERT(src_tag == EXP_FLOAT);
+
+
+    switch (target->tag) {
+        case TT_INT:    return const_make_int(CIS_INT,  CIS_SIGNED,   (unsigned long)(int)src);
+        case TT_UINT:   return const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned long)(unsigned)src);
+        case TT_LONG:   return const_make_int(CIS_LONG, CIS_SIGNED,   (unsigned long)(long)src);
+        case TT_ULONG:  return const_make_int(CIS_LONG, CIS_UNSIGNED, (unsigned long)src);
+        case TT_DOUBLE: return const_make_double(src);
+
+        default:
+            ICE_ASSERT(((void)"ast_cast_float_value_to_const: invalid target type tag", false));
+    }
+
+    return const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
+}
+
+
+//
 // Given a possibly nested initializer, return a flattened list of static initializers.
+//
+// Properly cast the initializers and put them in constants of the target type so code 
+// generation know how to emit them without referring back to the variable type.
 //
 // Returns true if initializer was a scalar, else false.
 //
-static bool ast_flatten_compound_init_for_static(Initializer *init, List *out, FileLine loc)
+static bool ast_flatten_compound_init_for_static(Initializer *init, Type *target, List *out, FileLine loc)
 {
     if (init->tag == INIT_SINGLE) {
-        Const cn;
+        Const cn = const_make_int(CIS_INT, CIS_SIGNED, 0);
+        Expression *exp = init->single;
 
-        switch (init->single->tag) {
-            case EXP_INT:       cn = const_make_int(CIS_INT, CIS_SIGNED, init->single->intval); break;
-            case EXP_UINT:      cn = const_make_int(CIS_INT, CIS_UNSIGNED, init->single->intval); break;
-            case EXP_LONG:      cn = const_make_int(CIS_LONG, CIS_SIGNED, init->single->intval); break;
-            case EXP_ULONG:     cn = const_make_int(CIS_LONG, CIS_UNSIGNED, init->single->intval); break;
-            case EXP_FLOAT:     cn = const_make_double(init->single->floatval); break;
+        if (!exp_is_constant(exp)) {
+            err_report(EC_ERROR, &loc, "static initializer must be a constant.");
+        } else if (!type_arithmetic(target) && target->tag != TT_POINTER) {
+            err_report(EC_ERROR, &loc, "cannot initialize an aggregate with a scalar.");
+        } else if (init->single->tag == EXP_FLOAT && target->tag == TT_POINTER) {
+            err_report(EC_ERROR, &loc, "cannot initialize pointer with double.");
+            cn = const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
+        } else if (target->tag == TT_POINTER) {
+            //
+            // Should be assured by checks above
+            //
+            ICE_ASSERT(exp_is_int_constant(exp));
 
-            default:
-                err_report(EC_ERROR, &loc, "static initializers must be constant.");
-                cn = const_make_int(CIS_INT, CIS_SIGNED, 0);
+            if (exp->intval) {
+                err_report(EC_ERROR, &loc, "cannot initialize pointer with non-zero integer.");
+            }
+
+            //
+            // $TARGET assuming pointer is sizeof(unsigned long)
+            //
+            cn = const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
+        } else if (exp_is_int_constant(exp)) {
+            cn = ast_cast_int_value_to_const(exp->tag, exp->intval, target);
+        } else {
+            //
+            // exp is a floating point constant, target is non-pointer
+            //
+            cn = ast_cast_float_value_to_const(exp->tag, exp->floatval, target);
         }
 
         StaticInitializer *si = sinit_make_const(cn);
@@ -1071,9 +1171,22 @@ static bool ast_flatten_compound_init_for_static(Initializer *init, List *out, F
         return true;
     }
 
+    ICE_ASSERT(target->tag == TT_ARRAY);        
+    
     for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
         Initializer *sub = CONTAINER_OF(curr, Initializer, list);
-        ast_flatten_compound_init_for_static(sub, out, loc);
+        ast_flatten_compound_init_for_static(sub, target->array.element, out, loc);
+    }
+
+    size_t init_count = list_count(&init->compound);
+    size_t arr_count  = target->array.size;
+
+    if (init_count > arr_count) {
+        err_report(EC_ERROR, &loc, "too many initializers.");
+    } else if (init_count < arr_count) {
+        size_t padding = (arr_count - init_count) * type_size(target->array.element);
+        StaticInitializer *si = sinit_make_zero(padding);
+        list_push_back(out, &si->list);
     }
 
     return false;
@@ -1095,30 +1208,6 @@ static void ast_check_static_init(Type *type, List *init, bool init_scalar, File
     Type *base = type_array_element(type);
     int size = type_array_size(type);
     int init_size = list_count(init);
-
-    if (init_size > size) {
-        err_report(EC_ERROR, &loc, "too many initializers.");
-        init_size = size;
-    }
-
-    if (type->tag == TT_ARRAY && init_scalar) {
-        err_report(EC_ERROR, &loc, "cannot initialize an array with a scalar initializer.");
-    }
-
-    if (base->tag == TT_POINTER) {
-        ListNode *curr = init->head;
-        for (int i = 0; i < init_size; i++, curr = curr->next) {
-            StaticInitializer *init = CONTAINER_OF(curr, StaticInitializer, list);
-
-            if (init->tag == SI_CONST) {
-                if (init->cval.tag == CON_FLOAT) {
-                    err_report(EC_ERROR, &loc, "cannot initialize pointer with double.");
-                } else if (init->cval.intval.value != 0) {
-                    err_report(EC_ERROR, &loc, "cannot initialize pointer with nonzero value.");
-                }
-            }
-        }
-    }
 
     if (size > init_size) {
         size_t init_bytes = type_size(base) * init_size;
@@ -1153,7 +1242,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         siv = SIV_INIT;
 
         list_clear(&init);
-        init_scalar = ast_flatten_compound_init_for_static(var->init, &init, decl->loc);
+        init_scalar = ast_flatten_compound_init_for_static(var->init, decl->var.type, &init, decl->loc);
     }
 
     bool globally_visible = var->storage_class != SC_STATIC;
@@ -1334,7 +1423,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
-            init_scalar = ast_flatten_compound_init_for_static(var->init, &init, decl->loc);
+            init_scalar = ast_flatten_compound_init_for_static(var->init, var->type, &init, decl->loc);
             ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }

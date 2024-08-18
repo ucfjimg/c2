@@ -45,6 +45,15 @@ static void type_to_operand_spec(AsmType *type, OperandSpec *spec)
             spec->suffix = "sd";
             spec->size = OS_QWORD;
             break;
+
+        case AT_BYTEARRAY:
+            spec->suffix = "<byte-array>";
+            spec->size = OS_QWORD;
+            break;
+
+        default:
+            spec->suffix = "<invalid-tag>";
+            spec->size = OS_QWORD;
     }
 }
 
@@ -180,15 +189,31 @@ static void emit_data(EmitState *state, char *name)
 }
 
 //
+// Emit a scale-index-base operand.
+//
+static void emit_indexed(EmitState *state, AsmIndexedOperand *index)
+{
+    fprintf(state->out, "(");
+    emit_reg(state, index->base, OS_QWORD);
+    fprintf(state->out, ", ");
+    emit_reg(state, index->index, OS_QWORD);
+    fprintf(state->out, ", %d)", index->scale);
+}
+
+//
 // Emit an assembly operand.
 //
 static void emit_asmoper(EmitState *state, AsmOperand *oper, OperandSize os)
 {
     switch (oper->tag) {
-        case AOP_IMM:   emit_imm(state, oper->imm, os); break;
-        case AOP_REG:   emit_reg(state, oper->reg, os); break;
-        case AOP_MEMORY:emit_memory(state, &oper->memory); break;
-        case AOP_DATA:  emit_data(state, oper->data); break;
+        case AOP_IMM:       emit_imm(state, oper->imm, os); break;
+        case AOP_REG:       emit_reg(state, oper->reg, os); break;
+        case AOP_MEMORY:    emit_memory(state, &oper->memory); break;
+        case AOP_DATA:      emit_data(state, oper->data); break;
+        case AOP_INDEXED:   emit_indexed(state, &oper->indexed); break;
+
+        case AOP_PSEUDOMEM:
+            ICE_ASSERT(((void)"pseuedomem operand found at code emission time.", false));
         
         case AOP_PSEUDOREG:
             ICE_ASSERT(((void)"pseuedoreg operand found at code emission time.", false));
@@ -499,34 +524,59 @@ static void emit_function(EmitState *state, AsmFunction *func, FileLine *loc)
 //
 void emit_static_var(EmitState *state, AsmStaticVar *var)
 {
-    BackEndSymbol *sym = bstab_lookup(state->bstab, var->name);
-    ICE_ASSERT(sym->tag == BST_OBJECT);
-    int size = asmtype_size(sym->object.type);
-
-    bool is_quad = size == 8;
-
     if (var->global) {
         fprintf(state->out, "        .globl\t%s\n", var->name);        
     }
 
-    if (sym->object.type->tag == AT_DOUBLE) {
-        fprintf(state->out, "        .data\n");
-        fprintf(state->out, "        .balign\t%d\n", var->alignment);
-        fprintf(state->out, "%s:\n", var->name);
-        fprintf(state->out, "        .double\t%.20g\n", var->init.floatval); 
-    } else if (var->init.intval.value == 0) {
-        fprintf(state->out, "        .bss\n");
-        fprintf(state->out, "        .balign\t%d\n", var->alignment);
-        fprintf(state->out, "%s:\n", var->name);
-        fprintf(state->out, "        .zero\t%d\n", size);
-    } else {
-        fprintf(state->out, "        .data\n");
-        fprintf(state->out, "        .balign\t%d\n", var->alignment);
-        fprintf(state->out, "%s:\n", var->name);
-        fprintf(state->out, "        .%s\t%lu\n", 
-            is_quad ? "quad" : "long",
-            is_quad ? var->init.intval.value : (var->init.intval.value & 0xffffffff));
+    if (var->init.head && var->init.head->next == NULL) {
+        StaticInitializer *si = CONTAINER_OF(var->init.head, StaticInitializer, list);
+
+        if (si->tag == SI_ZERO || (si->cval.tag == CON_INTEGRAL && si->cval.intval.value == 0)) {
+            fprintf(state->out, "        .bss\n");
+            fprintf(state->out, "        .balign\t%d\n", var->alignment);
+            fprintf(state->out, "%s:\n", var->name);
+
+            if (si->tag == SI_ZERO) {
+                fprintf(state->out, "        .zero\t%zd\n", si->bytes);
+            } else if (si->cval.intval.size == CIS_INT) {
+                fprintf(state->out, "        .long\t0\n");
+            } else {
+                fprintf(state->out, "        .quad\t0\n");
+            }
+
+            fprintf(state->out, "        .text\n");
+            return;
+        }
     }
+
+    fprintf(state->out, "        .data\n");
+    fprintf(state->out, "        .balign\t%d\n", var->alignment);
+    fprintf(state->out, "%s:\n", var->name);
+
+    //
+    // NB the codegen pass is responsible for ensuring that the size of the
+    // constants in the initializer list is correct for the variable size.
+    //
+    for (ListNode *curr = var->init.head; curr; curr = curr->next) {
+        StaticInitializer *si = CONTAINER_OF(curr, StaticInitializer, list);
+
+        if (si->tag == SI_ZERO) {
+            fprintf(state->out, "        .zero\t%zd\n", si->bytes);
+            continue;
+        }
+
+        ICE_ASSERT(si->tag == SI_CONST);
+        Const *pcn = &si->cval;
+
+        if (pcn->tag == CON_FLOAT) {
+            fprintf(state->out, "        .double\t%.20g\n", pcn->floatval); 
+        } else if (pcn->intval.size == CIS_INT) {
+            fprintf(state->out, "        .long\t%u\n", (unsigned)pcn->intval.value);
+        } else {
+            fprintf(state->out, "        .quad\t%lu\n", pcn->intval.value);
+        }
+    }
+
     fprintf(state->out, "        .text\n");
 }
 

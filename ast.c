@@ -211,6 +211,62 @@ void exp_set_type(Expression *exp, Type *type)
 }
 
 //
+// Return true if the given expression represents a constant value.
+//
+bool exp_is_constant(Expression *exp)
+{
+    switch (exp->tag) {
+        case EXP_INT:
+        case EXP_LONG:
+        case EXP_UINT:
+        case EXP_ULONG:
+        case EXP_FLOAT:             return true;
+
+        case EXP_VAR:
+        case EXP_UNARY:
+        case EXP_BINARY:
+        case EXP_CONDITIONAL:
+        case EXP_ASSIGNMENT:
+        case EXP_FUNCTION_CALL:
+        case EXP_CAST:
+        case EXP_DEREF:
+        case EXP_ADDROF:
+        case EXP_SUBSCRIPT:         return false;
+    }
+
+    ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
+    return false;
+}
+
+//
+// Return true if the given expression represents an integer constant value.
+//
+bool exp_is_int_constant(Expression *exp)
+{
+    switch (exp->tag) {
+        case EXP_INT:
+        case EXP_LONG:
+        case EXP_UINT:
+        case EXP_ULONG:             return true;
+        
+        case EXP_FLOAT:
+        case EXP_VAR:
+        case EXP_UNARY:
+        case EXP_BINARY:
+        case EXP_CONDITIONAL:
+        case EXP_ASSIGNMENT:
+        case EXP_FUNCTION_CALL:
+        case EXP_CAST:
+        case EXP_DEREF:
+        case EXP_ADDROF:
+        case EXP_SUBSCRIPT:         return false;
+    }
+
+    ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
+    return false;
+}
+
+//
 // Constructor for a single initializer.
 //
 Initializer *init_single(Expression *exp)

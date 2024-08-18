@@ -46,10 +46,17 @@ typedef enum {
     AT_LONGWORD,
     AT_QUADWORD,
     AT_DOUBLE,
+    AT_BYTEARRAY,
 } AsmTypeTag;
 
 typedef struct {
+    size_t size;
+    int align;
+} AsmByteArray;
+
+typedef struct {
     AsmTypeTag tag;
+    AsmByteArray array; // AT_BYTEARRAY
 } AsmType;
 
 typedef enum  {
@@ -58,11 +65,14 @@ typedef enum  {
     AOP_PSEUDOREG,      // a named variable used like a register
     AOP_DATA,           // a variable reference to a static object
     AOP_MEMORY,         // reg + offset addressing, for RBP + xxx
+    AOP_INDEXED,        // [base + index * scale] addressing
+    AOP_PSEUDOMEM,      // a byte offset from a named aggregate
 } AsmOperandTag;
 
 extern AsmType *asmtype_long(void);
 extern AsmType *asmtype_quad(void);
 extern AsmType *asmtype_double(void);
+extern AsmType *asmtype_bytearray(size_t bytes, int align);
 extern AsmType *asmtype_clone(AsmType *type);
 extern void asmtype_free(AsmType *type);
 extern char *asmtype_describe(AsmType *type);
@@ -91,6 +101,17 @@ typedef struct {
 } AsmMemoryOperand;
 
 typedef struct {
+    Register base;          // base register
+    Register index;         // index register
+    int scale;              // scale value
+} AsmIndexedOperand;
+
+typedef struct {
+    char *name;             // name of aggregate
+    int offset;             // offset into aggregate
+} AsmPseudoMem;
+
+typedef struct {
     AsmOperandTag tag;
 
     union {
@@ -99,6 +120,8 @@ typedef struct {
         char               *pseudoreg;  // AOP_PSEUDOREG 
         char               *data;       // AOP_DATA
         AsmMemoryOperand    memory;     // AOP_MEMORY
+        AsmIndexedOperand   indexed;    // AOP_INDEXED
+        AsmPseudoMem        pseudomem;  // AOP_PSEUDOMEM
     };
 } AsmOperand;
 
@@ -108,6 +131,8 @@ extern AsmOperand *aoper_pseudoreg(char *name);
 extern AsmOperand *aoper_imm(unsigned long val);
 extern AsmOperand *aoper_data(char *name);
 extern AsmOperand *aoper_memory(Register reg, int offset);
+extern AsmOperand *aoper_indexed(Register base, Register index, int scale);
+extern AsmOperand *aoper_pseudomem(char *name, int offset);
 extern bool aoper_is_mem(AsmOperand *oper);
 extern void aoper_free(AsmOperand *op);
 extern void aoper_print(AsmOperand *op);
@@ -157,7 +182,7 @@ typedef struct {
     char *name;             // variable name
     bool global;            // variable is globally visible
     int alignment;          // required alignment (power of two)
-    Const init;             // initial value
+    List init;              // initial value of <StaticInitializer>
 } AsmStaticVar;
 
 typedef struct {
@@ -301,7 +326,7 @@ struct AsmNode {
 
 extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
-extern AsmNode *asm_static_var(char *name, bool global, int alignment, Const init, FileLine loc);
+extern AsmNode *asm_static_var(char *name, bool global, int alignment, List init, FileLine loc);
 extern AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
 extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);

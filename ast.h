@@ -131,6 +131,9 @@ extern Expression *exp_deref(AstState *state, Expression *exp, FileLine loc);
 extern Expression *exp_addrof(AstState *state, Expression *exp, FileLine loc);
 extern Expression *exp_subscript(AstState *state, Expression *left, Expression *right, FileLine loc);
 extern void exp_set_type(Expression *exp, Type *type);
+extern bool exp_is_constant(Expression *exp);
+extern bool exp_is_int_constant(Expression *exp);
+
 
 //
 // initializers
