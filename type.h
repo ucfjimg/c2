@@ -7,6 +7,9 @@
 typedef struct Type Type;
 
 typedef enum {
+    TT_CHAR,
+    TT_SCHAR,
+    TT_UCHAR,
     TT_INT,
     TT_LONG,
     TT_UINT,
@@ -57,6 +60,9 @@ typedef struct {
     Type *type;
 } TypeSpecifier;
 
+extern Type *type_char(void);
+extern Type *type_schar(void);
+extern Type *type_uchar(void);
 extern Type *type_int(void);
 extern Type *type_long(void);
 extern Type *type_uint(void);

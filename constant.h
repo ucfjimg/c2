@@ -11,6 +11,7 @@ typedef enum {
 } ConstTag;
 
 typedef enum {
+    CIS_CHAR,
     CIS_INT,
     CIS_LONG,
 } ConstIntSize;

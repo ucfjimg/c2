@@ -784,6 +784,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_UINT:          return ast_check_uint(state, exp);
         case EXP_ULONG:         return ast_check_ulong(state, exp);
         case EXP_FLOAT:         return ast_check_float(state, exp);
+        case EXP_STRING:        ICE_NYI("ast_check_expression::string");
         case EXP_VAR:           return ast_check_var(state, exp);
         case EXP_UNARY:         return ast_check_unary(state, exp);
         case EXP_BINARY:        return ast_check_binary(state, exp);
@@ -1327,6 +1328,10 @@ static Initializer *make_zero_init_array(TypeCheckState *state, Type *type, File
 static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc)
 {
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_UCHAR:
+        case TT_SCHAR:      ICE_NYI("make_zero_init::char-types");
+
         case TT_ARRAY:      return make_zero_init_array(state, type, loc);
         case TT_INT:        return make_zero_init_scalar(type, exp_int(state->ast, 0, loc));
         case TT_UINT:       return make_zero_init_scalar(type, exp_uint(state->ast, 0, loc));

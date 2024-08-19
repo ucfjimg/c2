@@ -2,6 +2,7 @@
 
 #include "ice.h"
 #include "safemem.h"
+#include "strbuilder.h"
 
 #include <ctype.h>
 
@@ -18,6 +19,10 @@ void token_free(Token *tok)
 
         case TOK_ERROR:
             safe_free(tok->err);
+            break;
+
+        case TOK_STR_CONST:
+            safe_free(tok->str_const.data);
             break;
 
         default:
@@ -48,6 +53,44 @@ static char *token_describe_float_const(Token *tok)
 }
 
 //
+// Format a string constant into an allocated string.
+//
+static char *token_describe_str_const(Token *tok)
+{
+    ICE_ASSERT(tok->type == TOK_STR_CONST);
+    TokStrConst *str = &tok->str_const;
+
+    StrBuilder *stb = stb_alloc();
+
+    for (size_t i = 0; i < str->length; i++) {
+        char ch = str->data[i];
+
+        if (isprint(ch)) {
+            stb_push_char(stb, ch);
+        } else {
+            switch (ch) {
+                case '\0':  stb_printf(stb, "\\0"); break;
+                case '\a':  stb_printf(stb, "\\a"); break;
+                case '\b':  stb_printf(stb, "\\b"); break;
+                case '\f':  stb_printf(stb, "\\f"); break;
+                case '\n':  stb_printf(stb, "\\n"); break;
+                case '\r':  stb_printf(stb, "\\r"); break;
+                case '\t':  stb_printf(stb, "\\t"); break;
+                case '\v':  stb_printf(stb, "\\v"); break;
+
+                default:
+                    stb_printf(stb, "\\x%02x", ch & 0xff);
+                    break;
+            }
+        }
+    }
+
+    char *desc = stb_take(stb);
+    stb_free(stb);
+    return desc;
+} 
+
+//
 // Return a description of a token for debug output or error message. 
 // Returns an allocated string which must be free'd.
 //
@@ -67,6 +110,7 @@ char *token_describe(Token *tok)
         case TOK_ID:                return saprintf("id(%s)", tok->id);
         case TOK_INT_CONST:         return token_describe_int_const(tok); break;
         case TOK_FLOAT_CONST:       return token_describe_float_const(tok); break;
+        case TOK_STR_CONST:         return token_describe_str_const(tok); break;
 
         default:                    break;
     }
@@ -94,6 +138,7 @@ char *token_type_describe(TokenType tt)
         case TOK_ID:                return saprintf("<id>");
         case TOK_INT_CONST:         return saprintf("<int-const>");
         case TOK_FLOAT_CONST:       return saprintf("<float-const>");
+        case TOK_STR_CONST:         return saprintf("<string-const>");
 
         case TOK_INCREMENT:         return saprintf("++");
         case TOK_DECREMENT:         return saprintf("--");
@@ -137,6 +182,7 @@ char *token_type_describe(TokenType tt)
         case TOK_SIGNED:            return saprintf("signed");
         case TOK_UNSIGNED:          return saprintf("unsigned");
         case TOK_DOUBLE:            return saprintf("double");
+        case TOK_CHAR:              return saprintf("char");
 
         //
         // All of these are handled by the single-character case.
@@ -187,6 +233,11 @@ void token_clone(Token *src, Token *dst)
 
         case TOK_ERROR:
             dst->err = safe_strdup(src->id);
+            break;
+
+        case TOK_STR_CONST:
+            dst->str_const.data = safe_malloc(src->str_const.length);
+            memcpy(dst->str_const.data, src->str_const.data, src->str_const.length);
             break;
 
         default:

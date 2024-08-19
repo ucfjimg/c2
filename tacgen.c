@@ -695,6 +695,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_UINT:          return tcg_const_uint(state, exp);
         case EXP_ULONG:         return tcg_const_ulong(state, exp);
         case EXP_FLOAT:         return tcg_const_float(state, exp);
+        case EXP_STRING:        ICE_NYI("tcg_expression::string");
         case EXP_VAR:           return expres_plain(tac_var(exp->var.name, exp->loc));
         case EXP_UNARY:         return tcg_unary_op(state, exp);
         case EXP_BINARY:        return tcg_binary_op(state, exp);
@@ -725,6 +726,10 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
     if (init->tag == INIT_COMPOUND) {
         switch (type->tag) {
             case TT_ARRAY:   inner = type->array.element; break;
+
+            case TT_CHAR:
+            case TT_UCHAR:
+            case TT_SCHAR:      ICE_NYI("tac_nested_init::char-types");
 
             case TT_INT:
             case TT_LONG:

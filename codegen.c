@@ -167,6 +167,10 @@ static int codegen_type_array_align(Type *type)
 static int codegen_type_align(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_UCHAR:
+        case TT_SCHAR:      return 1;
+
         case TT_INT:        return 4;
         case TT_LONG:       return 8;
         case TT_UINT:       return 4;
@@ -203,7 +207,11 @@ static AsmType *codegen_type_to_asmtype(Type *type)
     ICE_ASSERT(type != NULL);
 
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_UCHAR:
+        case TT_SCHAR:      ICE_NYI("codegen_type_to_asmtype::char-types");
         case TT_INT:        return asmtype_long();
+
         case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();

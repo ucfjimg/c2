@@ -36,6 +36,7 @@ static Keyword keywords[] = {
     { "signed",     TOK_SIGNED },
     { "unsigned",   TOK_UNSIGNED },
     { "double",     TOK_DOUBLE },
+    { "char",       TOK_CHAR },
     { NULL,         TOK_EOF }
 };
 
@@ -546,6 +547,106 @@ static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
 }
 
 //
+// Scan an escaped character constant.
+//
+static int lexer_scan_escaped_char(Lexer *lex, FileLine loc)
+{
+    int ch = lex->ch;
+
+    if (ch == EOF) {
+        return ch;
+    }
+
+    lexer_next_char(lex);
+    if (ch != '\\') {
+        return ch;
+    }
+
+    ch = lex->ch;
+    lexer_next_char(lex);
+
+    switch (ch) {
+        case '0':   return '\0';
+        case 'a':   return '\a';
+        case 'b':   return '\b';
+        case 'f':   return '\f';
+        case 'n':   return '\b';
+        case 'r':   return '\r';
+        case 't':   return '\t';
+        case 'v':   return '\v';
+
+        case '\\':  return '\\';
+        case '\'':  return '\'';
+        case '"':   return '"';
+        case '?':   return '?';
+    }
+
+    err_report(EC_ERROR, &loc, "invalid escaped character `%c`.", ch);
+    return 0;
+}
+
+//
+// Scan for a character constant, and set the token appropriately.
+//
+static void lexer_scan_char_const(Lexer *lex, Token *tok)
+{
+    ICE_ASSERT(lex->ch == '\'');
+    lexer_next_char(lex);
+
+    char ch = 0;
+
+    if (lex->ch == '\'') {
+        err_report(EC_ERROR, &tok->loc, "empty character constant.");
+        ch = '\0';
+    } else if (lex->ch == '\n') {
+        err_report(EC_ERROR, &tok->loc, "newline in character constant.");
+        ch = '\0';
+    } else {
+        ch = lexer_scan_escaped_char(lex, tok->loc);
+        if (lex->ch != '\'') {
+            err_report(EC_ERROR, &tok->loc, "unterminated character constant.");
+        }
+        lexer_next_char(lex);
+    }
+
+    tok->type = TOK_INT_CONST;
+    tok->int_const.is_char = true;
+    tok->int_const.intval = ch;
+}
+
+//
+// Scan for a string constant, and st the token appropriately.
+//
+static void lexer_scan_str_const(Lexer *lex, Token *tok)
+{
+    ICE_ASSERT(lex->ch == '"');
+    lexer_next_char(lex);
+
+    StrBuilder *stb = stb_alloc();
+
+    while (lex->ch != '"') {
+        if (lex->ch == EOF) {
+            err_report(EC_ERROR, &tok->loc, "end of file in string constant.");
+            break;
+        } else if (lex->ch == '\n') {
+            err_report(EC_ERROR, &tok->loc, "newline in string constant.");
+            break;
+        }
+
+        int ch = lexer_scan_escaped_char(lex, tok->loc);
+        stb_push_char(stb, ch);
+    }
+
+    lexer_next_char(lex);
+
+    tok->type = TOK_STR_CONST;
+    tok->str_const.length = stb->length + 1;
+    tok->str_const.data = stb_take(stb);
+
+    stb_free(stb);
+}
+
+//
 // Allocate and initialize a Lexer object.
 //
 Lexer *lexer_open(char *fname)
@@ -653,6 +754,16 @@ void lexer_token(Lexer *lex, Token *tok)
 
     if (lexer_scan_multichar_op(lex, tok)) {
         lexer_convert_to_compound_assign(lex, tok);
+        return;
+    }
+
+    if (lex->ch == '\'') {
+        lexer_scan_char_const(lex, tok);
+        return;
+    }
+
+    if (lex->ch == '"') {
+        lexer_scan_str_const(lex, tok);
         return;
     }
 

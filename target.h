@@ -12,6 +12,8 @@
 #define TARGET_DOUBLE_SIZE      8
 #define TARGET_POINTER_SIZE     8
 
+#define TARGET_CHAR_SIGNED
+
 extern bool tgt_signed_fits_in_int(uint64_t val);
 extern bool tgt_signed_fits_in_long(uint64_t val);
 extern bool tgt_unsigned_fits_in_int(uint64_t val);

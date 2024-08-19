@@ -3,6 +3,7 @@
 #include "fileline.h"
 
 #include <stdbool.h>
+#include <stdlib.h>
 
 typedef enum {
     //
@@ -48,6 +49,7 @@ typedef enum {
     TOK_ID,
     TOK_INT_CONST,
     TOK_FLOAT_CONST,
+    TOK_STR_CONST,
 
     //
     // multi-char operators
@@ -100,13 +102,20 @@ typedef enum {
     TOK_SIGNED,
     TOK_UNSIGNED,
     TOK_DOUBLE,
+    TOK_CHAR,
 } TokenType;
 
 typedef struct {
     unsigned long intval;       // the bit pattern
+    bool is_char;               // a character constant
     bool is_long;               // a long constant
     bool is_unsigned;           // an unsigned constant
 } TokIntConst;
+
+typedef struct {
+    char *data;                 // string data, unescaped
+    size_t length;              // length, including trailing \0
+} TokStrConst;
 
 typedef struct {
     TokenType type;             // type for discrimated union
@@ -116,6 +125,7 @@ typedef struct {
         char *id;               // TOK_ID
         TokIntConst int_const;  // TOK_INT_CONST
         double float_const;     // TOK_FLOAT_CONST
+        TokStrConst str_const;  // TOK_STR_CONST
         char *err;              // TOK_ERROR, the invalid token
     };
 } Token;

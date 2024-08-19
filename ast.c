@@ -3,6 +3,7 @@
 #include "ice.h"
 #include "safemem.h"
 
+#include <ctype.h>
 #include <stdio.h>
 
 static void init_free(Initializer *init);
@@ -67,6 +68,20 @@ Expression *exp_float(AstState *state, double floatval, FileLine loc)
 {
     Expression *exp = exp_pool_alloc(state, EXP_FLOAT, loc);
     exp->floatval = floatval;
+    return exp;
+}
+
+//
+// Construct a string constant expression.
+//
+Expression *exp_string(AstState *state, char *data, size_t length, FileLine loc)
+{
+    Expression *exp = exp_pool_alloc(state, EXP_STRING, loc);
+
+    exp->string.length = length;
+    exp->string.data = safe_malloc(length);
+    memcpy(exp->string.data, data, length);
+
     return exp;
 }
 
@@ -220,7 +235,8 @@ bool exp_is_constant(Expression *exp)
         case EXP_LONG:
         case EXP_UINT:
         case EXP_ULONG:
-        case EXP_FLOAT:             return true;
+        case EXP_FLOAT:             
+        case EXP_STRING:            return true;
 
         case EXP_VAR:
         case EXP_UNARY:
@@ -250,6 +266,7 @@ bool exp_is_int_constant(Expression *exp)
         case EXP_ULONG:             return true;
         
         case EXP_FLOAT:
+        case EXP_STRING:
         case EXP_VAR:
         case EXP_UNARY:
         case EXP_BINARY:
@@ -702,6 +719,37 @@ static void print_exp_const_float(double val, int tab)
 }
 
 //
+// Print a string constant expression.
+//
+static void print_exp_const_string(ExpString *string, int tab)
+{
+    printf("string(\"");
+
+    for (size_t i = 0; i < string->length; i++) {
+        char ch = string->data[i];
+
+        if (isprint(ch)) {
+            printf("%c", ch);
+        } else {
+            switch (ch) {
+                case '\0': printf("\\0"); break;
+                case '\a': printf("\\a"); break;
+                case '\b': printf("\\b"); break;
+                case '\f': printf("\\f"); break;
+                case '\n': printf("\\n"); break;
+                case '\r': printf("\\r"); break;
+                case '\t': printf("\\t"); break;
+                case '\v': printf("\\v"); break;
+                default:
+                    printf("\\x%02x", ch & 0xff);
+            }
+        }
+    }
+
+    printf("\");\n");
+}
+
+//
 // Print an variable reference expression.
 //
 static void print_exp_var(char *name, int tab)
@@ -842,6 +890,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_UINT:          print_exp_const_uint(exp->intval, tab); break;
         case EXP_ULONG:         print_exp_const_ulong(exp->longval, tab); break;
         case EXP_FLOAT:         print_exp_const_float(exp->floatval, tab); break;
+        case EXP_STRING:        print_exp_const_string(&exp->string, tab); break;
         case EXP_VAR:           print_exp_var(exp->var.name, tab); break;
         case EXP_UNARY:         print_exp_unary(&exp->unary, tab, locs); break;
         case EXP_BINARY:        print_exp_binary(&exp->binary, tab, locs); break;

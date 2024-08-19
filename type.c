@@ -18,6 +18,30 @@ static Type *type_alloc(TypeTag tag)
 }
 
 //
+// Constructor for a char type.
+//
+Type *type_char(void)
+{
+    return type_alloc(TT_CHAR);
+}
+
+//
+// Constructor for a signed char type.
+//
+Type *type_schar(void)
+{
+    return type_alloc(TT_SCHAR);
+}
+
+//
+// Constructor for an unsigned char type.
+//
+Type *type_uchar(void)
+{
+    return type_alloc(TT_UCHAR);
+}
+
+//
 // Constructor for an integer type.
 //
 Type *type_int(void)
@@ -158,6 +182,9 @@ static Type *type_clone_array(TypeArray *array)
 Type *type_clone(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:   return type_char();
+        case TT_SCHAR:  return type_schar();
+        case TT_UCHAR:  return type_uchar();
         case TT_INT:    return type_int();
         case TT_LONG:   return type_long();
         case TT_UINT:   return type_uint();
@@ -225,6 +252,9 @@ bool types_equal(Type *left, Type *right)
     }
 
     switch (left->tag) {
+        case TT_CHAR:   return true;
+        case TT_UCHAR:  return true;
+        case TT_SCHAR:  return true;
         case TT_INT:    return true;
         case TT_LONG:   return true;
         case TT_UINT:   return true;
@@ -259,9 +289,17 @@ bool types_same_size(Type *left, Type *right)
 bool type_unsigned(Type *type)
 {
     switch (type->tag) {
+#ifndef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif
         case TT_UINT:
+        case TT_UCHAR:
         case TT_ULONG:  return true;
 
+#ifdef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif
+        case TT_SCHAR:
         case TT_INT:
         case TT_LONG:
         case TT_DOUBLE:
@@ -279,6 +317,9 @@ bool type_unsigned(Type *type)
 bool type_arithmetic(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:     
         case TT_UINT:
         case TT_ULONG: 
         case TT_INT:
@@ -298,6 +339,9 @@ bool type_arithmetic(Type *type)
 bool type_integral(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:
         case TT_UINT:
         case TT_ULONG: 
         case TT_INT:
@@ -341,6 +385,10 @@ size_t type_array_size(Type *type)
 size_t type_size(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:      return 1;
+
         case TT_INT:        return TARGET_INT_SIZE;
         case TT_LONG:       return TARGET_LONG_SIZE; 
         case TT_UINT:       return TARGET_INT_SIZE;
@@ -369,6 +417,9 @@ int type_rank(Type *type)
         case TT_LONG:   return 3;
         case TT_UINT:   return 2;
         case TT_INT:    return 1;
+        case TT_CHAR:   return 1;
+        case TT_SCHAR:  return 1;
+        case TT_UCHAR:  return 1;
         case TT_FUNC:   
         case TT_ARRAY:  ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
@@ -408,6 +459,9 @@ void type_free(Type *type)
 {
     if (type) {
         switch (type->tag) {
+            case TT_CHAR:
+            case TT_SCHAR:
+            case TT_UCHAR:
             case TT_INT:
             case TT_LONG:
             case TT_UINT:
@@ -488,6 +542,9 @@ static char *type_describe_array(TypeArray *array)
 char *type_describe(Type *type)
 {
     switch (type->tag) {
+        case TT_CHAR:   return saprintf("char");
+        case TT_SCHAR:  return saprintf("signed char");
+        case TT_UCHAR:  return saprintf("unsigned char");
         case TT_INT:    return saprintf("int");
         case TT_LONG:   return saprintf("long");
         case TT_UINT:   return saprintf("unsigned int");

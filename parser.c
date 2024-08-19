@@ -250,8 +250,53 @@ static bool parse_unary_op(Parser *parser, UnaryOp *uop)
 }
 
 //
+// Parse a primary string literal.
+//
+// Concatenate mutiple adjacent literals into one AST node.
+//
+static Expression *parse_primary_string(Parser *parser)
+{
+    char *data = NULL;
+    char *newdata = NULL;
+    size_t length = 0;
+    FileLine loc = parser->tok.loc;
+
+    while (parser->tok.type == TOK_STR_CONST) {
+        TokStrConst *strconst = &parser->tok.str_const;
+
+        newdata = safe_malloc(length + strconst->length);
+
+        if (data) {
+            ICE_ASSERT(length);
+            //
+            // `length` contains the trailing NUL, so copy over it.
+            //
+            memcpy(newdata, data, length - 1);
+            memcpy(newdata + length - 1, strconst->data, strconst->length);
+        } else {
+            memcpy(newdata, strconst->data, strconst->length);
+        }
+
+        if (length) {
+            length--;
+        }
+
+        length += strconst->length;
+        safe_free(data);
+        data = newdata;
+
+        parse_next_token(parser);
+    }
+
+
+    Expression *str = exp_string(parser->ast, data, length, loc);
+    safe_free(data);
+    return str;
+}
+
+//
 // Parse a primary expression.
-// <primary> := <int> | <long> | <uint> | <ulong> | <float> | <identifier> | "(" <exp> ")"
+// <primary> := <int> | <long> | <uint> | <ulong> | <float> | { <string> }+ | <identifier> | "(" <exp> ")"
 //
 static Expression *parse_primary(Parser *parser)
 {
@@ -274,6 +319,13 @@ static Expression *parse_primary(Parser *parser)
         }
         parse_next_token(parser);
         return exp;
+    }
+
+    //
+    // primary := { <string>+ }
+    //
+    if (parser->tok.type == TOK_STR_CONST) {
+        return parse_primary_string(parser);
     }
     
     //
@@ -761,6 +813,7 @@ static bool is_type_specifier(Parser *parser)
     TokenType tt = parser->tok.type;
 
     return
+        tt == TOK_CHAR ||
         tt == TOK_INT ||
         tt == TOK_LONG ||
         tt == TOK_SIGNED ||
@@ -778,6 +831,7 @@ static bool is_type_specifier(Parser *parser)
 static TypeSpecifier *parse_type_specifier(Parser *parser)
 {
     enum {
+        TOK_CHAR_INDEX,
         TOK_INT_INDEX,
         TOK_LONG_INDEX,
         TOK_SIGNED_INDEX,
@@ -791,6 +845,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         TokenType tt;
         int count;
     } spec_tokens[] = {
+        { TOK_CHAR, 0 },
         { TOK_INT, 0 },
         { TOK_LONG, 0 },
         { TOK_SIGNED, 0 },
@@ -837,7 +892,17 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         err_report(EC_ERROR, &loc, "`signed` and `unsigned` are mutually exclusive.");
     }
 
-    bool has_int = 
+    bool has_char = spec_tokens[TOK_CHAR_INDEX].count != 0;
+
+    if (has_char) {
+        if (spec_tokens[TOK_INT_INDEX].count) {
+            err_report(EC_ERROR, &loc, "`char` and `int` are mutually exclusive.");
+        } else if (spec_tokens[TOK_LONG_INDEX].count) {
+            err_report(EC_ERROR, &loc, "`char` and `long` are mutually exclusive.");
+        }
+    }
+
+    bool has_int =
         spec_tokens[TOK_INT_INDEX].count || 
         spec_tokens[TOK_LONG_INDEX].count ||
         spec_tokens[TOK_SIGNED_INDEX].count ||
@@ -845,7 +910,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 
     bool has_double = spec_tokens[TOK_DOUBLE_INDEX].count;
 
-    if (!(has_int || spec_tokens[TOK_DOUBLE_INDEX].count)) {
+    if (!(has_int || has_char || spec_tokens[TOK_DOUBLE_INDEX].count)) {
         err_report(EC_ERROR, &loc, "missing type specifier.");
     }
 
@@ -865,7 +930,18 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
     }
 
     bool is_unsigned = spec_tokens[TOK_UNSIGNED_INDEX].count;
+    bool is_signed = spec_tokens[TOK_SIGNED_INDEX].count;
     bool is_long = spec_tokens[TOK_LONG_INDEX].count;
+
+    if (has_char) {
+        if (is_unsigned) {
+            return typespec_alloc(sc, type_uchar());
+        } else if (is_signed) {
+            return typespec_alloc(sc, type_schar());
+        } else {
+            return typespec_alloc(sc, type_char());
+        }
+    }
 
     if (is_unsigned && is_long) {
         return typespec_alloc(sc, type_ulong());

@@ -28,6 +28,7 @@ typedef enum {
     EXP_UINT,
     EXP_ULONG,
     EXP_FLOAT,
+    EXP_STRING,
     EXP_VAR,
     EXP_UNARY,
     EXP_BINARY,
@@ -39,6 +40,11 @@ typedef enum {
     EXP_ADDROF,
     EXP_SUBSCRIPT,
 } ExpressionTag;
+
+typedef struct {
+    char *data;
+    size_t length;
+} ExpString;
 
 typedef struct {
     char *name;
@@ -102,6 +108,7 @@ struct Expression {
         unsigned long uintval;
         unsigned long ulongval;
         double floatval;
+        ExpString string;
         ExpVar var;
         ExpUnary unary;
         ExpBinary binary;
@@ -120,6 +127,7 @@ extern Expression *exp_long(AstState *state, unsigned long intval, FileLine loc)
 extern Expression *exp_uint(AstState *state, unsigned long intval, FileLine loc);
 extern Expression *exp_ulong(AstState *state, unsigned long intval, FileLine loc);
 extern Expression *exp_float(AstState *state, double floatval, FileLine loc);
+extern Expression *exp_string(AstState *state, char *data, size_t length, FileLine loc);
 extern Expression *exp_var(AstState *state, char *name, FileLine loc);
 extern Expression *exp_unary(AstState *state, UnaryOp op, Expression *exp, FileLine loc);
 extern Expression *exp_binary(AstState *state, BinaryOp op, Expression *left, Expression *right, FileLine loc);
