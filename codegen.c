@@ -1327,6 +1327,7 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
             case ST_FUNCTION:   codegen_func_sym_to_backsym(&sym->func, bsym); break;
             case ST_STATIC_VAR: codegen_static_sym_to_backsym(sym, bsym); break;
             case ST_LOCAL_VAR:  codegen_local_sym_to_backsym(sym, bsym); break;
+            case ST_CONSTANT:   ICE_NYI("codegen_sym_to_backsym::ST_CONSTANT");
                 break;
         }
 

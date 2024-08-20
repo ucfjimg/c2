@@ -63,6 +63,7 @@ typedef struct {
 extern Type *type_char(void);
 extern Type *type_schar(void);
 extern Type *type_uchar(void);
+extern bool type_is_char(Type *type);
 extern Type *type_int(void);
 extern Type *type_long(void);
 extern Type *type_uint(void);

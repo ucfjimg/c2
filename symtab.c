@@ -2,6 +2,7 @@
 
 #include "fileline.h"
 #include "safemem.h"
+#include "strutil.h"
 #include "type.h"
 
 #include <stdio.h>
@@ -66,6 +67,69 @@ static void stab_print_function(SymFunction *func)
 }
 
 //
+// Print a constant.
+//
+static void stab_print_const(Const *cn)
+{
+    switch (cn->tag) {
+        case CON_INTEGRAL:
+            switch (cn->intval.size) {
+                case CIS_CHAR:
+                    if (cn->intval.sign == CIS_SIGNED) {
+                        printf("%d", (signed char)cn->intval.value);
+                    } else {
+                        printf("%u", (unsigned char)cn->intval.value);
+                    }
+                    break;
+                case CIS_INT:
+                    if (cn->intval.sign == CIS_SIGNED) {
+                        printf("%d", (signed int)cn->intval.value);
+                    } else {
+                        printf("%u", (unsigned int)cn->intval.value);
+                    }
+                    break;
+                case CIS_LONG:
+                    if (cn->intval.sign == CIS_SIGNED) {
+                        printf("%ld", (signed long)cn->intval.value);
+                    } else {
+                        printf("%lu", (unsigned long)cn->intval.value);
+                    }
+                    break;
+            }
+            break;
+
+        case CON_FLOAT:
+            printf("%g", cn->floatval);
+            break;
+    }
+}
+
+//
+// Print a string constant.
+//
+static void stab_print_string(StaticInitString *str)
+{
+    char *desc = str_escape(str->data, str->length);
+    printf("\"%s\"", desc);
+    safe_free(desc);
+}
+
+//
+// Print one static intializer.
+//
+static void stab_print_static_init(StaticInitializer *si)
+{
+    switch (si->tag) {
+        case SI_CONST:  printf("const "); stab_print_const(&si->cval); break;
+        case SI_ZERO:   printf("zero(%zd)", si->bytes); break;
+        case SI_STRING: printf("string "); stab_print_string(&si->string); break;
+        case SI_POINTER:printf("pointer %s", si->ptr_name); break;
+    }
+
+    printf("\n");
+}
+
+//
 // Print the details of a static variable symbol.
 //
 static void stab_print_static_var(SymStaticVar *svar)
@@ -77,30 +141,18 @@ static void stab_print_static_var(SymStaticVar *svar)
         case SIV_NO_INIT:   printf("SIV_NO_INIT "); break;
     }
 
-    char *loc = fileline_describe(&svar->loc);
 
-#if 0
-    switch (svar->initial.tag) {
-        case CON_INTEGRAL:
-            printf(
-                "init=%lu%s%s global=%d loc=%s\n", 
-                svar->initial.intval.value, 
-                svar->initial.intval.size == CIS_LONG ? "l" : "",
-                svar->initial.intval.sign == CIS_UNSIGNED ? "u" : "",
-                svar->global, 
-                loc);
-            break;
+    if (svar->initial.head) {
+        printf("= {\n");
 
-        case CON_FLOAT:
-            printf(
-                "init=%g global=%d loc=%s\n", 
-                svar->initial.floatval, 
-                svar->global, 
-                loc);
-            break;
+        for (ListNode *curr = svar->initial.head; curr; curr = curr->next) {
+            StaticInitializer *si = CONTAINER_OF(curr, StaticInitializer, list);
+            stab_print_static_init(si);
+        }
+
+        printf("}");
     }
-    #endif
-    safe_free(loc);
+    printf("\n");
 }
 
 //
@@ -125,6 +177,7 @@ void stab_print(SymbolTable *stab)
             case ST_FUNCTION:   stab_print_function(&sym->func); break;
             case ST_STATIC_VAR: stab_print_static_var(&sym->stvar); break;
             case ST_LOCAL_VAR:  printf("LOCAL\n"); break;
+            case ST_CONSTANT:   printf("ST-CONST "); stab_print_static_init(sym->stconst); break;
         }
     }
 }
@@ -199,6 +252,35 @@ StaticInitializer *sinit_make_zero(size_t bytes)
 
     si->tag = SI_ZERO;
     si->bytes = bytes;
+
+    return si;
+}
+
+//
+// Construct a string constant static initializer.
+//
+StaticInitializer *sinit_make_string(char *data, size_t length, bool nul_terminated)
+{
+    StaticInitializer *si = safe_zalloc(sizeof(StaticInitializer));
+
+    si->tag = SI_STRING;
+    si->string.data = safe_malloc(length);
+    memcpy(si->string.data, data, length);
+    si->string.length = length;
+    si->string.nul_terminated = nul_terminated;
+
+    return si;
+}
+
+//
+// Construct a pointer initializer, which points to another named static object.
+//
+StaticInitializer *sinit_make_pointer(char *name)
+{
+    StaticInitializer *si = safe_zalloc(sizeof(StaticInitializer));
+
+    si->tag = SI_POINTER;
+    si->ptr_name = safe_strdup(name);
 
     return si;
 }

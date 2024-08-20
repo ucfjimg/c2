@@ -27,8 +27,9 @@ add_executable(cc
     resolve.c
     safemem.c
     strbuilder.c
-    symtab.c
+    strutil.c
     switch.c
+    symtab.c
     tacgen.c
     tacnode.c
     target.c

@@ -5,6 +5,8 @@
 #include "ice.h"
 #include "safemem.h"
 #include "symtab.h"
+#include "target.h"
+#include "temporary.h"
 #include "type.h"
 
 typedef struct {
@@ -25,6 +27,14 @@ static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine l
 //
 static Type *types_common(Type *left, Type *right)
 {
+    if (type_is_char(left)) {
+        left = type_int();
+    }
+
+    if (type_is_char(right)) {
+        right = type_int();
+    }
+
     if (types_equal(left, right)) {
         return type_clone(left);
     }
@@ -73,7 +83,8 @@ static bool exp_is_lvalue(Expression *exp)
     return
         exp->tag == EXP_VAR ||
         exp->tag == EXP_DEREF || 
-        exp->tag == EXP_SUBSCRIPT;
+        exp->tag == EXP_SUBSCRIPT ||
+        exp->tag == EXP_STRING;
 }
 
 //
@@ -149,6 +160,24 @@ static Expression *typecheck_and_convert(TypeCheckState *state, Expression *exp)
 }
 
 //
+// Type check a signed char constant.
+//
+static Expression *ast_check_schar(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_schar());
+    return exp;
+}
+
+//
+// Type check an usigned char constant.
+//
+static Expression *ast_check_uchar(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_uchar());
+    return exp;
+}
+
+//
 // Type check an integer constant.
 //
 static Expression *ast_check_int(TypeCheckState *state, Expression *exp)
@@ -194,6 +223,15 @@ static Expression *ast_check_float(TypeCheckState *state, Expression *exp)
 }
 
 //
+// Type check a string constant.
+//
+static Expression *ast_check_string(TypeCheckState *state, Expression *exp)
+{
+    exp_set_type(exp, type_array(type_char(), exp->string.length));
+    return exp;
+}
+
+//
 // Type check a variable reference.
 //
 static Expression *ast_check_var(TypeCheckState *state, Expression *exp)
@@ -232,6 +270,14 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     if (unary->op == UOP_MINUS && unary->exp->type->tag == TT_POINTER) {        
         err_report(EC_ERROR, &exp->loc, "cannot apply `-` to pointers.");
+    }
+
+    if ((unary->op == UOP_COMPLEMENT || unary->op == UOP_MINUS) && type_is_char(unary->exp->type)) {
+        Expression *typed_inner = convert_to(state, unary->exp, type_int());
+        unary->exp = typed_inner;
+        exp_set_type(exp, type_int());
+
+        return exp;
     }
 
     bool incdec = 
@@ -779,12 +825,14 @@ static Expression *ast_check_subscript(TypeCheckState *state, Expression *exp)
 static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
 {
     switch (exp->tag) {
+        case EXP_SCHAR:         return ast_check_schar(state, exp);
+        case EXP_UCHAR:         return ast_check_uchar(state, exp);
         case EXP_INT:           return ast_check_int(state, exp);
         case EXP_LONG:          return ast_check_long(state, exp);
         case EXP_UINT:          return ast_check_uint(state, exp);
         case EXP_ULONG:         return ast_check_ulong(state, exp);
         case EXP_FLOAT:         return ast_check_float(state, exp);
-        case EXP_STRING:        ICE_NYI("ast_check_expression::string");
+        case EXP_STRING:        return ast_check_string(state, exp);
         case EXP_VAR:           return ast_check_var(state, exp);
         case EXP_UNARY:         return ast_check_unary(state, exp);
         case EXP_BINARY:        return ast_check_binary(state, exp);
@@ -1054,6 +1102,8 @@ static Const ast_cast_int_value_to_const(ExpressionTag src_tag, unsigned long sr
     //
     if (target->tag == TT_DOUBLE) {
         switch (src_tag) {
+            case EXP_SCHAR:     return const_make_double((double)(signed char)src); break;
+            case EXP_UCHAR:     return const_make_double((double)(unsigned char)src); break;
             case EXP_INT:       return const_make_double((double)(int)src); break;
             case EXP_UINT:      return const_make_double((double)(unsigned)src); break;
             case EXP_LONG:      return const_make_double((double)(long)src); break;
@@ -1074,6 +1124,8 @@ static Const ast_cast_int_value_to_const(ExpressionTag src_tag, unsigned long sr
     // extended based on the source type.
     //
     switch (src_tag) {
+        case EXP_SCHAR:     val = (signed char)src; break;
+        case EXP_UCHAR:     val = (unsigned char)src; break;
         case EXP_INT:       val = (int)src; break;
         case EXP_UINT:      val = (unsigned)src; break;
         case EXP_LONG:      val = (long)src; break;
@@ -1087,6 +1139,16 @@ static Const ast_cast_int_value_to_const(ExpressionTag src_tag, unsigned long sr
     // return a constant based on the requested target type.
     //
     switch (target->tag) {
+#ifdef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif
+        case TT_SCHAR:  return const_make_int(CIS_CHAR, CIS_SIGNED,   val);
+
+#ifndef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif
+        case TT_UCHAR:  return const_make_int(CIS_CHAR, CIS_UNSIGNED, val);
+
         case TT_INT:    return const_make_int(CIS_INT,  CIS_SIGNED,   val);
         case TT_UINT:   return const_make_int(CIS_INT,  CIS_UNSIGNED, val);
         case TT_LONG:   return const_make_int(CIS_LONG, CIS_SIGNED,   val);
@@ -1108,6 +1170,16 @@ static Const ast_cast_float_value_to_const(ExpressionTag src_tag, double src, Ty
 
 
     switch (target->tag) {
+#ifdef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif        
+        case TT_SCHAR:  return const_make_int(CIS_CHAR, CIS_SIGNED,   (unsigned long)(signed char)src);
+
+#ifndef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif        
+        case TT_UCHAR:  return const_make_int(CIS_CHAR, CIS_UNSIGNED, (unsigned long)(unsigned char)src);
+
         case TT_INT:    return const_make_int(CIS_INT,  CIS_SIGNED,   (unsigned long)(int)src);
         case TT_UINT:   return const_make_int(CIS_INT,  CIS_UNSIGNED, (unsigned long)(unsigned)src);
         case TT_LONG:   return const_make_int(CIS_LONG, CIS_SIGNED,   (unsigned long)(long)src);
@@ -1121,6 +1193,79 @@ static Const ast_cast_float_value_to_const(ExpressionTag src_tag, double src, Ty
     return const_make_int(CIS_LONG, CIS_UNSIGNED, 0);
 }
 
+//
+// Type check and build an initializer for a string to a character array.
+//
+static void ast_type_check_static_array_string_init(Initializer *init, Type *target, List *out, FileLine loc)
+{
+    ICE_ASSERT(init->tag == INIT_SINGLE && init->single->tag == EXP_STRING);
+    ExpString *strcon = &init->single->string;
+
+    ICE_ASSERT(target->tag == TT_ARRAY);
+    TypeArray *array = &target->array;
+
+    if (!type_is_char(array->element)) {
+        err_report(EC_ERROR, &loc, "string may only be assigned to array of char type.");
+        return;
+    }
+
+    StaticInitializer *si;
+
+    if (strcon->length <= array->size) {
+        //
+        // Entire string fits with nul terminator.
+        //
+        si = sinit_make_string(strcon->data, strcon->length, true);
+        list_push_back(out, &si->list);
+
+        size_t pad = array->size - strcon->length;
+        if (pad) {
+            si = sinit_make_zero(pad);
+            list_push_back(out, &si->list);
+        }
+    } else if (strcon->length - 1 == array->size) {
+        //
+        // Entire string fits but with no nul terminator.
+        //
+        si = sinit_make_string(strcon->data, strcon->length - 1, true);
+        list_push_back(out, &si->list);
+    } else {
+        err_report(EC_ERROR, &loc, "array is too short to contain string constant.");
+    }
+}
+
+//
+// Type check and build an initializer for a string to a character pointer.
+//
+static void ast_type_check_static_pointer_string_init(TypeCheckState *state, Initializer *init, Type *target, List *out, FileLine loc)
+{
+    ICE_ASSERT(init->tag == INIT_SINGLE && init->single->tag == EXP_STRING);
+    ExpString *strcon = &init->single->string;
+
+    ICE_ASSERT(target->tag == TT_POINTER);
+    TypePointer *ptr = &target->ptr;
+
+    if (ptr->ref->tag != TT_CHAR) {
+        err_report(EC_ERROR, &loc, "string may only be assigned to pointer to char type.");
+        return;
+    }
+
+    //
+    // Create a constant in the symbol table for the string.
+    //
+    char *strname = tmp_name("string");
+    Symbol *sym = stab_lookup(state->stab, strname);
+
+    sym->tag = ST_CONSTANT;
+    sym->stconst = sinit_make_string(strcon->data, strcon->length, true);
+
+    //
+    // The initializer for the static pointer itself references the symbopl
+    // we just created.
+    //
+    StaticInitializer *si = sinit_make_pointer(strname);
+    list_push_back(out, &si->list);
+}
 
 //
 // Given a possibly nested initializer, return a flattened list of static initializers.
@@ -1130,7 +1275,7 @@ static Const ast_cast_float_value_to_const(ExpressionTag src_tag, double src, Ty
 //
 // Returns true if initializer was a scalar, else false.
 //
-static bool ast_flatten_compound_init_for_static(Initializer *init, Type *target, List *out, FileLine loc)
+static bool ast_flatten_compound_init_for_static(TypeCheckState *state, Initializer *init, Type *target, List *out, FileLine loc)
 {
     if (init->tag == INIT_SINGLE) {
         Const cn = const_make_int(CIS_INT, CIS_SIGNED, 0);
@@ -1138,6 +1283,16 @@ static bool ast_flatten_compound_init_for_static(Initializer *init, Type *target
 
         if (!exp_is_constant(exp)) {
             err_report(EC_ERROR, &loc, "static initializer must be a constant.");
+        } else if (init->single->tag == EXP_STRING) {
+            //
+            // These functions updates the list so we don't want to fall through to the end.
+            //
+            if (target->tag == TT_ARRAY) {
+                ast_type_check_static_array_string_init(init, target, out, loc);
+            } else {
+                ast_type_check_static_pointer_string_init(state, init, target, out, loc);
+            }
+            return true;
         } else if (!type_arithmetic(target) && target->tag != TT_POINTER) {
             err_report(EC_ERROR, &loc, "cannot initialize an aggregate with a scalar.");
         } else if (init->single->tag == EXP_FLOAT && target->tag == TT_POINTER) {
@@ -1176,7 +1331,7 @@ static bool ast_flatten_compound_init_for_static(Initializer *init, Type *target
     
     for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
         Initializer *sub = CONTAINER_OF(curr, Initializer, list);
-        ast_flatten_compound_init_for_static(sub, target->array.element, out, loc);
+        ast_flatten_compound_init_for_static(state, sub, target->array.element, out, loc);
     }
 
     size_t init_count = list_count(&init->compound);
@@ -1243,7 +1398,7 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         siv = SIV_INIT;
 
         list_clear(&init);
-        init_scalar = ast_flatten_compound_init_for_static(var->init, decl->var.type, &init, decl->loc);
+        init_scalar = ast_flatten_compound_init_for_static(state, var->init, decl->var.type, &init, decl->loc);
     }
 
     bool globally_visible = var->storage_class != SC_STATIC;
@@ -1328,9 +1483,15 @@ static Initializer *make_zero_init_array(TypeCheckState *state, Type *type, File
 static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc)
 {
     switch (type->tag) {
+#ifdef TARGET_CHAR_SIGNED
         case TT_CHAR:
-        case TT_UCHAR:
-        case TT_SCHAR:      ICE_NYI("make_zero_init::char-types");
+#endif
+        case TT_SCHAR:      return make_zero_init_scalar(type, exp_schar(state->ast, 0, loc));
+
+#ifndef TARGET_CHAR_SIGNED
+        case TT_CHAR:
+#endif
+        case TT_UCHAR:      return make_zero_init_scalar(type, exp_uchar(state->ast, 0, loc));
 
         case TT_ARRAY:      return make_zero_init_array(state, type, loc);
         case TT_INT:        return make_zero_init_scalar(type, exp_int(state->ast, 0, loc));
@@ -1346,11 +1507,38 @@ static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine l
 }
 
 //
+// Check a string initializer of an array for a non-static variable.
+//
+static void ast_check_var_init_string(TypeCheckState *state, Type *target, Initializer *init, FileLine loc)
+{
+    ICE_ASSERT(target->tag == TT_ARRAY);
+    ICE_ASSERT(init->tag == INIT_SINGLE && init->single->tag == EXP_STRING);
+
+    //
+    // length, not including terminating \0
+    //
+    size_t str_length = init->single->string.length - 1;
+
+    if (!type_is_char(target->array.element)) {
+        err_report(EC_ERROR, &loc, "cannot initialize non-character array with string.");
+    } else if (str_length > target->array.size) {
+        err_report(EC_ERROR, &loc, "string literal is longer than array.");
+    }
+
+    exp_set_type(init->single, type_clone(target));
+}
+ 
+//
 // Check the initializer of a non-static variable.
 //
 static void ast_check_var_init(TypeCheckState *state, Type *target, Initializer *init, FileLine loc)
 {
     if (init->tag == INIT_SINGLE) {
+        if (target->tag == TT_ARRAY && init->single->tag == EXP_STRING) {
+            ast_check_var_init_string(state, target, init, loc);
+            return;
+        }
+
         Expression *exp = typecheck_and_convert(state, init->single);
         exp = convert_by_assignment(state, exp, target);
         exp_replace(&init->single, exp);
@@ -1428,7 +1616,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
-            init_scalar = ast_flatten_compound_init_for_static(var->init, var->type, &init, decl->loc);
+            init_scalar = ast_flatten_compound_init_for_static(state, var->init, var->type, &init, decl->loc);
             ast_check_static_init(type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }

@@ -570,7 +570,7 @@ static int lexer_scan_escaped_char(Lexer *lex, FileLine loc)
         case 'a':   return '\a';
         case 'b':   return '\b';
         case 'f':   return '\f';
-        case 'n':   return '\b';
+        case 'n':   return '\n';
         case 'r':   return '\r';
         case 't':   return '\t';
         case 'v':   return '\v';

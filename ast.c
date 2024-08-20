@@ -2,6 +2,7 @@
 
 #include "ice.h"
 #include "safemem.h"
+#include "strutil.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -18,6 +19,26 @@ static Expression *exp_pool_alloc(AstState *state, ExpressionTag tag, FileLine l
     Expression *exp = mp_alloc(state->exp_pool);
     exp->tag = tag;
     exp->loc = loc;
+    return exp;
+}
+
+//
+// Construct a signed char constant expression.
+//
+Expression *exp_schar(AstState *state, unsigned long intval, FileLine loc)
+{
+    Expression *exp = exp_pool_alloc(state, EXP_SCHAR, loc);
+    exp->intval = intval;
+    return exp;
+}
+
+//
+// Construct an unsigned char constant expression.
+//
+Expression *exp_uchar(AstState *state, unsigned long intval, FileLine loc)
+{
+    Expression *exp = exp_pool_alloc(state, EXP_UCHAR, loc);
+    exp->intval = intval;
     return exp;
 }
 
@@ -231,6 +252,8 @@ void exp_set_type(Expression *exp, Type *type)
 bool exp_is_constant(Expression *exp)
 {
     switch (exp->tag) {
+        case EXP_SCHAR:
+        case EXP_UCHAR:
         case EXP_INT:
         case EXP_LONG:
         case EXP_UINT:
@@ -260,6 +283,8 @@ bool exp_is_constant(Expression *exp)
 bool exp_is_int_constant(Expression *exp)
 {
     switch (exp->tag) {
+        case EXP_SCHAR:
+        case EXP_UCHAR:
         case EXP_INT:
         case EXP_LONG:
         case EXP_UINT:
@@ -679,6 +704,22 @@ void ast_free_program(AstProgram *prog)
 }
 
 //
+// Print a signed char constant expression.
+//
+static void print_exp_const_schar(unsigned long val, int tab)
+{
+    printf("const-schar(%d);\n", (signed char)val);
+}
+
+//
+// Print an unsigned char constant expression.
+//
+static void print_exp_const_uchar(unsigned long val, int tab)
+{
+    printf("const-uchar(%d);\n", (unsigned char)val);
+}
+
+//
 // Print an integer constant expression.
 //
 static void print_exp_const_int(unsigned long val, int tab)
@@ -723,30 +764,9 @@ static void print_exp_const_float(double val, int tab)
 //
 static void print_exp_const_string(ExpString *string, int tab)
 {
-    printf("string(\"");
-
-    for (size_t i = 0; i < string->length; i++) {
-        char ch = string->data[i];
-
-        if (isprint(ch)) {
-            printf("%c", ch);
-        } else {
-            switch (ch) {
-                case '\0': printf("\\0"); break;
-                case '\a': printf("\\a"); break;
-                case '\b': printf("\\b"); break;
-                case '\f': printf("\\f"); break;
-                case '\n': printf("\\n"); break;
-                case '\r': printf("\\r"); break;
-                case '\t': printf("\\t"); break;
-                case '\v': printf("\\v"); break;
-                default:
-                    printf("\\x%02x", ch & 0xff);
-            }
-        }
-    }
-
-    printf("\");\n");
+    char *desc = str_escape(string->data, string->length);
+    printf("string(\"%s\");\n", desc);
+    safe_free(desc);
 }
 
 //
@@ -885,6 +905,8 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
     }
 
     switch (exp->tag) {
+        case EXP_SCHAR:         print_exp_const_schar(exp->intval, tab); break;
+        case EXP_UCHAR:         print_exp_const_uchar(exp->intval, tab); break;
         case EXP_INT:           print_exp_const_int(exp->intval, tab); break;
         case EXP_LONG:          print_exp_const_long(exp->longval, tab); break;
         case EXP_UINT:          print_exp_const_uint(exp->intval, tab); break;

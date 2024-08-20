@@ -328,6 +328,8 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
         case EXP_SUBSCRIPT:     ast_resolve_subscript_exp(state, &exp->subscript); break;
 
+        case EXP_SCHAR:         break;
+        case EXP_UCHAR:         break;
         case EXP_INT:           break;
         case EXP_LONG:          break;
         case EXP_UINT:          break;

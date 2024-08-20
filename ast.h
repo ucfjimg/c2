@@ -22,7 +22,9 @@ typedef struct BlockItem BlockItem;
 //
 // expressions
 //
-typedef enum { 
+typedef enum {
+    EXP_SCHAR,
+    EXP_UCHAR,
     EXP_INT,
     EXP_LONG,
     EXP_UINT,
@@ -122,6 +124,8 @@ struct Expression {
     };
 };
 
+extern Expression *exp_schar(AstState *state, unsigned long intval, FileLine loc);
+extern Expression *exp_uchar(AstState *state, unsigned long intval, FileLine loc);
 extern Expression *exp_int(AstState *state, unsigned long intval, FileLine loc);
 extern Expression *exp_long(AstState *state, unsigned long intval, FileLine loc);
 extern Expression *exp_uint(AstState *state, unsigned long intval, FileLine loc);

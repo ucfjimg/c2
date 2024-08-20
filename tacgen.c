@@ -690,6 +690,8 @@ static TacExpResult tcg_subscript(TacState *state, Expression *exp)
 static TacExpResult tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
+        case EXP_SCHAR:         ICE_NYI("tcg_expression::schar");
+        case EXP_UCHAR:         ICE_NYI("tcg_expression::uchar");
         case EXP_INT:           return tcg_const_int(state, exp);
         case EXP_LONG:          return tcg_const_long(state, exp);
         case EXP_UINT:          return tcg_const_uint(state, exp);

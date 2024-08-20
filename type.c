@@ -42,6 +42,17 @@ Type *type_uchar(void)
 }
 
 //
+// Return true if the given type is any character type.
+//
+bool type_is_char(Type *type)
+{
+    return
+        type->tag == TT_CHAR ||
+        type->tag == TT_SCHAR ||
+        type->tag == TT_UCHAR;
+}
+
+//
 // Constructor for an integer type.
 //
 Type *type_int(void)

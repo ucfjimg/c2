@@ -2,6 +2,7 @@
 
 #include "ice.h"
 #include "safemem.h"
+#include "strutil.h"
 
 #include <stdio.h>
 
@@ -750,6 +751,16 @@ static void tac_print_static_var(TacStaticVar *var, int tab)
                         case CON_INTEGRAL:  printf("%lu", init->cval.intval.value); break;
                         case CON_FLOAT:     printf("%g", init->cval.floatval); break;
                     }
+                    break;
+
+                case SI_STRING:
+                    desc = str_escape(init->string.data, init->string.length);
+                    printf("string[%zd]=\"%s\"", init->string.length, desc);
+                    safe_free(desc);
+                    break;
+
+                case SI_POINTER:
+                    printf("pointer[%s]", init->ptr_name);
                     break;
             }
 

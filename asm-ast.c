@@ -3,6 +3,7 @@
 #include "ice.h"
 #include "operators.h"
 #include "safemem.h"
+#include "strutil.h"
 
 #include <stdio.h>
 
@@ -1001,6 +1002,8 @@ static void asm_func_print(AsmFunction *func, FileLine *loc, bool locs)
 //
 static void asm_static_var_print(AsmStaticVar *var)
 {
+    char *desc;
+
     if (var->global) {
         printf(".global %s\n", var->name);
     }
@@ -1023,6 +1026,20 @@ static void asm_static_var_print(AsmStaticVar *var)
 
             case SI_ZERO:
                 printf("        .zero %zd\n", init->bytes);
+                break;
+
+            case SI_STRING:
+                desc = str_escape(init->string.data, init->string.length);
+                if (init->string.nul_terminated) {
+                    printf("        .asciz \"%s\"\n", desc);
+                } else {
+                    printf("        .ascii \"%s\"\n", desc);
+                }
+                safe_free(desc);
+                break;
+
+            case SI_POINTER:
+                printf("        .quad %s #pointer\n", init->ptr_name);
                 break;
         }
     }
