@@ -526,6 +526,28 @@ static TacExpResult tcg_function_call(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for a constant signed char.
+//
+static TacExpResult tcg_const_schar(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_SCHAR);
+
+    Const cn = const_make_int(CIS_CHAR, CIS_SIGNED, exp->intval);
+    return expres_plain(tac_const(cn, exp->loc));
+}
+
+//
+// Generate TAC for a constant unsigned char.
+//
+static TacExpResult tcg_const_uchar(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_UCHAR);
+
+    Const cn = const_make_int(CIS_CHAR, CIS_UNSIGNED, exp->intval);
+    return expres_plain(tac_const(cn, exp->loc));
+}
+
+//
 // Generate TAC for a constant integer.
 //
 static TacExpResult tcg_const_int(TacState *state, Expression *exp)
@@ -685,19 +707,42 @@ static TacExpResult tcg_subscript(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for a string expression/
+//
+static TacExpResult tcg_const_string(TacState *state, Expression *exp)
+{
+    char *var = tmp_name("strlit");
+
+    Type *type = type_array(type_char(), exp->string.length);
+    Symbol *sym = stab_lookup(state->stab, var);
+    ExpString *str = &exp->string;
+
+    ICE_ASSERT(str->length);
+    bool nul_terminated = str->data[str->length - 1] == '\0';
+
+    StaticInitializer *si = sinit_make_string(exp->string.data, exp->string.length, nul_terminated);
+    
+    sym->tag = ST_CONSTANT;
+    sym->type = type;
+    sym->stconst = si;
+
+    return expres_plain(tac_var(var, exp->loc));
+}
+
+//
 // Generate TAC for an expression.
 //
 static TacExpResult tcg_expression(TacState *state, Expression *exp)
 {
     switch (exp->tag) {
-        case EXP_SCHAR:         ICE_NYI("tcg_expression::schar");
-        case EXP_UCHAR:         ICE_NYI("tcg_expression::uchar");
+        case EXP_SCHAR:         return tcg_const_schar(state, exp);
+        case EXP_UCHAR:         return tcg_const_uchar(state, exp);
         case EXP_INT:           return tcg_const_int(state, exp);
         case EXP_LONG:          return tcg_const_long(state, exp);
         case EXP_UINT:          return tcg_const_uint(state, exp);
         case EXP_ULONG:         return tcg_const_ulong(state, exp);
         case EXP_FLOAT:         return tcg_const_float(state, exp);
-        case EXP_STRING:        ICE_NYI("tcg_expression::string");
+        case EXP_STRING:        return tcg_const_string(state, exp);
         case EXP_VAR:           return expres_plain(tac_var(exp->var.name, exp->loc));
         case EXP_UNARY:         return tcg_unary_op(state, exp);
         case EXP_BINARY:        return tcg_binary_op(state, exp);
@@ -719,6 +764,57 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for initializing an array of char with a string literal.
+//
+// Optimize by taking the string 8 bytes at a time and using a 64-bit move.
+//
+static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpString *str, char *var, FileLine loc)
+{
+    int offset = 0;
+    int left = str->length;
+
+    while (left > 8) {
+        unsigned long val = 0;
+
+        for (int i = 7; i >= 0; i--) {
+            unsigned char ch = str->data[offset + i];
+            val = (val << 8) | ch;
+        }
+
+        Const cn = const_make_int(CIS_LONG, CIS_UNSIGNED, val);
+
+        tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
+
+        offset += 8;
+        left -= 8;
+    }
+
+    if (left > 4) {
+        unsigned long val = 0;
+
+        for (int i = 3; i >= 0; i--) {
+            unsigned char ch = str->data[offset + i];
+            val = (val << 8) | ch;
+        }
+
+        Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, val);
+
+        tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
+
+        offset += 4;
+        left -= 4;
+    }
+    
+    while (left--) {
+        unsigned char ch = str->data[offset++];
+        Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, ch);
+
+        tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
+
+    }
+}
+
+//
 // Generate TAC for a nested initializer.
 //
 static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Type *type, char *var, FileLine loc)
@@ -727,12 +823,11 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
 
     if (init->tag == INIT_COMPOUND) {
         switch (type->tag) {
-            case TT_ARRAY:   inner = type->array.element; break;
+            case TT_ARRAY:      inner = type->array.element; break;
 
             case TT_CHAR:
             case TT_UCHAR:
-            case TT_SCHAR:      ICE_NYI("tac_nested_init::char-types");
-
+            case TT_SCHAR:
             case TT_INT:
             case TT_LONG:
             case TT_UINT:
@@ -753,6 +848,17 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
     //
     // Single initializer
     //
+
+    //
+    // Special case: array initialized by string.
+    //
+    if (type->tag == TT_ARRAY && init->single->tag == EXP_STRING) {
+        ICE_ASSERT(type_is_char(type->array.element));
+            
+        tcg_nested_init_array_with_string(state, type, &init->single->string, var, loc);
+        return;
+    }
+
     TacNode *val = tcg_expression_and_convert(state, init->single);
     tcg_append(state, tac_copy_to_offset(val, var, *offset, loc));
     *offset += type_size(type);
@@ -1181,6 +1287,11 @@ static void tcg_statics(List *code, SymbolTable *stab)
             if (var) {
                 list_push_back(code, &var->list);
             }
+        } else if (sym->tag == ST_CONSTANT) {
+            TacNode *con = NULL;
+            FileLine loc = sym->stvar.loc;
+            con = tac_static_const(node->key, type_clone(sym->type), sym->stconst, loc);
+            list_push_back(code, &con->list);            
         }
     }
 }

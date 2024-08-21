@@ -103,6 +103,26 @@ static void tac_static_var_free(TacStaticVar *var)
 }
 
 //
+// Constructor for a TAC static constant declaration.
+//
+TacNode *tac_static_const(char *name, Type *type, StaticInitializer *init, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_STATIC_CONST, loc);
+    tac->static_const.name = safe_strdup(name);
+    tac->static_const.type = type;
+    tac->static_const.init = init;
+    return tac;
+}
+
+//
+// Free a TAC static constant.
+//
+static void tac_static_const_free(TacStaticConst *con)
+{
+    safe_free(con->name);
+}
+
+//
 // Constructor for a TAC return statement.
 //
 // The value, if it exists, must be a constant or a variable
@@ -641,6 +661,7 @@ void tac_free(TacNode *tac)
             case TAC_PROGRAM:       tac_program_free(&tac->prog); break;
             case TAC_FUNCDEF:       tac_function_def_free(&tac->funcdef); break;
             case TAC_STATIC_VAR:    tac_static_var_free(&tac->static_var); break;
+            case TAC_STATIC_CONST:  tac_static_const_free(&tac->static_const); break;
             case TAC_CONST:         break;
             case TAC_RETURN:        tac_return_free(&tac->ret); break;
             case TAC_COPY:          tac_copy_free(&tac->copy); break;
@@ -770,6 +791,47 @@ static void tac_print_static_var(TacStaticVar *var, int tab)
         }
 
         printf("]");
+    }
+
+    printf("\n");
+}
+
+//
+// Print a TAC static constant declaration.
+//
+static void tac_print_static_const(TacStaticConst *con, int tab)
+{
+    char *desc = type_describe(con->type);
+    printf("%*sstatic-const(%s %s) ", tab, "", desc, con->name);
+    safe_free(desc);
+
+    if (con->init) {
+        printf("= ");
+
+        StaticInitializer *init = con->init;
+
+        switch (init->tag) {
+            case SI_ZERO: 
+                printf("zero[%zd]", init->bytes);
+                break;
+
+            case SI_CONST:
+                switch (init->cval.tag) {
+                    case CON_INTEGRAL:  printf("%lu", init->cval.intval.value); break;
+                    case CON_FLOAT:     printf("%g", init->cval.floatval); break;
+                }
+                break;
+
+            case SI_STRING:
+                desc = str_escape(init->string.data, init->string.length);
+                printf("string[%zd]=\"%s\"", init->string.length, desc);
+                safe_free(desc);
+                break;
+
+            case SI_POINTER:
+                printf("pointer[%s]", init->ptr_name);
+                break;
+        }
     }
 
     printf("\n");
@@ -1054,6 +1116,7 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         case TAC_PROGRAM:       tac_print_program(&tac->prog, tab, locs); break;
         case TAC_FUNCDEF:       tac_print_funcdef(&tac->funcdef, tab, locs); break;
         case TAC_STATIC_VAR:    tac_print_static_var(&tac->static_var, tab); break;
+        case TAC_STATIC_CONST:  tac_print_static_const(&tac->static_const, tab); break;
         case TAC_RETURN:        tac_print_return(&tac->ret, tab, locs); break;
         case TAC_COPY:          tac_print_copy(&tac->copy, tab, locs); break;
         case TAC_JUMP:          tac_print_jump(&tac->jump, tab, locs); break;

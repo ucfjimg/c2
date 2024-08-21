@@ -1109,6 +1109,7 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_FUNCTION_CALL:     codegen_function_call(state, tac); break;
 
         case TAC_STATIC_VAR:        codegen_static_var(state, tac); break; 
+        case TAC_STATIC_CONST:      ICE_NYI("codegen_single::static-const");
         case TAC_SIGN_EXTEND:       codegen_sign_extend(state, tac); break;
         case TAC_ZERO_EXTEND:       codegen_zero_extend(state, tac); break;
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;

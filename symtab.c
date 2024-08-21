@@ -1,6 +1,7 @@
 #include "symtab.h"
 
 #include "fileline.h"
+#include "ice.h"
 #include "safemem.h"
 #include "strutil.h"
 #include "type.h"
@@ -283,4 +284,20 @@ StaticInitializer *sinit_make_pointer(char *name)
     si->ptr_name = safe_strdup(name);
 
     return si;
+}
+
+//
+// Clone a static initializer.
+//
+StaticInitializer *sinit_clone(StaticInitializer *si)
+{
+    switch (si->tag) {
+        case SI_CONST:      return sinit_make_const(si->cval);
+        case SI_ZERO:       return sinit_make_zero(si->bytes);
+        case SI_STRING:     return sinit_make_string(si->string.data, si->string.length, si->string.nul_terminated);
+        case SI_POINTER:    return sinit_make_pointer(si->ptr_name);
+    }
+
+    ICE_ASSERT(((void)"invalid tag in sinit_clone", false));
+    return NULL;
 }

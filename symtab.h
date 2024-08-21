@@ -87,3 +87,4 @@ extern StaticInitializer *sinit_make_const(Const cn);
 extern StaticInitializer *sinit_make_zero(size_t bytes);
 extern StaticInitializer *sinit_make_string(char *data, size_t length, bool nul_terminated);
 extern StaticInitializer *sinit_make_pointer(char *name);
+extern StaticInitializer *sinit_clone(StaticInitializer *si);
