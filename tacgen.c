@@ -768,18 +768,18 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
 //
 // Optimize by taking the string 8 bytes at a time and using a 64-bit move.
 //
-static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpString *str, char *var, FileLine loc)
+static int tcg_nested_init_array_with_string(TacState *state, Type *type, ExpString *str, char *var, int offset, FileLine loc)
 {
     ICE_ASSERT(type->tag == TT_ARRAY);
 
-    int offset = 0;
     int left = type->array.size;
+    int src = 0;
 
     while (left > 8) {
         unsigned long val = 0;
 
         for (int i = 7; i >= 0; i--) {
-            unsigned char ch = str->data[offset + i];
+            unsigned char ch = str->data[src + i];
             val = (val << 8) | ch;
         }
 
@@ -788,6 +788,7 @@ static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpSt
         tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
 
         offset += 8;
+        src += 8;
         left -= 8;
     }
 
@@ -795,7 +796,7 @@ static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpSt
         unsigned long val = 0;
 
         for (int i = 3; i >= 0; i--) {
-            unsigned char ch = str->data[offset + i];
+            unsigned char ch = str->data[src + i];
             val = (val << 8) | ch;
         }
 
@@ -804,17 +805,21 @@ static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpSt
         tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
 
         offset += 4;
+        src += 4;
         left -= 4;
     }
     
     while (left--) {
-        unsigned char ch = str->data[offset];
+        unsigned char ch = str->data[src];
         Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, ch);
 
         tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
 
+        src++;
         offset++;
     }
+
+    return offset;
 }
 
 //
@@ -858,7 +863,7 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
     if (type->tag == TT_ARRAY && init->single->tag == EXP_STRING) {
         ICE_ASSERT(type_is_char(type->array.element));
             
-        tcg_nested_init_array_with_string(state, type, &init->single->string, var, loc);
+        *offset = tcg_nested_init_array_with_string(state, type, &init->single->string, var, *offset, loc);
         return;
     }
 

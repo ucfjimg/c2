@@ -43,6 +43,7 @@ extern char *reg_name(Register reg);
 extern bool is_xmm(Register reg);
 
 typedef enum {
+    AT_BYTE,
     AT_LONGWORD,
     AT_QUADWORD,
     AT_DOUBLE,
@@ -69,6 +70,7 @@ typedef enum  {
     AOP_PSEUDOMEM,      // a byte offset from a named aggregate
 } AsmOperandTag;
 
+extern AsmType *asmtype_byte(void);
 extern AsmType *asmtype_long(void);
 extern AsmType *asmtype_quad(void);
 extern AsmType *asmtype_double(void);
@@ -188,7 +190,7 @@ typedef struct {
 typedef struct {
     char *name;             // variable name
     int alignment;          // required alignment (power of two)
-    Const init;             // initial value
+    StaticInitializer *init;// initial value
 } AsmStaticConst;
 
 typedef struct {
@@ -198,11 +200,15 @@ typedef struct {
 } AsmMov;
 
 typedef struct {
+    AsmType *src_type;      // type of source
+    AsmType *dst_type;      // type of destination
     AsmOperand *src;        // source operand
     AsmOperand *dst;        // destination operand
 } AsmMovsx;
 
 typedef struct {
+    AsmType *src_type;      // type of source
+    AsmType *dst_type;      // type of destination
     AsmOperand *src;        // source operand
     AsmOperand *dst;        // destination operand
 } AsmMovzx;
@@ -327,10 +333,10 @@ struct AsmNode {
 extern AsmNode *asm_prog(List funcs, FileLine loc);
 extern AsmNode *asm_func(char *name, List body, bool global, FileLine loc);
 extern AsmNode *asm_static_var(char *name, bool global, int alignment, List init, FileLine loc);
-extern AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine loc);
+extern AsmNode *asm_static_const(char *name, int alignment, StaticInitializer *init, FileLine loc);
 extern AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);
-extern AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc);
-extern AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_movsx(AsmType *src_type, AsmType *dst_type, AsmOperand *src, AsmOperand *dst, FileLine loc);
+extern AsmNode *asm_movzx(AsmType *src_type, AsmType *dst_type, AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_lea(AsmOperand *src, AsmOperand *dst, FileLine loc);
 extern AsmNode *asm_unary(UnaryOp op, AsmOperand *arg, AsmType *type, FileLine loc);
 extern AsmNode *asm_binary(BinaryOp op, AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc);

@@ -626,20 +626,54 @@ void emit_static_var(EmitState *state, AsmStaticVar *var)
     for (ListNode *curr = var->init.head; curr; curr = curr->next) {
         StaticInitializer *si = CONTAINER_OF(curr, StaticInitializer, list);
 
-        if (si->tag == SI_ZERO) {
-            fprintf(state->out, "        .zero\t%zd\n", si->bytes);
-            continue;
-        }
+        switch (si->tag) {
+            case SI_ZERO:
+                fprintf(state->out, "        .zero\t%zd\n", si->bytes);
+                break;
 
-        ICE_ASSERT(si->tag == SI_CONST);
-        Const *pcn = &si->cval;
+            case SI_CONST: {
+                Const *pcn = &si->cval;
 
-        if (pcn->tag == CON_FLOAT) {
-            fprintf(state->out, "        .double\t%.20g\n", pcn->floatval); 
-        } else if (pcn->intval.size == CIS_INT) {
-            fprintf(state->out, "        .long\t%u\n", (unsigned)pcn->intval.value);
-        } else {
-            fprintf(state->out, "        .quad\t%lu\n", pcn->intval.value);
+                if (pcn->tag == CON_FLOAT) {
+                    fprintf(state->out, "        .double\t%.20g\n", pcn->floatval); 
+                } else {
+                    switch (pcn->intval.size) {
+                        case CIS_CHAR:
+                            fprintf(state->out, "        .byte\t%u\n", (unsigned char)pcn->intval.value);
+                            break;
+
+                        case CIS_INT:
+                            fprintf(state->out, "        .long\t%u\n", (unsigned)pcn->intval.value);
+                            break;
+
+                        case CIS_LONG:
+                            fprintf(state->out, "        .quad\t%lu\n", pcn->intval.value);
+                            break;
+                    }
+                } 
+                break;
+            }
+
+            case SI_POINTER:
+                fprintf(state->out, "        .quad\t%s\n", si->ptr_name);
+                break;
+
+            case SI_STRING: {
+                char *strlit = strlit_to_asm(
+                    si->string.data,
+                    si->string.length,
+                    si->string.nul_terminated
+                );
+
+                if (si->string.nul_terminated) {
+                    fprintf(state->out, "        .asciz\t");
+                } else {
+                    fprintf(state->out, "        .ascii\t");
+                }
+                fprintf(state->out, "\"%s\"\n", strlit);
+                safe_free(strlit);
+                break;
+            }
         }
     }
 
