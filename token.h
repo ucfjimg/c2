@@ -103,6 +103,7 @@ typedef enum {
     TOK_UNSIGNED,
     TOK_DOUBLE,
     TOK_CHAR,
+    TOK_SIZEOF,
 } TokenType;
 
 typedef struct {

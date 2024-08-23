@@ -183,6 +183,7 @@ char *token_type_describe(TokenType tt)
         case TOK_UNSIGNED:          return saprintf("unsigned");
         case TOK_DOUBLE:            return saprintf("double");
         case TOK_CHAR:              return saprintf("char");
+        case TOK_SIZEOF:            return saprintf("sizeof");
 
         //
         // All of these are handled by the single-character case.

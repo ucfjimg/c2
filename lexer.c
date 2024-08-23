@@ -37,6 +37,7 @@ static Keyword keywords[] = {
     { "unsigned",   TOK_UNSIGNED },
     { "double",     TOK_DOUBLE },
     { "char",       TOK_CHAR },
+    { "sizeof",     TOK_SIZEOF },
     { NULL,         TOK_EOF }
 };
 

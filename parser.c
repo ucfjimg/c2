@@ -161,6 +161,7 @@ static BinOpPrecedence bin_op_prec[] = {
 static int bin_op_prec_count = sizeof(bin_op_prec) / sizeof(bin_op_prec[0]);
 
 static Expression *parse_expression(Parser *parser, int min_prec);
+static Expression *parse_factor(Parser *parser);
 static Statement *parse_statement(Parser *parser);
 static List parse_block(Parser *parser);
 static TypeSpecifier *parse_type_specifier(Parser *parser);
@@ -658,8 +659,54 @@ static TypeSpecifier *parse_type_name(Parser *parser)
 }
 
 //
+// Parse a sizeof operator.
+//
+// "sizeof" <unary-exp> | "sizeof" "(" <type-name ")"
+//
+// Note that "sizeof" "(" <unary-exp> ")" is also valid as "(" can start an expression.
+// 
+static Expression *parse_sizeof(Parser *parser)
+{
+    Expression *exp = NULL;
+    FileLine loc = parser->tok.loc;
+
+    if (parser->tok.type != '(') {
+        //
+        // Must be an expression.        
+        //
+        exp = parse_factor(parser);
+        exp = exp_sizeof_exp(parser->ast, exp, loc);
+    } else {
+        ParserBookmark *bmk = parse_bookmark(parser);
+
+        parse_next_token(parser);
+
+        if (is_type_specifier(parser)) {
+            parse_free_bookmark(bmk);
+            TypeSpecifier *type = parse_type_name(parser);
+            if (type->sc != SC_NONE) {
+                err_report(EC_ERROR, &loc, "type in sizeof may not contain storage class.");
+            }
+            exp = exp_sizeof_type(parser->ast, type->type, loc);
+            if (parser->tok.type != ')') {
+                report_expected_err(&parser->tok, "`)`");
+            }
+            parse_next_token(parser);
+        } else {
+            parse_goto_bookmark(bmk);
+            parse_free_bookmark(bmk);
+
+            exp = parse_factor(parser);
+            exp = exp_sizeof_exp(parser->ast, exp, loc);
+        }
+    }
+
+    return exp;
+}
+
+//
 // Parse a factor.
-// <factor> := <unop> <factor> | "(" { <specifier> }+ [ <abstract-declarator> ] ")" <factor> | <postfix>
+// <factor> := <unop> <factor> | "(" { <specifier> }+ [ <abstract-declarator> ] ")" <factor> | <postfix> | "sizeof" <unary-exp> | "sizeof" "(" <type-name ")" 
 //
 static Expression *parse_factor(Parser *parser)
 {
@@ -686,6 +733,12 @@ static Expression *parse_factor(Parser *parser)
         parse_next_token(parser);
         Expression *rhs = parse_factor(parser);
         Expression *exp = exp_addrof(parser->ast, rhs, loc);
+        return exp;
+    }
+
+    if (parser->tok.type == TOK_SIZEOF) {
+        parse_next_token(parser);
+        Expression *exp = parse_sizeof(parser);
         return exp;
     }
 
@@ -813,6 +866,7 @@ static bool is_type_specifier(Parser *parser)
     TokenType tt = parser->tok.type;
 
     return
+        tt == TOK_VOID ||
         tt == TOK_CHAR ||
         tt == TOK_INT ||
         tt == TOK_LONG ||
@@ -831,6 +885,7 @@ static bool is_type_specifier(Parser *parser)
 static TypeSpecifier *parse_type_specifier(Parser *parser)
 {
     enum {
+        TOK_VOID_INDEX,
         TOK_CHAR_INDEX,
         TOK_INT_INDEX,
         TOK_LONG_INDEX,
@@ -845,6 +900,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         TokenType tt;
         int count;
     } spec_tokens[] = {
+        { TOK_VOID, 0 },
         { TOK_CHAR, 0 },
         { TOK_INT, 0 },
         { TOK_LONG, 0 },
@@ -910,7 +966,14 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 
     bool has_double = spec_tokens[TOK_DOUBLE_INDEX].count;
 
-    if (!(has_int || has_char || spec_tokens[TOK_DOUBLE_INDEX].count)) {
+
+    bool has_void = spec_tokens[TOK_VOID_INDEX].count;
+
+    if (has_void && (has_char || has_int || has_double)) {
+        err_report(EC_ERROR, &loc, "`void` may not appear with any other base type.");        
+    }
+
+    if (!(has_int || has_char || has_void || has_double)) {
         err_report(EC_ERROR, &loc, "missing type specifier.");
     }
 
@@ -923,6 +986,10 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         sc = SC_STATIC;
     } else if (spec_tokens[TOK_EXTERN_INDEX].count) {
         sc = SC_EXTERN;
+    }
+
+    if (has_void) {
+        return typespec_alloc(sc, type_void());
     }
 
     if (has_double) {
@@ -1219,13 +1286,21 @@ static List parse_decl_params(Parser *parser)
     List params;
     list_clear(&params);
 
+    ParserBookmark *bmk = parse_bookmark(parser);
+
     if (parser->tok.type == TOK_VOID) {
         parse_next_token(parser);
         if (parser->tok.type != ')') {
-            report_expected_err(&parser->tok, "`)`");
+            //
+            // Can't just error here, it could be 'void *foo'
+            //
+            parse_goto_bookmark(bmk);
+            parse_free_bookmark(bmk);
+        } else {
+            parse_free_bookmark(bmk);
+            parse_next_token(parser);
+            return params;
         }
-        parse_next_token(parser);
-        return params;
     }
 
     while (true) {
@@ -1535,7 +1610,12 @@ static Statement *parse_stmt_return(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
 
-    Expression *exp = parse_expression(parser, 0);
+    Expression *exp = NULL;
+
+    if (parser->tok.type != ';') {
+        exp = parse_expression(parser, 0);
+    }
+
     
     if (parser->tok.type != ';') {
         report_expected_err(&parser->tok, "`;`");

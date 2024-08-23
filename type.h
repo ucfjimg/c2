@@ -15,6 +15,7 @@ typedef enum {
     TT_UINT,
     TT_ULONG,
     TT_DOUBLE,
+    TT_VOID,
     TT_FUNC,
     TT_POINTER,
     TT_ARRAY,
@@ -69,6 +70,7 @@ extern Type *type_long(void);
 extern Type *type_uint(void);
 extern Type *type_ulong(void);
 extern Type *type_double(void);
+extern Type *type_void(void);
 extern TypeFuncParam *type_func_param(Type *type);
 extern void type_func_param_free(TypeFuncParam *param);
 extern Type *type_pointer(Type *ref);

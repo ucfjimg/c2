@@ -753,6 +753,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_DEREF:         return tcg_deref(state, exp); break;
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
         case EXP_SUBSCRIPT:     return tcg_subscript(state, exp); break;
+        case EXP_SIZEOF:        ICE_NYI("tcg_expression::sizeof");
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -844,6 +845,7 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
             case TT_ULONG:
             case TT_DOUBLE:
             case TT_FUNC:
+            case TT_VOID:
             case TT_POINTER:    ICE_ASSERT(((void)"invalid type tag for compound initializer in tcg_nested_init", false));
         }
 

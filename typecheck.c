@@ -843,6 +843,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_DEREF:         return ast_check_deref(state, exp);
         case EXP_ADDROF:        return ast_check_addrof(state, exp);
         case EXP_SUBSCRIPT:     return ast_check_subscript(state, exp);
+        case EXP_SIZEOF:        ICE_NYI("ast_check_expression::sizeof");
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -1501,6 +1502,7 @@ static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine l
         case TT_DOUBLE:     return make_zero_init_scalar(type, exp_float(state->ast, 0.0, loc));
         case TT_POINTER:    return make_zero_init_scalar(type, exp_ulong(state->ast, 0, loc));
         case TT_FUNC:       ICE_ASSERT(((void)"TT_FUNC type is invalid in make_zero_init", false));
+        case TT_VOID:       ICE_ASSERT(((void)"TT_VOID type is invalid in make_zero_init", false));
     }
 
     return make_zero_init_scalar(type_int(), exp_int(state->ast, 0, loc));

@@ -41,6 +41,7 @@ typedef enum {
     EXP_DEREF,
     EXP_ADDROF,
     EXP_SUBSCRIPT,
+    EXP_SIZEOF,
 } ExpressionTag;
 
 typedef struct {
@@ -98,6 +99,20 @@ typedef struct {
     Expression *right;
 } ExpSubscript;
 
+typedef enum {
+    SIZEOF_TYPE,
+    SIZEOF_EXP,
+} SizeofTag;
+
+typedef struct {
+    SizeofTag tag;
+
+    union {
+        Type *type;
+        Expression *exp;
+    };
+} ExpSizeof;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;       
@@ -121,6 +136,7 @@ struct Expression {
         ExpDeref deref;
         ExpAddrOf addrof;
         ExpSubscript subscript;
+        ExpSizeof sizeof_;
     };
 };
 
@@ -142,6 +158,8 @@ extern Expression *exp_cast(AstState *state, Type *type, Expression *exp, FileLi
 extern Expression *exp_deref(AstState *state, Expression *exp, FileLine loc);
 extern Expression *exp_addrof(AstState *state, Expression *exp, FileLine loc);
 extern Expression *exp_subscript(AstState *state, Expression *left, Expression *right, FileLine loc);
+extern Expression *exp_sizeof_type(AstState *state, Type *type, FileLine loc);
+extern Expression *exp_sizeof_exp(AstState *state, Expression *exp, FileLine loc);
 extern void exp_set_type(Expression *exp, Type *type);
 extern bool exp_is_constant(Expression *exp);
 extern bool exp_is_int_constant(Expression *exp);

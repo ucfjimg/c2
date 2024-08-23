@@ -236,6 +236,32 @@ Expression *exp_subscript(AstState *state, Expression *left, Expression *right, 
 }
 
 //
+// Construct a sizeof operator on a type.
+// 
+Expression *exp_sizeof_type(AstState *state, Type *type, FileLine loc)
+{
+    Expression *szof = exp_pool_alloc(state, EXP_SIZEOF, loc);
+
+    szof->sizeof_.tag = SIZEOF_TYPE;
+    szof->sizeof_.type = type;
+
+    return szof;
+}
+
+//
+// Construct a sizeof operator on an expression.
+// 
+Expression *exp_sizeof_exp(AstState *state, Expression *exp, FileLine loc)
+{
+    Expression *szof = exp_pool_alloc(state, EXP_SIZEOF, loc);
+
+    szof->sizeof_.tag = SIZEOF_EXP;
+    szof->sizeof_.exp = exp;
+
+    return szof;
+}
+
+//
 // Set the type annotation of an expression node, replacing any previous type.
 //
 void exp_set_type(Expression *exp, Type *type)
@@ -270,7 +296,8 @@ bool exp_is_constant(Expression *exp)
         case EXP_CAST:
         case EXP_DEREF:
         case EXP_ADDROF:
-        case EXP_SUBSCRIPT:         return false;
+        case EXP_SUBSCRIPT:
+        case EXP_SIZEOF:            return false;
     }
 
     ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
@@ -301,7 +328,8 @@ bool exp_is_int_constant(Expression *exp)
         case EXP_CAST:
         case EXP_DEREF:
         case EXP_ADDROF:
-        case EXP_SUBSCRIPT:         return false;
+        case EXP_SUBSCRIPT:         
+        case EXP_SIZEOF:            return false;
     }
 
     ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
@@ -887,6 +915,30 @@ static void print_exp_subscript(ExpSubscript *subs, int tab, bool locs)
 }
 
 //
+// Print a sizeof operator.
+//
+static void print_exp_sizeof(ExpSizeof *szof, int tab, bool locs)
+{
+    char *desc;
+    printf("sizeof(");
+
+    switch (szof->tag) {
+        case SIZEOF_TYPE:
+            desc = type_describe(szof->type);
+            printf("%s", desc);
+            safe_free(desc);
+            break;
+        
+        case SIZEOF_EXP:
+            printf("\n");
+            exp_print_recurse(szof->exp, tab + 2, locs);
+            printf("%*s", tab, "");
+    }
+
+    printf(")\n");
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -923,6 +975,7 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_DEREF:         print_exp_deref(&exp->deref, tab, locs); break;
         case EXP_ADDROF:        print_exp_addrof(&exp->addrof, tab, locs); break;
         case EXP_SUBSCRIPT:     print_exp_subscript(&exp->subscript, tab, locs); break;
+        case EXP_SIZEOF:        print_exp_sizeof(&exp->sizeof_, tab, locs); break;
     }
 }
 
@@ -1060,9 +1113,13 @@ static void stmt_print_null(int tab)
 //
 static void stmt_print_return(StmtReturn *ret, int tab, bool locs)
 {
-    printf("%*sreturn {\n", tab, "");
-    exp_print_recurse(ret->exp, tab + 2, locs);
-    printf("%*s}\n", tab, "");
+    if (ret->exp == NULL) {
+        printf("%*sreturn;\n", tab, "");
+    } else {
+        printf("%*sreturn {\n", tab, "");
+        exp_print_recurse(ret->exp, tab + 2, locs);
+        printf("%*s}\n", tab, "");
+    }
 }
 
 //

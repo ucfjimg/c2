@@ -93,6 +93,14 @@ Type *type_double(void)
 }
 
 //
+// Constructor for a void type.
+//
+Type *type_void(void)
+{
+    return type_alloc(TT_VOID);
+}
+
+//
 // Constructor for a type parameter.
 //
 TypeFuncParam *type_func_param(Type *type)
@@ -193,6 +201,7 @@ static Type *type_clone_array(TypeArray *array)
 Type *type_clone(Type *type)
 {
     switch (type->tag) {
+        case TT_VOID:   return type_void();
         case TT_CHAR:   return type_char();
         case TT_SCHAR:  return type_schar();
         case TT_UCHAR:  return type_uchar();
@@ -271,6 +280,7 @@ bool types_equal(Type *left, Type *right)
         case TT_UINT:   return true;
         case TT_ULONG:  return true;
         case TT_DOUBLE: return true;
+        case TT_VOID:   return true;
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
         case TT_POINTER:return types_equal(left->ptr.ref, right->ptr.ref);
         case TT_ARRAY:  return types_array_equal(&left->array, &right->array);
@@ -308,6 +318,7 @@ bool type_unsigned(Type *type)
         case TT_INT:
         case TT_LONG:
         case TT_DOUBLE:
+        case TT_VOID:
         case TT_FUNC:   
         case TT_POINTER:
         case TT_ARRAY:  return false;
@@ -332,6 +343,7 @@ bool type_arithmetic(Type *type)
         case TT_DOUBLE: return true;
         case TT_FUNC:   
         case TT_POINTER:
+        case TT_VOID:
         case TT_ARRAY:  return false;
     }
 
@@ -352,6 +364,7 @@ bool type_integral(Type *type)
         case TT_INT:
         case TT_LONG:   return true;
         case TT_DOUBLE:
+        case TT_VOID:
         case TT_FUNC:   
         case TT_POINTER:
         case TT_ARRAY:  return false;
@@ -404,6 +417,7 @@ size_t type_size(Type *type)
         case TT_ARRAY:      return type->array.size * type_size(type->array.element);
 
         case TT_FUNC:       ICE_ASSERT(((void)"type_size asked for size of function", false));
+        case TT_VOID:       ICE_ASSERT(((void)"type_size asked for size of void", false));
     }
 
     ICE_ASSERT(((void)"invalid type tag in type_size", false));    
@@ -425,7 +439,8 @@ int type_rank(Type *type)
         case TT_CHAR:   return 1;
         case TT_SCHAR:  return 1;
         case TT_UCHAR:  return 1;
-        case TT_FUNC:   
+        case TT_FUNC:
+        case TT_VOID:   
         case TT_ARRAY:  ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
 
@@ -471,7 +486,8 @@ void type_free(Type *type)
             case TT_LONG:
             case TT_UINT:
             case TT_ULONG:
-            case TT_DOUBLE:     break;
+            case TT_DOUBLE:     
+            case TT_VOID:       break;
             case TT_FUNC:       type_free_function(&type->func); break;
             case TT_POINTER:    break;
             case TT_ARRAY:      type_free_array(&type->array); break;       
@@ -555,6 +571,7 @@ char *type_describe(Type *type)
         case TT_UINT:   return saprintf("unsigned int");
         case TT_ULONG:  return saprintf("unsigned long");
         case TT_DOUBLE: return saprintf("double");
+        case TT_VOID:   return saprintf("void");
         case TT_FUNC:   return type_describe_func(&type->func); break;
         case TT_POINTER:return type_describe_ptr(&type->ptr); break;
         case TT_ARRAY:  return type_describe_array(&type->array); break;

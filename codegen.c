@@ -193,6 +193,8 @@ static int codegen_type_align(Type *type)
         return 8;
     case TT_FUNC:
         ICE_ASSERT(((void)"function type passed to codegen_type_align", false));
+    case TT_VOID:
+        ICE_ASSERT(((void)"void type passed to codegen_type_align", false));
     case TT_POINTER:
         return 8;
     case TT_ARRAY:
@@ -242,6 +244,8 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         return asmtype_double();
     case TT_FUNC:
         ICE_ASSERT(((void)"function type found in codegen_type_to_asmtype.", false));
+    case TT_VOID:
+        ICE_ASSERT(((void)"void type found in codegen_type_to_asmtype.", false));
     case TT_POINTER:
         return asmtype_quad();
     case TT_ARRAY:

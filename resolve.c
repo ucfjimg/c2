@@ -312,6 +312,16 @@ static void ast_resolve_subscript_exp(ResolveState *state, ExpSubscript *subs)
 }
 
 //
+// Resolve a sizeof expression.
+//
+static void ast_resolve_sizeof_exp(ResolveState *state, ExpSizeof *szof)
+{
+    if (szof->tag == SIZEOF_EXP) {
+        ast_resolve_expression(state, szof->exp);
+    }
+}
+
+//
 // Resolve variable references in an expression.
 //
 static void ast_resolve_expression(ResolveState *state, Expression *exp)
@@ -327,6 +337,7 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_DEREF:         ast_resolve_deref_exp(state, &exp->deref); break;
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
         case EXP_SUBSCRIPT:     ast_resolve_subscript_exp(state, &exp->subscript); break;
+        case EXP_SIZEOF:        ast_resolve_sizeof_exp(state, &exp->sizeof_); break;
 
         case EXP_SCHAR:         break;
         case EXP_UCHAR:         break;
