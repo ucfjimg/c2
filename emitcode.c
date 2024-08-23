@@ -172,6 +172,10 @@ static char *strlit_to_asm(char *data, size_t len, bool nul_terminated)
 {
     StrBuilder *stb = stb_alloc();
 
+    if (nul_terminated && len && data[len-1] == 0) {
+        len--;
+    }
+
     for (size_t i = 0; i < len; i++) {
         int ch = (unsigned char)data[i];
         
@@ -203,7 +207,7 @@ static void emit_imm(EmitState *state, unsigned long val, OperandSize os)
     }
 
 
-    fprintf(state->out, "$%lu", val);
+    fprintf(state->out, "$0x%016lx", val);
 }
 
 //
@@ -639,15 +643,15 @@ void emit_static_var(EmitState *state, AsmStaticVar *var)
                 } else {
                     switch (pcn->intval.size) {
                         case CIS_CHAR:
-                            fprintf(state->out, "        .byte\t%u\n", (unsigned char)pcn->intval.value);
+                            fprintf(state->out, "        .byte\t0x%02x\n", (unsigned char)pcn->intval.value);
                             break;
 
                         case CIS_INT:
-                            fprintf(state->out, "        .long\t%u\n", (unsigned)pcn->intval.value);
+                            fprintf(state->out, "        .long\t0x%08x\n", (unsigned)pcn->intval.value);
                             break;
 
                         case CIS_LONG:
-                            fprintf(state->out, "        .quad\t%lu\n", pcn->intval.value);
+                            fprintf(state->out, "        .quad\t0x%016lx\n", pcn->intval.value);
                             break;
                     }
                 } 
@@ -701,11 +705,11 @@ void emit_static_const(EmitState *state, AsmStaticConst *cn)
 
                 case CON_INTEGRAL:
                     if (si->cval.intval.size == CIS_CHAR) {
-                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value & 0xff);
+                        fprintf(state->out, "        .byte\t0x%02lx\n", si->cval.intval.value & 0xff);
                     } else if (si->cval.intval.size == CIS_INT) {
-                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value & 0xffffffff);
+                        fprintf(state->out, "        .long\t0x%08lx\n", si->cval.intval.value & 0xffffffff);
                     } else {
-                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value);
+                        fprintf(state->out, "        .quad \t0x%016lx\n", si->cval.intval.value);
                     }
                     break;
             }

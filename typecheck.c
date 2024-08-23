@@ -1227,7 +1227,7 @@ static void ast_type_check_static_array_string_init(Initializer *init, Type *tar
         //
         // Entire string fits but with no nul terminator.
         //
-        si = sinit_make_string(strcon->data, strcon->length - 1, true);
+        si = sinit_make_string(strcon->data, strcon->length - 1, false);
         list_push_back(out, &si->list);
     } else {
         err_report(EC_ERROR, &loc, "array is too short to contain string constant.");

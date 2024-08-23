@@ -779,7 +779,8 @@ static int tcg_nested_init_array_with_string(TacState *state, Type *type, ExpStr
         unsigned long val = 0;
 
         for (int i = 7; i >= 0; i--) {
-            unsigned char ch = str->data[src + i];
+            int index = src + i;
+            unsigned char ch = index < str->length ? str->data[index] : 0;
             val = (val << 8) | ch;
         }
 
@@ -796,7 +797,8 @@ static int tcg_nested_init_array_with_string(TacState *state, Type *type, ExpStr
         unsigned long val = 0;
 
         for (int i = 3; i >= 0; i--) {
-            unsigned char ch = str->data[src + i];
+            int index = src + i;
+            unsigned char ch = index < str->length ? str->data[index] : 0;
             val = (val << 8) | ch;
         }
 
@@ -810,8 +812,8 @@ static int tcg_nested_init_array_with_string(TacState *state, Type *type, ExpStr
     }
     
     while (left--) {
-        unsigned char ch = str->data[src];
-        Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, ch);
+        unsigned char ch = src < str->length ? str->data[src] : 0;
+        Const cn = const_make_int(CIS_CHAR, CIS_UNSIGNED, ch);
 
         tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
 
