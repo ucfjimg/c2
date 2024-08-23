@@ -501,8 +501,7 @@ semantic_done:
     ast = NULL;
 
     codegen_sym_to_backsym(stab, bstab);
-
-    asm_allocate_vars(asmcode, bstab);
+    asm_allocate_vars(asmcode, bstab, args->print_stab);
     asm_fix_operands(asmcode);
 
     if (args->stage == STAGE_CODEGEN) {

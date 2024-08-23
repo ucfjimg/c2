@@ -631,7 +631,7 @@ static TacExpResult tcg_cast(TacState *state, Expression *exp)
         }
     } else if (types_same_size(cast->exp->type, cast->type)) {
         tcg_append(state, tac_copy(inner, tmp, exp->loc));
-    } else if (type_rank(cast->type) < type_rank(cast->exp->type)) {
+    } else if (type_size(cast->type) < type_size(cast->exp->type)) {
         tcg_append(state, tac_truncate(inner, tmp, exp->loc));
     } else if (type_unsigned(cast->exp->type)) {
         tcg_append(state, tac_zero_extend(inner, tmp, exp->loc));
@@ -770,8 +770,10 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
 //
 static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpString *str, char *var, FileLine loc)
 {
+    ICE_ASSERT(type->tag == TT_ARRAY);
+
     int offset = 0;
-    int left = str->length;
+    int left = type->array.size;
 
     while (left > 8) {
         unsigned long val = 0;
@@ -806,11 +808,12 @@ static void tcg_nested_init_array_with_string(TacState *state, Type *type, ExpSt
     }
     
     while (left--) {
-        unsigned char ch = str->data[offset++];
+        unsigned char ch = str->data[offset];
         Const cn = const_make_int(CIS_INT, CIS_UNSIGNED, ch);
 
         tcg_append(state, tac_copy_to_offset(tac_const(cn, loc), var, offset, loc));
 
+        offset++;
     }
 }
 

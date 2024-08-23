@@ -77,6 +77,16 @@ const char *acc_describe(AsmConditionCode cc)
 }
 
 //
+// Allocate an assembly type of a byte.
+//
+AsmType *asmtype_byte(void)
+{
+    AsmType *at = safe_zalloc(sizeof(AsmType));
+    at->tag = AT_BYTE;
+    return at;
+}
+
+//
 // Allocate an assembly type of a longword.
 //
 AsmType *asmtype_long(void)
@@ -132,6 +142,7 @@ void asmtype_free(AsmType *type)
 AsmType *asmtype_clone(AsmType *type)
 {
     switch (type->tag) {
+        case AT_BYTE:           return asmtype_byte();
         case AT_LONGWORD:       return asmtype_long();
         case AT_QUADWORD:       return asmtype_quad();
         case AT_DOUBLE:         return asmtype_double();
@@ -148,10 +159,11 @@ AsmType *asmtype_clone(AsmType *type)
 char *asmtype_describe(AsmType *at)
 {
     switch (at->tag) {
-        case AT_LONGWORD: return saprintf("longword");
-        case AT_QUADWORD: return saprintf("quadword");
-        case AT_DOUBLE:   return saprintf("double");
-        case AT_BYTEARRAY:return saprintf("bytearray[%zu,%u]", at->array.size, at->array.align);
+        case AT_BYTE:       return saprintf("byte");
+        case AT_LONGWORD:   return saprintf("longword");
+        case AT_QUADWORD:   return saprintf("quadword");
+        case AT_DOUBLE:     return saprintf("double");
+        case AT_BYTEARRAY:  return saprintf("bytearray[%zu,%u]", at->array.size, at->array.align);
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_describe", false));
@@ -164,10 +176,11 @@ char *asmtype_describe(AsmType *at)
 int asmtype_size(AsmType *type)
 {
     switch (type->tag) {
-        case AT_LONGWORD: return 4;
-        case AT_QUADWORD: return 8;
-        case AT_DOUBLE:   return 8;
-        case AT_BYTEARRAY:return type->array.size;
+        case AT_BYTE:       return 1;
+        case AT_LONGWORD:   return 4;
+        case AT_QUADWORD:   return 8;
+        case AT_DOUBLE:     return 8;
+        case AT_BYTEARRAY:  return type->array.size;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_size", false));
@@ -180,10 +193,11 @@ int asmtype_size(AsmType *type)
 int asmtype_alignment(AsmType *type)
 {
     switch (type->tag) {
-        case AT_LONGWORD: return 4;
-        case AT_QUADWORD: return 8;
-        case AT_DOUBLE:   return 8;
-        case AT_BYTEARRAY:return type->array.align;
+        case AT_BYTE:       return 1;
+        case AT_LONGWORD:   return 4;
+        case AT_QUADWORD:   return 8;
+        case AT_DOUBLE:     return 8;
+        case AT_BYTEARRAY:  return type->array.align;
     }
 
     ICE_ASSERT(((void)"invalid assembly type in asmtype_alignment", false));
@@ -398,7 +412,7 @@ AsmNode *asm_static_var(char *name, bool global, int alignment, List init, FileL
 //
 // Construct an assembly static const.
 //
-AsmNode *asm_static_const(char *name, int alignment, Const init, FileLine loc)
+AsmNode *asm_static_const(char *name, int alignment, StaticInitializer *init, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
@@ -418,6 +432,8 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
+    ICE_ASSERT( dst );
+
     node->tag = ASM_MOV;
     node->loc = loc;
     node->mov.src = src;
@@ -430,13 +446,15 @@ AsmNode *asm_mov(AsmOperand *src, AsmOperand *dst, AsmType *type, FileLine loc)
 //
 // Construct an assembly movsx instruction.
 //
-AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc)
+AsmNode *asm_movsx(AsmType *src_type, AsmType *dst_type, AsmOperand *src, AsmOperand *dst, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_MOVSX;
     node->loc = loc;
+    node->movsx.src_type = src_type;
     node->movsx.src = src;
+    node->movsx.dst_type = dst_type;
     node->movsx.dst = dst;
 
     return node;
@@ -445,13 +463,15 @@ AsmNode *asm_movsx(AsmOperand *src, AsmOperand *dst, FileLine loc)
 //
 // Construct an assembly movzx instruction.
 //
-AsmNode *asm_movzx(AsmOperand *src, AsmOperand *dst, FileLine loc)
+AsmNode *asm_movzx(AsmType *src_type, AsmType *dst_type, AsmOperand *src, AsmOperand *dst, FileLine loc)
 {
     AsmNode *node = safe_zalloc(sizeof(AsmNode));
 
     node->tag = ASM_MOVZX;
     node->loc = loc;
+    node->movzx.src_type = src_type;
     node->movzx.src = src;
+    node->movzx.dst_type = dst_type;
     node->movzx.dst = dst;
 
     return node;
@@ -753,7 +773,9 @@ static void asm_mov_free(AsmMov *mov)
 //
 static void asm_movsx_free(AsmMovsx *movsx)
 {
+    asmtype_free(movsx->src_type);
     aoper_free(movsx->src);
+    asmtype_free(movsx->dst_type);
     aoper_free(movsx->dst);
 }
 
@@ -762,7 +784,9 @@ static void asm_movsx_free(AsmMovsx *movsx)
 //
 static void asm_movzx_free(AsmMovsx *movzx)
 {
+    asmtype_free(movzx->src_type);
     aoper_free(movzx->src);
+    asmtype_free(movzx->dst_type);
     aoper_free(movzx->dst);
 }
 
@@ -998,11 +1022,49 @@ static void asm_func_print(AsmFunction *func, FileLine *loc, bool locs)
 }
 
 //
+// Print a static initializer.
+//
+static void asm_static_init_print(StaticInitializer *init)
+{
+    char *desc = NULL;
+
+    switch (init->tag) {
+        case SI_CONST:
+            if (init->cval.tag == CON_FLOAT) {
+                printf("        .double %.13g\n", init->cval.floatval);
+            } else if (init->cval.intval.size == CIS_LONG) {
+                printf("        .quad %lu\n", init->cval.intval.value);
+            } else {
+                printf("        .long %lu\n", init->cval.intval.value);
+            }
+            break;
+
+        case SI_ZERO:
+            printf("        .zero %zd\n", init->bytes);
+            break;
+
+        case SI_STRING:
+            desc = str_escape(init->string.data, init->string.length);
+            if (init->string.nul_terminated) {
+                printf("        .asciz \"%s\"\n", desc);
+            } else {
+                printf("        .ascii \"%s\"\n", desc);
+            }
+            safe_free(desc);
+            break;
+
+        case SI_POINTER:
+            printf("        .quad %s #pointer\n", init->ptr_name);
+            break;
+    }
+
+}
+
+//
 // Print an assembly static variable.
 //
 static void asm_static_var_print(AsmStaticVar *var)
 {
-    char *desc;
 
     if (var->global) {
         printf(".global %s\n", var->name);
@@ -1012,36 +1074,7 @@ static void asm_static_var_print(AsmStaticVar *var)
     printf("%s:\n", var->name);
     for (ListNode *curr = var->init.head; curr; curr = curr->next) {
         StaticInitializer *init = CONTAINER_OF(curr, StaticInitializer, list);
-
-        switch (init->tag) {
-            case SI_CONST:
-                if (init->cval.tag == CON_FLOAT) {
-                    printf("        .double %.13g\n", init->cval.floatval);
-                } else if (init->cval.intval.size == CIS_LONG) {
-                    printf("        .quad %lu\n", init->cval.intval.value);
-                } else {
-                    printf("        .long %lu\n", init->cval.intval.value);
-                }
-                break;
-
-            case SI_ZERO:
-                printf("        .zero %zd\n", init->bytes);
-                break;
-
-            case SI_STRING:
-                desc = str_escape(init->string.data, init->string.length);
-                if (init->string.nul_terminated) {
-                    printf("        .asciz \"%s\"\n", desc);
-                } else {
-                    printf("        .ascii \"%s\"\n", desc);
-                }
-                safe_free(desc);
-                break;
-
-            case SI_POINTER:
-                printf("        .quad %s #pointer\n", init->ptr_name);
-                break;
-        }
+        asm_static_init_print(init);
     }
 }
 
@@ -1051,14 +1084,8 @@ static void asm_static_var_print(AsmStaticVar *var)
 static void asm_static_const_print(AsmStaticConst *cn)
 {
     printf(".align %d\n", cn->alignment);
-
-    if (cn->init.tag == CON_FLOAT) {
-        printf("%s: .double %.13g\n", cn->name, cn->init.floatval);
-    } else if (cn->init.intval.size == CIS_LONG) {
-        printf("%s: .quad %lu\n", cn->name, cn->init.intval.value);
-    } else {
-        printf("%s: .long %lu\n", cn->name, cn->init.intval.value);
-    }
+    printf("%s:\n", cn->name);
+    asm_static_init_print(cn->init);
 }
 
 //
@@ -1090,9 +1117,13 @@ static void asm_mov_print(AsmMov *mov)
 //
 static void asm_movsx_print(AsmMovsx *movsx)
 {
-    printf("        movsx ");
+    printf("        movsx (");
+    asmtype_print(movsx->src_type);
+    printf(")");
     aoper_print(movsx->src);
-    printf(" => ");
+    printf(" => (");
+    asmtype_print(movsx->dst_type);
+    printf(")");
     aoper_print(movsx->dst);
     printf("\n");
 }
@@ -1102,9 +1133,13 @@ static void asm_movsx_print(AsmMovsx *movsx)
 //
 static void asm_movzx_print(AsmMovzx *movzx)
 {
-    printf("        movzx ");
+    printf("        movzx (");
+    asmtype_print(movzx->src_type);
+    printf(")");
     aoper_print(movzx->src);
-    printf(" => ");
+    printf(" => (");
+    asmtype_print(movzx->dst_type);
+    printf(")");
     aoper_print(movzx->dst);
     printf("\n");
 }

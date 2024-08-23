@@ -209,9 +209,9 @@ static AsmType *codegen_type_to_asmtype(Type *type)
     switch (type->tag) {
         case TT_CHAR:
         case TT_UCHAR:
-        case TT_SCHAR:      ICE_NYI("codegen_type_to_asmtype::char-types");
-        case TT_INT:        return asmtype_long();
+        case TT_SCHAR:      return asmtype_byte();
 
+        case TT_INT:        return asmtype_long();
         case TT_UINT:       return asmtype_long();
         case TT_LONG:       return asmtype_quad();
         case TT_ULONG:      return asmtype_quad();
@@ -273,6 +273,7 @@ static int codegen_align(Type *type)
     AsmType *at = codegen_type_to_asmtype(type);
 
     switch (at->tag) {
+        case AT_BYTE:       align = 1; break;
         case AT_LONGWORD:   align = 4; break;
         case AT_QUADWORD:   align = 8; break;
         case AT_DOUBLE:     align = 8; break;
@@ -302,7 +303,8 @@ static char *codegen_float_literal(CodegenState *state, double floatval, int ali
     char *label = tmp_name(val);
     safe_free(val);
 
-    codegen_push_static(state, asm_static_const(label, align, const_make_double(floatval), loc));
+    StaticInitializer *si = sinit_make_const(const_make_double(floatval));
+    codegen_push_static(state, asm_static_const(label, align, si, loc));
 
     BackEndSymbol *sym = bstab_lookup(state->bstab, label);
     sym->tag = BST_OBJECT;
@@ -809,14 +811,27 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
 {
     ICE_ASSERT(decl->tag == TAC_STATIC_VAR);
 
-    codegen_align(decl->static_var.type);
-
     codegen_push_static(state, 
         asm_static_var(
             decl->static_var.name, 
             decl->static_var.global,
             codegen_align(decl->static_var.type),
             decl->static_var.init, 
+            decl->loc));
+}
+
+//
+// Geneate code for a static constant.
+//
+static void codegen_static_const(CodegenState *state, TacNode *decl)
+{
+    ICE_ASSERT(decl->tag == TAC_STATIC_CONST);
+
+    codegen_push_static(state, 
+        asm_static_const(
+            decl->static_const.name, 
+            codegen_align(decl->static_const.type),
+            decl->static_const.init, 
             decl->loc));
 }
 
@@ -829,6 +844,8 @@ static void codegen_sign_extend(CodegenState *state, TacNode *decl)
 
     codegen_push_instr(state,
         asm_movsx(
+            codegen_tac_to_asmtype(state, decl->sign_extend.src),
+            codegen_tac_to_asmtype(state, decl->sign_extend.dst),
             codegen_expression(state, decl->sign_extend.src),
             codegen_expression(state, decl->sign_extend.dst),
             decl->loc)
@@ -844,6 +861,8 @@ static void codegen_zero_extend(CodegenState *state, TacNode *decl)
 
     codegen_push_instr(state,
         asm_movzx(
+            codegen_tac_to_asmtype(state, decl->zero_extend.src),
+            codegen_tac_to_asmtype(state, decl->zero_extend.dst),
             codegen_expression(state, decl->zero_extend.src),
             codegen_expression(state, decl->zero_extend.dst),
             decl->loc)
@@ -861,7 +880,7 @@ static void codegen_truncate(CodegenState *state, TacNode *decl)
         asm_mov(
             codegen_expression(state, decl->truncate.src),
             codegen_expression(state, decl->truncate.dst),
-            asmtype_long(),
+            codegen_tac_to_asmtype(state, decl->truncate.dst),
             decl->loc)
     );
 }
@@ -877,9 +896,18 @@ static void codegen_dbl_to_int(CodegenState *state, TacNode *tac)
     AsmOperand *dst = codegen_expression(state, tac->dbl_to_int.dst);
     AsmType *type = codegen_tac_to_asmtype(state, tac->dbl_to_int.dst);
 
-    codegen_push_instr(state,
-        asm_cvttsd2si(src, dst, type, tac->loc)
-    );
+    if (type->tag == AT_BYTE) {
+        codegen_push_instr(state,
+            asm_cvttsd2si(src, aoper_reg(REG_RAX), asmtype_long(), tac->loc)
+        );
+        codegen_push_instr(state,
+            asm_mov(aoper_reg(REG_RAX), dst, type, tac->loc)
+        );
+    } else {
+        codegen_push_instr(state,
+            asm_cvttsd2si(src, dst, type, tac->loc)
+        );
+    }
 }
 
 //
@@ -893,7 +921,14 @@ static void codegen_dbl_to_uint(CodegenState *state, TacNode *tac)
     AsmOperand *dst = codegen_expression(state, tac->dbl_to_uint.dst);
     AsmType *type = codegen_tac_to_asmtype(state, tac->dbl_to_uint.dst);
 
-    if (type->tag == AT_LONGWORD) {
+    if (type->tag == AT_BYTE) {
+        codegen_push_instr(state,
+            asm_cvttsd2si(src, aoper_reg(REG_RAX), asmtype_long(), tac->loc)
+        );
+        codegen_push_instr(state,
+            asm_mov(aoper_reg(REG_RAX), dst, type, tac->loc)
+        );
+    } else if (type->tag == AT_LONGWORD) {
         codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_long(), tac->loc));
     } else {
@@ -940,9 +975,12 @@ static void codegen_int_to_dbl(CodegenState *state, TacNode *tac)
     AsmOperand *dst = codegen_expression(state, tac->int_to_dbl.dst);
     AsmType *type = codegen_tac_to_asmtype(state, tac->int_to_dbl.src);
 
-    codegen_push_instr(state,
-        asm_cvtsi2sd(src, dst, type, tac->loc)
-    );
+    if (type->tag == AT_BYTE) {
+        codegen_push_instr(state, asm_movsx(type, asmtype_long(), src, aoper_reg(REG_RAX), tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), dst, asmtype_long(), tac->loc));
+    } else {
+        codegen_push_instr(state, asm_cvtsi2sd(src, dst, type, tac->loc));
+    }
 }
 
 //
@@ -956,8 +994,11 @@ static void codegen_uint_to_dbl(CodegenState *state, TacNode *tac)
     AsmOperand *dst = codegen_expression(state, tac->uint_to_dbl.dst);
     AsmType *type = codegen_tac_to_asmtype(state, tac->uint_to_dbl.src);
 
-    if (type->tag == AT_LONGWORD) {
-        codegen_push_instr(state, asm_movzx(aoper_clone(src), aoper_reg(REG_RAX), tac->loc));
+    if (type->tag == AT_BYTE) {
+        codegen_push_instr(state, asm_movzx(asmtype_clone(type), asmtype_long(), aoper_clone(src), aoper_reg(REG_RAX), tac->loc));
+        codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
+    } else if (type->tag == AT_LONGWORD) {
+        codegen_push_instr(state, asm_movzx(asmtype_clone(type), asmtype_quad(), aoper_clone(src), aoper_reg(REG_RAX), tac->loc));
         codegen_push_instr(state, asm_cvtsi2sd(aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
     } else {
         char *label1 = tmp_name("label");
@@ -1109,7 +1150,7 @@ static void codegen_single(CodegenState *state, TacNode *tac)
         case TAC_FUNCTION_CALL:     codegen_function_call(state, tac); break;
 
         case TAC_STATIC_VAR:        codegen_static_var(state, tac); break; 
-        case TAC_STATIC_CONST:      ICE_NYI("codegen_single::static-const");
+        case TAC_STATIC_CONST:      codegen_static_const(state, tac); break;
         case TAC_SIGN_EXTEND:       codegen_sign_extend(state, tac); break;
         case TAC_ZERO_EXTEND:       codegen_zero_extend(state, tac); break;
         case TAC_TRUNCATE:          codegen_truncate(state, tac); break;
@@ -1264,6 +1305,7 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
         switch (decl->tag) {
             case TAC_FUNCDEF: codegen_funcdef(&state, decl); break;
             case TAC_STATIC_VAR: codegen_static_var(&state, decl); break;
+            case TAC_STATIC_CONST: codegen_static_const(&state, decl); break;
 
             default: ICE_ASSERT(((void)"unexpected tag for top-level TAC node", false)); 
         }
@@ -1313,6 +1355,17 @@ void codegen_local_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
 }
 
 //
+// Convert a static constant to a back end symbol.
+//
+void codegen_static_const_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+{
+    bsym->tag = BST_OBJECT;
+    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.is_literal = true;
+    bsym->object.is_static = true;
+}
+
+//
 // Allocate a back end symbol table an populate it from the front end
 // symbol table.
 // 
@@ -1328,7 +1381,7 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
             case ST_FUNCTION:   codegen_func_sym_to_backsym(&sym->func, bsym); break;
             case ST_STATIC_VAR: codegen_static_sym_to_backsym(sym, bsym); break;
             case ST_LOCAL_VAR:  codegen_local_sym_to_backsym(sym, bsym); break;
-            case ST_CONSTANT:   ICE_NYI("codegen_sym_to_backsym::ST_CONSTANT");
+            case ST_CONSTANT:   codegen_static_const_to_backsym(sym, bsym); break;
                 break;
         }
 

@@ -3,6 +3,9 @@
 #include "fileline.h"
 #include "ice.h"
 #include "safemem.h"
+#include "strbuilder.h"
+
+#include <ctype.h>
 
 typedef enum {
     OS_BYTE = 1,
@@ -31,6 +34,11 @@ static void type_to_operand_spec(AsmType *type, OperandSpec *spec)
     spec->size = OS_DWORD;
 
     switch (type->tag) {
+        case AT_BYTE:
+            spec->suffix = "b";
+            spec->size = OS_BYTE;
+            break;
+
         case AT_LONGWORD:
             spec->suffix = "l";
             spec->size = OS_DWORD;
@@ -150,9 +158,37 @@ static void emit_reg(EmitState *state, Register reg, OperandSize os)
             case REG_XMM12: 
             case REG_XMM13: 
             case REG_XMM14: 
-            case REG_XMM15: ICE_ASSERT(((void)"xmm registers have no 4-byte equivalent", false));
+            case REG_XMM15: ICE_ASSERT(((void)"xmm registers have no byte equivalent", false));
         }
     }
+}
+
+//
+// Convert a string literal to an allocated assembler-friendly string.
+//
+// If there is a nul terminator, don't emit it and use .asciz instead.
+//
+static char *strlit_to_asm(char *data, size_t len, bool nul_terminated)
+{
+    StrBuilder *stb = stb_alloc();
+
+    for (size_t i = 0; i < len; i++) {
+        int ch = (unsigned char)data[i];
+        
+        if (ch == '\\' || ch == '"') {
+            stb_push_char(stb, '\\');
+        }
+        
+        if (isprint(ch)) {
+            stb_push_char(stb, ch);
+        } else {
+            stb_printf(stb, "\\%03o", ch); 
+        }
+    }
+
+    char *strlit = stb_take(stb);
+    stb_free(stb);
+    return strlit;
 }
 
 //
@@ -278,10 +314,40 @@ static void emit_mov(EmitState *state, AsmMov *mov)
 //
 static void emit_movsx(EmitState *state, AsmMovsx *movsx)
 {
-    fprintf(state->out, "        movslq\t");
-    emit_asmoper(state, movsx->src, OS_DWORD);
+    OperandSpec src;
+    OperandSpec dst;
+
+    type_to_operand_spec(movsx->src_type, &src);
+    type_to_operand_spec(movsx->dst_type, &dst);    
+
+    fprintf(state->out, "        movs%s%s\t",
+        src.suffix,
+        dst.suffix);
+
+    emit_asmoper(state, movsx->src, src.size);
     fprintf(state->out, ", ");
-    emit_asmoper(state, movsx->dst, OS_QWORD);
+    emit_asmoper(state, movsx->dst, dst.size);
+    fprintf(state->out, "\n");
+}
+
+//
+// Emit a movzx instruction.
+//
+static void emit_movzx(EmitState *state, AsmMovzx *movzx)
+{
+    OperandSpec src;
+    OperandSpec dst;
+
+    type_to_operand_spec(movzx->src_type, &src);
+    type_to_operand_spec(movzx->dst_type, &dst);    
+
+    fprintf(state->out, "        movz%s%s\t",
+        src.suffix,
+        dst.suffix);
+
+    emit_asmoper(state, movzx->src, OS_DWORD);
+    fprintf(state->out, ", ");
+    emit_asmoper(state, movzx->dst, OS_QWORD);
     fprintf(state->out, "\n");
 }
 
@@ -585,11 +651,69 @@ void emit_static_var(EmitState *state, AsmStaticVar *var)
 //
 void emit_static_const(EmitState *state, AsmStaticConst *cn)
 {
+    fprintf(state->out, "        .section\t.rodata\n");
+    fprintf(state->out, "        .balign\t%d\n", cn->alignment);
+    fprintf(state->out, "%s:\n", cn->name);
+
+    StaticInitializer *si = cn->init;
+    char *strlit;
+
+    switch (si->tag) {
+        case SI_CONST:
+            switch (si->cval.tag) {
+                case CON_FLOAT:
+                    fprintf(state->out, "        .double\t%.20g\n", si->cval.floatval);
+                    break;
+
+                case CON_INTEGRAL:
+                    if (si->cval.intval.size == CIS_CHAR) {
+                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value & 0xff);
+                    } else if (si->cval.intval.size == CIS_INT) {
+                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value & 0xffffffff);
+                    } else {
+                        fprintf(state->out, "        .byte\t%lu\n", si->cval.intval.value);
+                    }
+                    break;
+            }
+            break;
+
+        case SI_POINTER:
+            fprintf(state->out, "        .quad\t%s\n", si->ptr_name);
+            break;
+
+        case SI_STRING:
+            strlit = strlit_to_asm(
+                si->string.data,
+                si->string.length,
+                si->string.nul_terminated
+            );
+
+            if (si->string.nul_terminated) {
+                fprintf(state->out, "        .asciz\t");
+            } else {
+                fprintf(state->out, "        .ascii\t");
+            }
+            fprintf(state->out, "\"%s\"\n", strlit);
+            safe_free(strlit);
+            break;
+
+        case SI_ZERO:
+            fprintf(state->out, "        .zero\t%zd\n", si->bytes);
+            break;
+    }
+
+
+
+
+
+    #ifdef TODO
     BackEndSymbol *sym = bstab_lookup(state->bstab, cn->name);
     ICE_ASSERT(sym->tag == BST_OBJECT);
     int size = asmtype_size(sym->object.type);
 
+
     bool is_quad = size == 8;
+
 
     fprintf(state->out, "        .section\t.rodata\n");
     if (sym->object.type->tag == AT_DOUBLE) {
@@ -607,6 +731,8 @@ void emit_static_const(EmitState *state, AsmStaticConst *cn)
             is_quad ? "quad" : "long",
             is_quad ? cn->init.intval.value : (cn->init.intval.value & 0xffffffff));
     }
+
+    #endif
     fprintf(state->out, "        .text\n");
 }
 
@@ -682,7 +808,7 @@ static void emitcode_recurse(EmitState *state, AsmNode *node, FileLine *loc)
         case ASM_STACK_FREE:    emit_stack_free(state, &node->stack_free); break;
         case ASM_MOV:           emit_mov(state, &node->mov); break;
         case ASM_MOVSX:         emit_movsx(state, &node->movsx); break;
-        case ASM_MOVZX:         ICE_ASSERT(((void)"untranslated movzx in emitcode", false));
+        case ASM_MOVZX:         emit_movzx(state, &node->movzx); break;
         case ASM_LEA:           emit_lea(state, &node->lea); break;
         case ASM_UNARY:         emit_unary(state, &node->unary); break;
         case ASM_BINARY:        emit_binary(state, &node->binary); break;

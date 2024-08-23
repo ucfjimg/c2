@@ -78,7 +78,7 @@ static void asm_fixop_movsx(List *code, AsmNode *movnode)
     ICE_ASSERT(movsx->src->tag != AOP_PSEUDOREG && movsx->dst->tag != AOP_PSEUDOREG);
 
     if (movsx->src->tag == AOP_IMM) {
-        list_push_back(code, &asm_mov(movsx->src, aoper_reg(REG_R10), asmtype_long(), movnode->loc)->list);
+        list_push_back(code, &asm_mov(movsx->src, aoper_reg(REG_R10), asmtype_clone(movsx->src_type), movnode->loc)->list);
         movsx->src = aoper_reg(REG_R10);
     }
 
@@ -89,7 +89,9 @@ static void asm_fixop_movsx(List *code, AsmNode *movnode)
 
     list_push_back(code, &movnode->list);
 
-    list_push_back(code, &asm_mov(aoper_reg(REG_R11), dst, asmtype_quad(), movnode->loc)->list);
+    if (dst) {
+        list_push_back(code, &asm_mov(aoper_reg(REG_R11), dst, asmtype_clone(movsx->dst_type), movnode->loc)->list);
+    }
 }
 
 //
@@ -107,6 +109,29 @@ static void asm_fixop_movzx(List *code, AsmNode *movnode)
     // All pseudo-registers must have been replaced by the previous pass.
     //
     ICE_ASSERT(movzx->src->tag != AOP_PSEUDOREG && movzx->dst->tag != AOP_PSEUDOREG);
+
+    if (movzx->src_type->tag == AT_BYTE) {
+        if (movzx->src->tag == AOP_IMM) {
+            list_push_back(code, 
+                &asm_mov(aoper_imm(movzx->src->imm & 0xff), aoper_reg(REG_R10), asmtype_byte(), movnode->loc)->list);
+            movzx->src = aoper_reg(REG_R10);
+        }
+
+        AsmOperand *dst = NULL;
+        if (movzx->dst->tag != AOP_REG) {
+            dst = movzx->dst;
+            movzx->dst = aoper_reg(REG_R11);
+        }
+
+        list_push_back(code, &movnode->list);
+
+        if (dst) {
+            list_push_back(code, 
+                &asm_mov(aoper_reg(REG_R11), dst, asmtype_clone(movzx->dst_type), movnode->loc)->list);
+        }
+
+        return;
+    }
 
     if (movzx->dst->tag == AOP_REG) {
         list_push_back(code, &asm_mov(aoper_clone(movzx->src), aoper_clone(movzx->dst), asmtype_long(), movnode->loc)->list);

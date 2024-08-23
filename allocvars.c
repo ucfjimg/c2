@@ -6,6 +6,7 @@
 #include "safemem.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 
 typedef struct
 {
@@ -355,9 +356,26 @@ static void asm_alloc_func(VarTable *vartab, AsmNode *func)
 }
 
 //
+// Print the variable table.
+//
+static void asm_print_vartab(VarTable *vartab)
+{
+    HashIterator iter;
+
+    for (HashNode *hash = hashtab_first(vartab->vars, &iter); hash; hash = hashtab_next(&iter)) {
+        VarTableNode *var = CONTAINER_OF(hash, VarTableNode, hash);
+
+        printf("%32s | allocated %d offset %d\n",
+            var->hash.key,
+            var->allocated,
+            var->offset);
+    }
+}
+
+//
 // Allocate pseudoregisters in a function's stack frame. 
 //
-void asm_allocate_vars(AsmNode *prog, BackEndSymbolTable *bstab)
+void asm_allocate_vars(AsmNode *prog, BackEndSymbolTable *bstab, bool print)
 {
     ICE_ASSERT(prog->tag == ASM_PROG);
 
@@ -367,6 +385,12 @@ void asm_allocate_vars(AsmNode *prog, BackEndSymbolTable *bstab)
             VarTable vartab;
             vartab_init(&vartab, bstab);
             asm_alloc_func(&vartab, func);
+
+            if (print) {
+                printf("=== vartab for function %s\n", func->func.name);
+                asm_print_vartab(&vartab);
+            }
+
             vartab_free(&vartab);
         }
     }
