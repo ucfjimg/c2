@@ -374,6 +374,54 @@ bool type_integral(Type *type)
 }
 
 //
+// Return true if the given type is a void pointer.
+//
+bool type_void_pointer(Type *type)
+{
+    return type->tag == TT_POINTER && type->ptr.ref->tag == TT_VOID;
+}
+
+//
+// Rewturn true if the given type is scalar.
+//
+bool type_scalar(Type *type)
+{
+    switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:
+        case TT_UINT:
+        case TT_ULONG: 
+        case TT_INT:
+        case TT_POINTER:
+        case TT_LONG:   
+        case TT_DOUBLE: return true;
+
+        case TT_VOID:
+        case TT_FUNC:   
+        case TT_ARRAY:  return false;
+    }
+
+    return false;
+}
+
+//
+// Return true if the type is complete.
+//
+bool type_complete(Type *type)
+{
+    return type->tag != TT_VOID;
+}
+
+//
+// Return true if the type is a pointer to a complete type.
+//
+bool type_ptr_to_complete(Type *type)
+{
+    return type->tag == TT_POINTER && type_complete(type->ptr.ref);
+}
+
+//
 // Return the base element type of a (possibly nested) array.
 //
 Type *type_array_element(Type *type)

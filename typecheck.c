@@ -101,6 +101,50 @@ static bool exp_is_null_pointer(Expression *exp)
 }
 
 //
+// Validate a type specifier.
+//
+static bool validate_type_specifier(TypeCheckState *state, Type *type, FileLine loc)
+{
+    switch (type->tag) {
+        case TT_ARRAY:
+            if (!type_complete(type->array.element)) {
+                err_report(EC_ERROR, &loc, "array element type must be complete.");
+                return false;
+            }
+            return validate_type_specifier(state, type->array.element, loc);
+
+        case TT_POINTER:
+            return validate_type_specifier(state, type->ptr.ref, loc);
+
+        case TT_FUNC:
+            if (!validate_type_specifier(state, type->func.ret, loc)) {
+                return false;
+            }
+
+            for (ListNode *curr = type->func.parms.head; curr; curr = curr->next) {
+                TypeFuncParam *param = CONTAINER_OF(curr, TypeFuncParam, list);
+
+                if (!validate_type_specifier(state, param->parmtype, loc)) {
+                    return false;
+                }
+            }
+            return true;
+
+            case TT_CHAR:
+            case TT_SCHAR:
+            case TT_UCHAR:
+            case TT_INT:
+            case TT_LONG:
+            case TT_UINT:
+            case TT_ULONG:
+            case TT_DOUBLE:
+            case TT_VOID:           return true;
+    }
+
+    return false;
+}
+
+//
 // Implement the rules described in the standard as "convert as if by assigment."
 //
 static Expression *convert_by_assignment(TypeCheckState *state, Expression *exp, Type *type)
@@ -114,6 +158,14 @@ static Expression *convert_by_assignment(TypeCheckState *state, Expression *exp,
     }
 
     if (exp_is_null_pointer(exp) && type->tag == TT_POINTER) {
+        return convert_to(state, exp, type);
+    }
+
+    if (type_void_pointer(type) && exp->type->tag == TT_POINTER) {
+        return convert_to(state, exp, type);
+    }
+
+    if (type->tag == TT_POINTER && type_void_pointer(exp->type)) {
         return convert_to(state, exp, type);
     }
 
@@ -138,6 +190,15 @@ static Type *ptr_type_common(Expression *left, Expression *right)
     if (exp_is_null_pointer(right)) {
         return type_clone(left->type);
     }
+
+    if (type_void_pointer(left->type) && right->type->tag == TT_POINTER) {
+        return type_pointer(type_void());
+    }
+
+    if (left->type->tag == TT_POINTER && type_void_pointer(right->type)) {
+        return type_pointer(type_void());
+    }
+
 
     err_report(EC_ERROR, &left->loc, "incompatible pointer types.");
     return type_clone(left->type);
@@ -263,20 +324,29 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     exp_replace(&unary->exp, typecheck_and_convert(state, unary->exp));
 
+    if (!type_complete(unary->exp->type)) {
+        err_report(EC_ERROR, &exp->loc, "operand must be a complete type.");
+        exp_set_type(exp, type_int());
+        return exp;
+    } 
+    
     if (
         unary->op == UOP_COMPLEMENT && (unary->exp->type->tag == TT_DOUBLE || unary->exp->type->tag == TT_POINTER)) {
         err_report(EC_ERROR, &exp->loc, "can only apply `~` to integers.");
+        exp_set_type(exp, type_int());
+        return exp;
     } 
-
+    
     if (unary->op == UOP_MINUS && unary->exp->type->tag == TT_POINTER) {        
         err_report(EC_ERROR, &exp->loc, "cannot apply `-` to pointers.");
+        exp_set_type(exp, type_int());
+        return exp;
     }
 
     if ((unary->op == UOP_COMPLEMENT || unary->op == UOP_MINUS) && type_is_char(unary->exp->type)) {
         Expression *typed_inner = convert_to(state, unary->exp, type_int());
         unary->exp = typed_inner;
         exp_set_type(exp, type_int());
-
         return exp;
     }
 
@@ -288,10 +358,20 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     if (incdec && (!type_arithmetic(unary->exp->type) || unary->exp->type->tag == TT_POINTER)) {
         err_report(EC_ERROR, &exp->loc, "++/-- may only be applied to numeric or pointer types.");
+        exp_set_type(exp, type_int());
+        return exp;
     }
 
     if (incdec && unary->exp->tag != EXP_VAR && unary->exp->tag != EXP_DEREF) {
         err_report(EC_ERROR, &exp->loc, "++/-- may only be applied to l-values.");
+        exp_set_type(exp, type_int());
+        return exp;
+    }
+
+    if (unary->op == UOP_LOGNOT && !type_scalar(unary->exp->type)) {
+        err_report(EC_ERROR, &exp->loc, "! may only be applied to scalar values.");
+        exp_set_type(exp, type_int());
+        return exp;
     }
 
     //
@@ -315,11 +395,13 @@ static Expression *ast_check_binary_promote(TypeCheckState *state, Expression *e
 {
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
-
+    
     Type *common = types_common(binary->left->type, binary->right->type);
 
     if (only_int && common->tag == TT_DOUBLE) {
         err_report(EC_ERROR, &exp->loc, "neither operand to operator `%s` may be floating point.", bop_describe(binary->op));
+        exp_set_type(exp, type_int());
+        return exp;
     }
 
     //
@@ -363,8 +445,19 @@ static Expression *ast_check_binary_bool(TypeCheckState *state, Expression *exp,
     ICE_ASSERT(exp->tag == EXP_BINARY);
     ExpBinary *binary = &exp->binary;
 
+
+    if (binary->op == BOP_LOGAND || binary->op == BOP_LOGOR) {
+        if (!(type_scalar(binary->left->type) && type_scalar(binary->right->type))) {
+            err_report(EC_ERROR, &exp->loc, "operands of || and && must be scalar");
+        }
+    }
+
     if (promote) {
         Type *common = NULL;
+
+        if (!type_arithmetic(binary->left->type) || !type_arithmetic(binary->right->type)) {
+            err_report(EC_ERROR, &exp->loc, "relational operands must be arithmetic or pointers.");
+        }
         
         common = types_common(binary->left->type, binary->right->type);
 
@@ -417,13 +510,13 @@ static Expression *ast_check_add_pointers(TypeCheckState *state, Expression *exp
     //
     // The caller has verified that at least one operand is a pointer.
     //
-    if (type_integral(binary->right->type)) {
+    if (type_ptr_to_complete(binary->left->type) && type_integral(binary->right->type)) {
         //
         // pointer + integer
         //
         exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
         exp_set_type(exp, type_clone(binary->left->type));
-    } else if (type_integral(binary->left->type)) {
+    } else if (type_integral(binary->left->type) && type_ptr_to_complete(binary->right->type)) {
         //
         // integer + pointer
         //
@@ -449,13 +542,13 @@ static Expression *ast_check_sub_pointers(TypeCheckState *state, Expression *exp
     //
     // The caller has verified that at least one operand is a pointer.
     //
-    if (type_integral(binary->right->type)) {
+    if (type_ptr_to_complete(binary->left->type) && type_integral(binary->right->type)) {
         //
         // pointer - integer
         //
         exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
         exp_set_type(exp, type_clone(binary->left->type));
-    } else if (binary->left->type->tag == TT_POINTER && binary->right->type->tag == TT_POINTER) {
+    } else if (type_ptr_to_complete(binary->left->type) && type_ptr_to_complete(binary->right->type)) {
         if (!types_equal(binary->left->type, binary->right->type)) {
             err_report(EC_ERROR, &exp->loc, "cannot subtract pointers of different types.");
         }
@@ -625,6 +718,10 @@ static Expression *ast_check_conditional(TypeCheckState *state, Expression *exp)
     exp_replace(&cond->trueval, typecheck_and_convert(state, cond->trueval));
     exp_replace(&cond->falseval, typecheck_and_convert(state, cond->falseval));
 
+    if (!type_scalar(cond->cond->type)) {
+        err_report(EC_ERROR, &exp->loc, "controlling expression of conditional must be a scalar.");
+    }
+
     Type *common;
     
     if (cond->trueval->type->tag == TT_POINTER || cond->falseval->type->tag == TT_POINTER) {
@@ -745,8 +842,16 @@ static Expression *ast_check_cast(TypeCheckState *state, Expression *exp)
         err_report(EC_ERROR, &exp->loc, "cannot cast between a double and a pointer.");
     }
 
-    if (cast->type->tag == TT_ARRAY) {
-        err_report(EC_ERROR, &exp->loc, "cannot cast to an array type.");
+    if (cast->type->tag == TT_VOID) {
+        //
+        // Anything can be cast to void
+        //
+    } else if (!type_scalar(cast->type)) {
+        err_report(EC_ERROR, &exp->loc, "can only cast to void or scalar.");
+    } else if (!type_scalar(cast->exp->type)) {
+        err_report(EC_ERROR, &exp->loc, "cannot cast non-scalar to scalar.");
+    } else {
+        validate_type_specifier(state, cast->type, exp->loc);
     }
 
     exp_set_type(exp, type_clone(cast->type));
@@ -763,7 +868,7 @@ static Expression *ast_check_deref(TypeCheckState *state, Expression *exp)
 
     exp_replace(&deref->exp, typecheck_and_convert(state, deref->exp));
 
-    if (deref->exp->type->tag == TT_POINTER) {
+    if (type_ptr_to_complete(deref->exp->type)) {
         exp_set_type(exp, type_clone(deref->exp->type->ptr.ref));
     } else {
         err_report(EC_ERROR, &exp->loc, "cannot dereference non-pointer.");
@@ -804,10 +909,10 @@ static Expression *ast_check_subscript(TypeCheckState *state, Expression *exp)
     exp_replace(&subs->left, typecheck_and_convert(state, subs->left));
     exp_replace(&subs->right, typecheck_and_convert(state, subs->right));
 
-    if (subs->left->type->tag == TT_POINTER && type_integral(subs->right->type)) {
+    if (type_ptr_to_complete(subs->left->type) && type_integral(subs->right->type)) {
         exp_replace(&subs->right, convert_to(state, subs->right, type_long()));
         exp_set_type(exp, subs->left->type->ptr.ref);        
-    } else if (type_integral(subs->left->type) && subs->right->type->tag == TT_POINTER) {
+    } else if (type_integral(subs->left->type) && type_ptr_to_complete(subs->right->type)) {
         exp_replace(&subs->left, convert_to(state, subs->left, type_long()));
         exp_set_type(exp, subs->right->type->ptr.ref);        
     } else {
@@ -815,6 +920,40 @@ static Expression *ast_check_subscript(TypeCheckState *state, Expression *exp)
         exp_set_type(exp, type_int());
     }
 
+    return exp;
+}
+
+//
+// Type check a sizeof expression.
+//
+static Expression *ast_check_sizeof(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_SIZEOF);
+    ExpSizeof *szof = &exp->sizeof_;
+
+    switch (szof->tag) {
+        case SIZEOF_EXP:
+            exp_replace(&szof->exp, ast_check_expression(state, szof->exp));
+            if (!type_complete(szof->exp->type)) {
+                err_report(EC_ERROR, &exp->loc, "operand of `sizeof` must have complete type.");
+            }
+            break;
+
+
+        case SIZEOF_TYPE:
+            if (validate_type_specifier(state, szof->type, exp->loc)) {
+                if (!type_complete(szof->type)) {
+                    err_report(EC_ERROR, &exp->loc, "operand of `sizeof` must have complete type.");
+                }
+            }         
+            break;
+
+        default:
+            ICE_ASSERT(((void)"invalid tag in ast_check_sizeof", false));
+    }
+
+    // $TARGET assuming size_t size is ulong
+    exp_set_type(exp, type_ulong());
     return exp;
 }
 
@@ -843,7 +982,7 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_DEREF:         return ast_check_deref(state, exp);
         case EXP_ADDROF:        return ast_check_addrof(state, exp);
         case EXP_SUBSCRIPT:     return ast_check_subscript(state, exp);
-        case EXP_SIZEOF:        ICE_NYI("ast_check_expression::sizeof");
+        case EXP_SIZEOF:        return ast_check_sizeof(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -853,19 +992,39 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
 //
 // Type check a return statement.
 //
-static void ast_check_return(TypeCheckState *state, StmtReturn *ret)
+static void ast_check_return(TypeCheckState *state, StmtReturn *ret, FileLine loc)
 {
-    exp_replace(&ret->exp, typecheck_and_convert(state, ret->exp));
+    if (state->func_type->func.ret->tag == TT_VOID) {
+        if (ret->exp) {
+            err_report(EC_ERROR, &loc, "void function may not return a value.");
+        }
+        return;
+    }
 
-    ret->exp = convert_by_assignment(state, ret->exp, type_clone(state->func_type->func.ret));
+    if (ret->exp == NULL) {
+        err_report(EC_ERROR, &loc, "non-void function must return a value.");
+    }
+
+    if (ret->exp) {
+        exp_replace(&ret->exp, typecheck_and_convert(state, ret->exp));
+        ret->exp = convert_by_assignment(state, ret->exp, type_clone(state->func_type->func.ret));
+    }
 }
 
 //
 // Type check an if statement.
 //
-static void ast_check_if(TypeCheckState *state, StmtIf *ifelse)
+static void ast_check_if(TypeCheckState *state, Statement *stmt)
 {
+    ICE_ASSERT(stmt->tag == STMT_IF);
+    StmtIf *ifelse = &stmt->ifelse;
+
     exp_replace(&ifelse->condition, typecheck_and_convert(state, ifelse->condition));
+
+    if (!type_scalar(ifelse->condition->type)) {
+        err_report(EC_ERROR, &stmt->loc, "controlling value of if must be a scalar.");
+    }
+
     ast_check_statement(state, ifelse->thenpart);
     if (ifelse->elsepart) {
         ast_check_statement(state, ifelse->elsepart);
@@ -891,17 +1050,28 @@ static void ast_check_compound(TypeCheckState *state, StmtCompound *compound)
 //
 // Type check a while loop.
 //
-static void ast_check_while(TypeCheckState *state, StmtWhile *while_)
+static void ast_check_while(TypeCheckState *state, Statement *stmt)
 {
+    ICE_ASSERT(stmt->tag == STMT_WHILE);
+    StmtWhile *while_ = &stmt->while_;
+
     exp_replace(&while_->cond, typecheck_and_convert(state, while_->cond));
+
+    if (!type_scalar(while_->cond->type)) {
+        err_report(EC_ERROR, &stmt->loc, "controlling value of while must be a scalar.");
+    }
+
     ast_check_statement(state, while_->body);
 }
 
 //
 // Type check a for loop.
 //
-static void ast_check_for(TypeCheckState *state, StmtFor *for_)
+static void ast_check_for(TypeCheckState *state, Statement *stmt)
 {
+    ICE_ASSERT(stmt->tag == STMT_FOR);
+    StmtFor *for_ = &stmt->for_;
+
     switch (for_->init->tag) {
         case FI_NONE:           break;
         case FI_DECLARATION:    ast_check_declaration(state, for_->init->decl, false); break;
@@ -922,6 +1092,9 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
 
     if (for_->cond) {
         exp_replace(&for_->cond, typecheck_and_convert(state, for_->cond));
+        if (!type_scalar(for_->cond->type)) {
+            err_report(EC_ERROR, &stmt->loc, "controlling value of for must be a scalar.");
+        }
     }
 
     if (for_->post) {
@@ -934,9 +1107,16 @@ static void ast_check_for(TypeCheckState *state, StmtFor *for_)
 //
 // Type check a do while loop.
 //
-static void ast_check_do_while(TypeCheckState *state, StmtDoWhile *dowhile)
+static void ast_check_do_while(TypeCheckState *state, Statement *stmt)
 {
+    StmtDoWhile *dowhile = &stmt->dowhile;
+
     exp_replace(&dowhile->cond, typecheck_and_convert(state, dowhile->cond));
+
+    if (!type_scalar(dowhile->cond->type)) {
+        err_report(EC_ERROR, &stmt->loc, "controlling value of do-while must be a scalar.");
+    }
+
     ast_check_statement(state, dowhile->body);
 }
 
@@ -980,15 +1160,15 @@ static void ast_check_statement(TypeCheckState *state, Statement *stmt)
 {
     switch (stmt->tag) {
         case STMT_NULL:         break;
-        case STMT_RETURN:       ast_check_return(state, &stmt->ret); break;
-        case STMT_IF:           ast_check_if(state, &stmt->ifelse); break;
+        case STMT_RETURN:       ast_check_return(state, &stmt->ret, stmt->loc); break;
+        case STMT_IF:           ast_check_if(state, stmt); break;
         case STMT_EXPRESSION:   exp_replace(&stmt->exp.exp, typecheck_and_convert(state, stmt->exp.exp)); break;
         case STMT_LABEL:        ast_check_label(state, &stmt->label); break;
         case STMT_GOTO:         break;
         case STMT_COMPOUND:     ast_check_compound(state, &stmt->compound); break;
-        case STMT_WHILE:        ast_check_while(state, &stmt->while_); break;
-        case STMT_FOR:          ast_check_for(state, &stmt->for_); break;
-        case STMT_DOWHILE:      ast_check_do_while(state, &stmt->dowhile); break;
+        case STMT_WHILE:        ast_check_while(state, stmt); break;
+        case STMT_FOR:          ast_check_for(state, stmt); break;
+        case STMT_DOWHILE:      ast_check_do_while(state, stmt); break;
         case STMT_BREAK:        break;
         case STMT_CONTINUE:     break;
         case STMT_SWITCH:       ast_check_switch(state, stmt); break;
@@ -1016,7 +1196,7 @@ static void ast_check_block(TypeCheckState *state, List block)
 // the symbol table for the parameters, and the declaration type will be 
 // updated if needed.
 //
-static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func)
+static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func, FileLine loc)
 {
     ICE_ASSERT(func->type->tag == TT_FUNC);
 
@@ -1026,6 +1206,11 @@ static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func)
     for (; pcurr && tcurr; pcurr = pcurr->next, tcurr = tcurr->next) {
         FuncParameter *parm = CONTAINER_OF(pcurr, FuncParameter, list);
         TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
+
+        if (!validate_type_specifier(state, ptype->parmtype, loc)) {
+        } else if (!type_complete(ptype->parmtype)) {
+            err_report(EC_ERROR, &loc, "function parameter type `%s` must be complete.", parm->name);
+        }
 
         if (ptype->parmtype->tag == TT_ARRAY) {
             ptype->parmtype = type_pointer(ptype->parmtype->ptr.ref);
@@ -1053,11 +1238,14 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
     bool global = func->func.storage_class != SC_STATIC;
     bool had_body = false;
 
-    if (func->func.type->func.ret->tag == TT_ARRAY) {
+    if (!validate_type_specifier(state, func->func.type->func.ret, func->loc)) {
+    } else if (func->func.type->func.ret->tag != TT_VOID && !type_complete(func->func.type->func.ret)) {
+        err_report(EC_ERROR, &func->loc, "function return type must be complete.");
+    } else if (func->func.type->func.ret->tag == TT_ARRAY) {
         err_report(EC_ERROR, &func->loc, "function may not return array type.");
     }
 
-    ast_check_func_param_list(state, &func->func);
+    ast_check_func_param_list(state, &func->func, func->loc);
 
     if (sym->type) {
         if (sym->type->tag != TT_FUNC) {
@@ -1440,6 +1628,13 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
         }
     } else {
         type = type_clone(var->type);
+
+        if (!validate_type_specifier(state, type, decl->loc)) {
+            type = type_int();
+        } else if (!type_complete(type)) {
+            err_report(EC_ERROR, &decl->loc, "symbol `%s` type must be complete.", var->name);
+            type = type_int();
+        }
     }
 
     ast_check_static_init(type, &init, init_scalar, decl->loc);
@@ -1589,12 +1784,21 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
     bool init_scalar = false;
 
     Symbol *sym = stab_lookup(state->stab, var->name);
-    
+
     if (sym->type && !types_equal(sym->type, var->type)) {
         err_report(EC_ERROR, &decl->loc, "cannot redeclare variable `%s` as different type.", var->name);
     }
 
-    Type *type = type_clone(var->type);
+    Type *type = var->type;
+    
+    if (!validate_type_specifier(state, type, decl->loc)) {
+        type = type_int();
+    } else if (!type_complete(type)) {
+        err_report(EC_ERROR, &decl->loc, "declaration of variable `%s` must be complete type.", var->name);
+        type = type_int();
+    } else {
+        type = type_clone(type);
+    }
 
     List init;
     list_clear(&init);
