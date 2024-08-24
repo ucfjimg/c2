@@ -38,6 +38,7 @@ static Keyword keywords[] = {
     { "double",     TOK_DOUBLE },
     { "char",       TOK_CHAR },
     { "sizeof",     TOK_SIZEOF },
+    { "struct",     TOK_STRUCT },
     { NULL,         TOK_EOF }
 };
 
@@ -242,15 +243,21 @@ static void lexer_scan_id_or_keyword(Lexer *lex, Token *tok)
 // Scan a floating point constant. The numeric lex routing has already scanned
 // any leading digits into `str`, and lex->ch is at `.` or `e`/`E`.
 //
-static void lexer_scan_float_const(Lexer *lex, Token *tok, StrBuilder *str)
+//
+// if leadingdot is set, then we are guaranteed by the caller to have .<digit>, with
+// the . already consumed.
+//
+static void lexer_scan_float_const(Lexer *lex, Token *tok, StrBuilder *str, bool leadingdot)
 {
     //
     // If a '.', scan over any fractional part.
     //
-    if (lex->ch == '.') {
+    if (lex->ch == '.' || leadingdot) {
         stb_push_char(str, '.');
-        lexer_next_char(lex);
-    
+        if (!leadingdot) {
+            lexer_next_char(lex);
+        }
+
         while (isdigit(lex->ch)) {
             stb_push_char(str, lex->ch);
             lexer_next_char(lex);
@@ -363,7 +370,7 @@ static void lexer_scan_numeric_const(Lexer *lex, Token *tok)
     //
     if (base != 16) {
         if (lex->ch == '.' || lex->ch == 'e' || lex->ch == 'E') {
-            lexer_scan_float_const(lex, tok, integer);
+            lexer_scan_float_const(lex, tok, integer, false);
             return;
         }
     }
@@ -485,11 +492,21 @@ static bool lex_twochar(Lexer *lex, Token *tok, char ch, TokenType one, TokenTyp
 //
 static bool lexer_scan_multichar_op(Lexer *lex, Token *tok)
 {
-    if (lex_twochar(lex, tok, '-', TOK_MINUS, TOK_DECREMENT)) {
+    if (lex_twochar(lex, tok, '+', TOK_PLUS, TOK_INCREMENT)) {
         return true;
     }
 
-    if (lex_twochar(lex, tok, '+', TOK_PLUS, TOK_INCREMENT)) {
+    if (lex->ch == '-') {
+        lexer_next_char(lex);
+        if (lex->ch == '>') {
+            lexer_next_char(lex);
+            tok->type = TOK_ARROW;
+        } else if (lex->ch == '-') {
+            lexer_next_char(lex);
+            tok->type = TOK_DECREMENT;
+        } else {
+            tok->type = TOK_MINUS;
+        }
         return true;
     }
 
@@ -776,7 +793,12 @@ void lexer_token(Lexer *lex, Token *tok)
     }
 
     if (lex->ch == '.') {
-        lexer_scan_float_const(lex, tok, stb_alloc());
+        lexer_next_char(lex);
+        if (isdigit(lex->ch)) {
+            lexer_scan_float_const(lex, tok, stb_alloc(), true);
+        } else {
+            tok->type = TOK_DOT;
+        }
         return;
     }
 

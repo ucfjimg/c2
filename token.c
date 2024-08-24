@@ -150,6 +150,7 @@ char *token_type_describe(TokenType tt)
         case TOK_NOTEQUAL:          return saprintf("!=");
         case TOK_LESSEQUAL:         return saprintf("<=");
         case TOK_GREATEREQUAL:      return saprintf(">=");
+        case TOK_ARROW:             return saprintf("->");
 
         case TOK_COMPOUND_ADD:      return saprintf("+=");
         case TOK_COMPOUND_SUBTRACT: return saprintf("-=");
@@ -184,6 +185,7 @@ char *token_type_describe(TokenType tt)
         case TOK_DOUBLE:            return saprintf("double");
         case TOK_CHAR:              return saprintf("char");
         case TOK_SIZEOF:            return saprintf("sizeof");
+        case TOK_STRUCT:            return saprintf("struct");
 
         //
         // All of these are handled by the single-character case.
@@ -212,6 +214,7 @@ char *token_type_describe(TokenType tt)
         case TOK_QUESTION:
         case TOK_COLON:
         case TOK_COMMA:
+        case TOK_DOT:
             break;
 
     }

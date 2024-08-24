@@ -34,6 +34,7 @@ typedef enum {
     TOK_QUESTION = '?',
     TOK_COLON = ':',
     TOK_COMMA = ',',
+    TOK_DOT = '.',
 
     TOK_FENCE = 256,        // keep rest of tokens from overlapping ASCII
 
@@ -64,6 +65,7 @@ typedef enum {
     TOK_NOTEQUAL,           // !=
     TOK_LESSEQUAL,          // <=
     TOK_GREATEREQUAL,       // >=
+    TOK_ARROW,              // ->
 
     //
     // compound assignment
@@ -104,6 +106,7 @@ typedef enum {
     TOK_DOUBLE,
     TOK_CHAR,
     TOK_SIZEOF,
+    TOK_STRUCT,
 } TokenType;
 
 typedef struct {
