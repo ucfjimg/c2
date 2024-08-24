@@ -681,17 +681,18 @@ static void codegen_return(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_RETURN);
 
-    AsmOperand *retval = codegen_expression(state, tac->ret.val);
+    if (tac->ret.val) {
+        AsmOperand *retval = codegen_expression(state, tac->ret.val);
+        AsmType *rettype = codegen_tac_to_asmtype(state, tac->ret.val);
 
-    AsmType *rettype = codegen_tac_to_asmtype(state, tac->ret.val);
-
-    if (rettype->tag == AT_DOUBLE)
-    {
-        codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_XMM0), rettype, tac->loc));
-    }
-    else
-    {
-        codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), rettype, tac->loc));
+        if (rettype->tag == AT_DOUBLE)
+        {
+            codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_XMM0), rettype, tac->loc));
+        }
+        else
+        {
+            codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), rettype, tac->loc));
+        }
     }
     codegen_push_instr(state, asm_ret(tac->loc));
 }
@@ -916,16 +917,21 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     //
     // Return value, if any, goes in RAX or XMM0.
     //
-    AsmOperand *result = codegen_expression(state, call->dst);
-    AsmType *restype = codegen_tac_to_asmtype(state, call->dst);
+    Symbol *sym = stab_lookup(state->stab, call->name);
+    ICE_ASSERT(sym->tag == ST_FUNCTION);
 
-    if (restype->tag == AT_DOUBLE)
-    {
-        codegen_push_instr(state, asm_mov(aoper_reg(REG_XMM0), result, restype, tac->loc));
-    }
-    else
-    {
-        codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, restype, tac->loc));
+    if (sym->type->func.ret->tag != TT_VOID) {
+        AsmOperand *result = codegen_expression(state, call->dst);
+        AsmType *restype = codegen_tac_to_asmtype(state, call->dst);
+
+        if (restype->tag == AT_DOUBLE)
+        {
+            codegen_push_instr(state, asm_mov(aoper_reg(REG_XMM0), result, restype, tac->loc));
+        }
+        else
+        {
+            codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, restype, tac->loc));
+        }
     }
 }
 
@@ -1574,6 +1580,15 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
     for (HashNode *curr = hashtab_first(stab->hashtab, &iter); curr; curr = hashtab_next(&iter))
     {
         Symbol *sym = CONTAINER_OF(curr, Symbol, hash);
+        //
+        // We get temporaries of type void due to function calls with a return type of void.
+        // These temporaries are never actually used and should not make it into the
+        // back end symbol table.
+        //
+        if (sym->type->tag == TT_VOID) {
+            continue;
+        }
+
         BackEndSymbol *bsym = bstab_lookup(bstab, curr->key);
 
         switch (sym->tag)
@@ -1585,7 +1600,7 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
             codegen_static_sym_to_backsym(sym, bsym);
             break;
         case ST_LOCAL_VAR:
-            codegen_local_sym_to_backsym(sym, bsym);
+            codegen_local_sym_to_backsym(sym, bsym);            
             break;
         case ST_CONSTANT:
             codegen_static_const_to_backsym(sym, bsym);

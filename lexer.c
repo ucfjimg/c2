@@ -612,6 +612,8 @@ static void lexer_scan_char_const(Lexer *lex, Token *tok)
 
     tok->type = TOK_INT_CONST;
     tok->int_const.is_char = true;
+    tok->int_const.is_long = false;
+    tok->int_const.is_unsigned = false;
     tok->int_const.intval = ch;
 }
 
