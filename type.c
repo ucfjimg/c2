@@ -132,6 +132,17 @@ Type *type_function(Type *ret, List parms)
 }
 
 //
+// Constructor for a type struct.
+//
+Type *type_struct(char *tag)
+{
+    Type *type = type_alloc(TT_STRUCT);
+    type->strct.tag = safe_strdup(tag);
+    return type;
+}
+
+
+//
 // Constructor for a pointer.
 //
 Type *type_pointer(Type *ref)
@@ -196,6 +207,14 @@ static Type *type_clone_array(TypeArray *array)
 }
 
 //
+// Clone a struct type.
+//
+static Type *type_clone_struct(TypeStruct *strct)
+{
+    return type_struct(strct->tag);
+}
+
+//
 // Clone a type.
 //
 Type *type_clone(Type *type)
@@ -213,6 +232,7 @@ Type *type_clone(Type *type)
         case TT_FUNC:   return type_clone_func(&type->func);
         case TT_POINTER:return type_clone_pointer(&type->ptr);
         case TT_ARRAY:  return type_clone_array(&type->array);
+        case TT_STRUCT: return type_clone_struct(&type->strct);
     }
 
     ICE_ASSERT(((void)"invalid type tag in type_clone", false));
@@ -284,6 +304,7 @@ bool types_equal(Type *left, Type *right)
         case TT_FUNC:   return types_func_equal(&left->func, &right->func);
         case TT_POINTER:return types_equal(left->ptr.ref, right->ptr.ref);
         case TT_ARRAY:  return types_array_equal(&left->array, &right->array);
+        case TT_STRUCT: return strcmp(left->strct.tag, right->strct.tag) == 0;
     }
 
     ICE_ASSERT(((void)"invalid type tag in types_equal", false));
@@ -321,7 +342,8 @@ bool type_unsigned(Type *type)
         case TT_VOID:
         case TT_FUNC:   
         case TT_POINTER:
-        case TT_ARRAY:  return false;
+        case TT_ARRAY:  
+        case TT_STRUCT: return false;
     }
 
     return false;
@@ -344,7 +366,8 @@ bool type_arithmetic(Type *type)
         case TT_FUNC:   
         case TT_POINTER:
         case TT_VOID:
-        case TT_ARRAY:  return false;
+        case TT_ARRAY:  
+        case TT_STRUCT: return false;
     }
 
     return false;
@@ -367,7 +390,8 @@ bool type_integral(Type *type)
         case TT_VOID:
         case TT_FUNC:   
         case TT_POINTER:
-        case TT_ARRAY:  return false;
+        case TT_ARRAY:  
+        case TT_STRUCT: return false;
     }
 
     return false;
@@ -399,7 +423,8 @@ bool type_scalar(Type *type)
 
         case TT_VOID:
         case TT_FUNC:   
-        case TT_ARRAY:  return false;
+        case TT_ARRAY:  
+        case TT_STRUCT: return false;
     }
 
     return false;
@@ -464,6 +489,8 @@ size_t type_size(Type *type)
 
         case TT_ARRAY:      return type->array.size * type_size(type->array.element);
 
+        case TT_STRUCT:     ICE_NYI("type_size::struct");
+
         case TT_FUNC:       ICE_ASSERT(((void)"type_size asked for size of function", false));
         case TT_VOID:       ICE_ASSERT(((void)"type_size asked for size of void", false));
     }
@@ -489,7 +516,8 @@ int type_rank(Type *type)
         case TT_UCHAR:  return 1;
         case TT_FUNC:
         case TT_VOID:   
-        case TT_ARRAY:  ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
+        case TT_ARRAY:  
+        case TT_STRUCT: ICE_ASSERT(((void)"non-base type is invalid in type_rank", false));
     }
 
     return 0;
@@ -521,6 +549,14 @@ static void type_free_array(TypeArray *array)
 }
 
 //
+// Free a struct type.
+//
+static void type_free_struct(TypeStruct *strct)
+{
+    safe_free(strct->tag);
+}
+
+//
 // Free a type.
 //
 void type_free(Type *type)
@@ -538,7 +574,8 @@ void type_free(Type *type)
             case TT_VOID:       break;
             case TT_FUNC:       type_free_function(&type->func); break;
             case TT_POINTER:    break;
-            case TT_ARRAY:      type_free_array(&type->array); break;       
+            case TT_ARRAY:      type_free_array(&type->array); break;  
+            case TT_STRUCT:     type_free_struct(&type->strct); break;     
         }
 
         safe_free(type);
@@ -606,6 +643,14 @@ static char *type_describe_array(TypeArray *array)
 }
 
 //
+// Return an allocated string describing a struct type.
+//
+static char *type_describe_struct(TypeStruct *strct)
+{
+    return saprintf("struct %s", strct->tag);
+}
+
+//
 // Return an allocated string describing a type.
 //
 char *type_describe(Type *type)
@@ -623,6 +668,7 @@ char *type_describe(Type *type)
         case TT_FUNC:   return type_describe_func(&type->func); break;
         case TT_POINTER:return type_describe_ptr(&type->ptr); break;
         case TT_ARRAY:  return type_describe_array(&type->array); break;
+        case TT_STRUCT: return type_describe_struct(&type->strct); break;
     }
 
     return saprintf("<invalid-type>");

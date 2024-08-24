@@ -130,15 +130,18 @@ static bool validate_type_specifier(TypeCheckState *state, Type *type, FileLine 
             }
             return true;
 
-            case TT_CHAR:
-            case TT_SCHAR:
-            case TT_UCHAR:
-            case TT_INT:
-            case TT_LONG:
-            case TT_UINT:
-            case TT_ULONG:
-            case TT_DOUBLE:
-            case TT_VOID:           return true;
+        case TT_STRUCT:
+            ICE_NYI("validate_type_specifier::struct");
+
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:
+        case TT_INT:
+        case TT_LONG:
+        case TT_UINT:
+        case TT_ULONG:
+        case TT_DOUBLE:
+        case TT_VOID:           return true;
     }
 
     return false;
@@ -983,6 +986,8 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_ADDROF:        return ast_check_addrof(state, exp);
         case EXP_SUBSCRIPT:     return ast_check_subscript(state, exp);
         case EXP_SIZEOF:        return ast_check_sizeof(state, exp);
+        case EXP_DOT:           ICE_NYI("ast_check_expression::dot");
+        case EXP_ARROW:         ICE_NYI("ast_check_expression::arrow");
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -1690,6 +1695,7 @@ static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine l
         case TT_UCHAR:      return make_zero_init_scalar(type, exp_uchar(state->ast, 0, loc));
 
         case TT_ARRAY:      return make_zero_init_array(state, type, loc);
+        case TT_STRUCT:     ICE_NYI("make_zero_init::struct");
         case TT_INT:        return make_zero_init_scalar(type, exp_int(state->ast, 0, loc));
         case TT_UINT:       return make_zero_init_scalar(type, exp_uint(state->ast, 0, loc));
         case TT_LONG:       return make_zero_init_scalar(type, exp_long(state->ast, 0, loc));
@@ -1845,6 +1851,7 @@ static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool
     switch (decl->tag) {
         case DECL_FUNCTION: ast_check_func_decl(state, decl); break;
         case DECL_VARIABLE: ast_check_var_decl(state, decl, filescope); break;
+        case DECL_STRUCT:   ICE_NYI("ast_check_declaration::struct"); break;
     }
 }
 

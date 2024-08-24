@@ -220,6 +220,7 @@ void ast_label_loops(AstProgram *prog)
         switch (decl->tag) {
             case DECL_FUNCTION: ast_label_function(&decl->func); break;
             case DECL_VARIABLE: break;
+            case DECL_STRUCT:   break;
         }
     }
 }

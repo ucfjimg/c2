@@ -270,6 +270,7 @@ void ast_validate_goto(AstProgram *prog)
         switch (decl->tag) {
             case DECL_FUNCTION: ast_goto_function(&decl->func); break;
             case DECL_VARIABLE: break;
+            case DECL_STRUCT:   break;
         }
     }
 }

@@ -262,6 +262,33 @@ Expression *exp_sizeof_exp(AstState *state, Expression *exp, FileLine loc)
 }
 
 //
+// Construct a dot (structure dereference) operator.
+// 
+Expression *exp_dot(AstState *state, Expression *exp, char *membname, FileLine loc)
+{
+    Expression *dot = exp_pool_alloc(state, EXP_DOT, loc);
+
+    dot->dot.exp = exp;
+    dot->dot.membname = safe_strdup(membname);
+
+    return dot;
+}
+
+//
+// Construct an attow (structure pointer dereference) operator.
+// 
+Expression *exp_arrow(AstState *state, Expression *exp, char *membname, FileLine loc)
+{
+    Expression *arrow = exp_pool_alloc(state, EXP_ARROW, loc);
+
+    arrow->arrow.exp = exp;
+    arrow->arrow.membname = safe_strdup(membname);
+
+    return arrow;
+}
+
+
+//
 // Set the type annotation of an expression node, replacing any previous type.
 //
 void exp_set_type(Expression *exp, Type *type)
@@ -297,7 +324,9 @@ bool exp_is_constant(Expression *exp)
         case EXP_DEREF:
         case EXP_ADDROF:
         case EXP_SUBSCRIPT:
-        case EXP_SIZEOF:            return false;
+        case EXP_SIZEOF:            
+        case EXP_DOT:
+        case EXP_ARROW:             return false;
     }
 
     ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
@@ -329,7 +358,9 @@ bool exp_is_int_constant(Expression *exp)
         case EXP_DEREF:
         case EXP_ADDROF:
         case EXP_SUBSCRIPT:         
-        case EXP_SIZEOF:            return false;
+        case EXP_SIZEOF:            
+        case EXP_DOT:
+        case EXP_ARROW:             return false;
     }
 
     ICE_ASSERT(((void)"invalid expression tag in exp_is_constant", false));
@@ -442,6 +473,23 @@ Declaration *decl_function(AstState *state, char *name, Type *type, StorageClass
 
     return decl;
 }
+
+//
+// Constructor for a struct declaration.
+//
+Declaration *decl_struct(AstState *state, char *tag, List memb, FileLine loc)
+{ 
+    Declaration *decl = mp_alloc(state->decl_pool);
+
+    decl->tag = DECL_STRUCT;
+    decl->loc = loc;
+
+    decl->strct.tag = safe_strdup(tag);
+    decl->strct.memb = memb;
+
+    return decl;
+}
+
 
 //
 // Allocator for all statement objects.
@@ -939,6 +987,26 @@ static void print_exp_sizeof(ExpSizeof *szof, int tab, bool locs)
 }
 
 //
+// Print a dot operator.
+//
+static void print_exp_dot(ExpDot *dot, int tab, bool locs)
+{
+    printf("dot {");
+    exp_print_recurse(dot->exp, tab + 2, locs);
+    printf("%*s} . %s\n", tab, "", dot->membname);
+}
+
+//
+// Print an arrow operator.
+//
+static void print_exp_arrow(ExpArrow *arrow, int tab, bool locs)
+{
+    printf("arrow {");
+    exp_print_recurse(arrow->exp, tab + 2, locs);
+    printf("%*s} -> %s\n", tab, "", arrow->membname);
+}
+
+//
 // Recusively print an expression, starting at indent `tab`
 //
 static void exp_print_recurse(Expression *exp, int tab, bool locs)
@@ -976,6 +1044,8 @@ static void exp_print_recurse(Expression *exp, int tab, bool locs)
         case EXP_ADDROF:        print_exp_addrof(&exp->addrof, tab, locs); break;
         case EXP_SUBSCRIPT:     print_exp_subscript(&exp->subscript, tab, locs); break;
         case EXP_SIZEOF:        print_exp_sizeof(&exp->sizeof_, tab, locs); break;
+        case EXP_DOT:           print_exp_dot(&exp->dot, tab, locs); break;
+        case EXP_ARROW:         print_exp_arrow(&exp->arrow, tab, locs); break;
     }
 }
 
@@ -1090,6 +1160,22 @@ static void decl_print_function(DeclFunction *func, int tab, bool locs)
 }
 
 //
+// Print a structure declaration.
+//
+static void decl_print_struct(DeclStruct *strct, int tab, bool locs)
+{
+    printf("%*sdeclare-struct %s {", tab, "", strct->tag);
+        for (ListNode *curr = strct->memb.head; curr; curr = curr->next) {
+            DeclStructMember *memb = CONTAINER_OF(curr, DeclStructMember, list);
+            char *desc = type_describe(memb->type);
+            printf("%*s%s %s;\n", tab + 2, "", desc, memb->membname);
+            safe_free(desc);
+        }
+
+    printf("%*s{", tab, "");
+}
+
+//
 // Print a declaration.
 //
 static void decl_print_declaration(Declaration *decl, int tab, bool locs)
@@ -1097,6 +1183,7 @@ static void decl_print_declaration(Declaration *decl, int tab, bool locs)
     switch (decl->tag) {
         case DECL_FUNCTION: decl_print_function(&decl->func, tab, locs); break;
         case DECL_VARIABLE: decl_print_variable(&decl->var, tab, locs); break;
+        case DECL_STRUCT:   decl_print_struct(&decl->strct, tab, locs); break;
     }
 }
 

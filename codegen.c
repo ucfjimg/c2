@@ -199,6 +199,8 @@ static int codegen_type_align(Type *type)
         return 8;
     case TT_ARRAY:
         return codegen_type_array_align(type);
+    case TT_STRUCT:
+        ICE_NYI("codegen_type_align::struct");
     }
 
     ICE_ASSERT(((void)"invalid type tag in codegen_type_align false", false));
@@ -250,6 +252,8 @@ static AsmType *codegen_type_to_asmtype(Type *type)
         return asmtype_quad();
     case TT_ARRAY:
         return codegen_array_to_asmtype(type);
+    case TT_STRUCT:
+        ICE_NYI("codegen_type_to_asmtype::struct");
     }
 
     ICE_ASSERT(false);

@@ -797,6 +797,8 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
         case EXP_SUBSCRIPT:     return tcg_subscript(state, exp); break;
         case EXP_SIZEOF:        return tcg_sizeof(state, exp); break;
+        case EXP_DOT:           ICE_NYI("tcg_expression::dot");
+        case EXP_ARROW:         ICE_NYI("tcg_expression::arrow");
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -878,6 +880,7 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
     if (init->tag == INIT_COMPOUND) {
         switch (type->tag) {
             case TT_ARRAY:      inner = type->array.element; break;
+            case TT_STRUCT:     ICE_NYI("tcg_nested_init::struct");
 
             case TT_CHAR:
             case TT_UCHAR:

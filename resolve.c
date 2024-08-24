@@ -199,6 +199,7 @@ static void ast_resolve_declaration(ResolveState *state, Declaration *decl)
     switch (decl->tag) {
         case DECL_FUNCTION: ast_resolve_function(state, decl, false); break;
         case DECL_VARIABLE: ast_resolve_var_decl(state, decl); break;
+        case DECL_STRUCT:   ICE_NYI("ast_resolve_declaration::struct");
     }
 }
 
@@ -338,6 +339,8 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
         case EXP_SUBSCRIPT:     ast_resolve_subscript_exp(state, &exp->subscript); break;
         case EXP_SIZEOF:        ast_resolve_sizeof_exp(state, &exp->sizeof_); break;
+        case EXP_DOT:           ICE_NYI("ast_resolve_expression::dot");
+        case EXP_ARROW:         ICE_NYI("ast_resolve_expression::arrow");
 
         case EXP_SCHAR:         break;
         case EXP_UCHAR:         break;
@@ -572,6 +575,7 @@ void ast_resolve(AstProgram *prog)
         switch (decl->tag) {
             case DECL_FUNCTION: ast_resolve_function(&state, decl, true); break;
             case DECL_VARIABLE: ast_resolve_global_var_decl(&state, decl); break;
+            case DECL_STRUCT:   ICE_NYI("ast_resolve::struct");
         }
     } 
 

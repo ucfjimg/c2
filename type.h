@@ -19,6 +19,7 @@ typedef enum {
     TT_FUNC,
     TT_POINTER,
     TT_ARRAY,
+    TT_STRUCT,
 } TypeTag;
 
 typedef struct {
@@ -40,6 +41,10 @@ typedef struct {
     size_t size;                // of this many elements
 } TypeArray;
 
+typedef struct {
+    char *tag;                  // struct tag name
+} TypeStruct;
+
 typedef enum {
     SC_NONE,
     SC_STATIC,
@@ -53,6 +58,7 @@ struct Type {
         TypeFunction    func;   // TT_FUNC
         TypePointer     ptr;    // TT_POINTER
         TypeArray       array;  // TT_ARRAY
+        TypeStruct      strct;  // TT_STRUCT
     };
 };
 
@@ -76,6 +82,8 @@ extern void type_func_param_free(TypeFuncParam *param);
 extern Type *type_pointer(Type *ref);
 extern Type *type_array(Type *element, size_t size);
 extern Type *type_function(Type *ret, List parms);
+extern Type *type_struct(char *tag);
+
 extern Type *type_clone(Type *type);
 extern bool types_equal(Type *left, Type *right);
 extern bool types_same_size(Type *left, Type *right);

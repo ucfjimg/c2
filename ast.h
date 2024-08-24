@@ -42,6 +42,8 @@ typedef enum {
     EXP_ADDROF,
     EXP_SUBSCRIPT,
     EXP_SIZEOF,
+    EXP_DOT,
+    EXP_ARROW,
 } ExpressionTag;
 
 typedef struct {
@@ -113,6 +115,16 @@ typedef struct {
     };
 } ExpSizeof;
 
+typedef struct {
+    Expression *exp;                // structure
+    char *membname;                 // and member name
+} ExpDot;
+
+typedef struct {
+    Expression *exp;                // pointer to structure
+    char *membname;                 // and member name
+} ExpArrow;
+
 struct Expression {
     ExpressionTag tag;
     FileLine loc;       
@@ -137,6 +149,8 @@ struct Expression {
         ExpAddrOf addrof;
         ExpSubscript subscript;
         ExpSizeof sizeof_;
+        ExpDot dot;
+        ExpArrow arrow;
     };
 };
 
@@ -160,6 +174,8 @@ extern Expression *exp_addrof(AstState *state, Expression *exp, FileLine loc);
 extern Expression *exp_subscript(AstState *state, Expression *left, Expression *right, FileLine loc);
 extern Expression *exp_sizeof_type(AstState *state, Type *type, FileLine loc);
 extern Expression *exp_sizeof_exp(AstState *state, Expression *exp, FileLine loc);
+extern Expression *exp_dot(AstState *state, Expression *exp, char *membname, FileLine loc);
+extern Expression *exp_arrow(AstState *state, Expression *exp, char *membname, FileLine loc);
 extern void exp_set_type(Expression *exp, Type *type);
 extern bool exp_is_constant(Expression *exp);
 extern bool exp_is_int_constant(Expression *exp);
@@ -193,7 +209,19 @@ extern Initializer *init_compound(List inits);
 typedef enum {
     DECL_VARIABLE,
     DECL_FUNCTION,
+    DECL_STRUCT,
 } DeclarationTag;
+
+typedef struct {
+    ListNode list;
+    char *membname;             // member name and
+    Type *type;                 // type
+} DeclStructMember;
+
+typedef struct {
+    char *tag;                  // structure tag i.e. `struct tag { ... };`
+    List memb;                  // members, of <DeclStructMember>
+} DeclStruct;
 
 typedef struct {
     char *name;                 // variable name
@@ -227,11 +255,13 @@ struct Declaration {
     union {
         DeclVariable var;       // DECL_VARIABLE
         DeclFunction func;      // DECL_FUNCTION
+        DeclStruct strct;       // DECL_STRUCT
     };
 };
 
 extern Declaration *decl_variable(AstState *state, char *name, Type *type, StorageClass sc, Initializer *init, FileLine loc);
 extern Declaration *decl_function(AstState *state, char *name, Type *type, StorageClass sc, List parms, List body, bool has_body, FileLine loc);
+extern Declaration *decl_struct(AstState *state, char *tag, List memb, FileLine loc);
 
 //
 // statemements

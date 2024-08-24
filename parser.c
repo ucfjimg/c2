@@ -451,12 +451,52 @@ static Expression *parse_subscript(Parser *parser, Expression *array)
     parse_next_token(parser);
 
     return exp_subscript(parser->ast, array, exp, loc);
+}
 
+//
+// Parse a structure dereference.
+//
+// <postfix> :=
+//      <postfix> "." <identifier> |
+//      <postfix> "->" <identifier>
+//
+static Expression *parse_struct_deref(Parser *parser, Expression *strct)
+{
+    ICE_ASSERT(parser->tok.type == '.' || parser->tok.type == TOK_ARROW);
+
+    FileLine loc = parser->tok.loc;
+
+    bool is_dot = parser->tok.type == '.';
+    parse_next_token(parser);
+
+    char *membname;
+    if (parser->tok.type == TOK_ID) {
+        membname = parser->tok.id;
+    } else {
+        report_expected_err(&parser->tok, "`identifier`");
+        membname = "<error>";
+    }
+
+    Expression *exp = 
+        is_dot ?
+            exp_dot(parser->ast, strct, membname, loc) :
+            exp_arrow(parser->ast, strct, membname, loc);
+
+    parse_next_token(parser);
+
+    return exp;
 }
 
 //
 // Parse a postfix operator.
-// <postfix> := <primary> | <postfix> "++" | <postfix> "--" | <postfix> "(" <arg-list> ")" | <postfix> "[" <exp> "]"
+// <postfix> :=
+//      <primary> | 
+//      <postfix> "++" | 
+//      <postfix> "--" | 
+//      <postfix> "(" <arg-list> ")" |
+//      <postfix> "[" <exp> "]" | 
+//      <postfix> "." <identifier> |
+//      <postfix> "->" <identifier>
 //
 static Expression *parse_postfix(Parser *parser)
 {
@@ -476,6 +516,10 @@ static Expression *parse_postfix(Parser *parser)
             
             case '(':           exp = parse_function_call(parser, exp); break;
             case '[':           exp = parse_subscript(parser, exp); break;
+
+            case '.':
+            case TOK_ARROW:     exp = parse_struct_deref(parser, exp); break;
+            
             default: goto done;
         }
     }
@@ -873,6 +917,7 @@ static bool is_type_specifier(Parser *parser)
         tt == TOK_SIGNED ||
         tt == TOK_UNSIGNED ||
         tt == TOK_DOUBLE ||
+        tt == TOK_STRUCT ||
         tt == TOK_EXTERN ||
         tt == TOK_STATIC;
 }
@@ -880,7 +925,7 @@ static bool is_type_specifier(Parser *parser)
 //
 // Parse the type specifiers of a declaration:
 //
-// <specifiers> := { "int" | "long" | "signed" | "unsigned" | "double" |"extern" | "static" }
+// <specifiers> := { "int" | "long" | "signed" | "unsigned" | "double" |"extern" | "static" | "struct" <identifier> }
 //
 static TypeSpecifier *parse_type_specifier(Parser *parser)
 {
@@ -913,6 +958,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
     const int spec_token_count = sizeof(spec_tokens) / sizeof(spec_tokens[0]);
 
     FileLine loc = parser->tok.loc;
+    char *tag = NULL;
 
     //
     // Consume and count all tokens that count as a type specifier.
@@ -920,6 +966,26 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
     bool was_spec_token;
     do {
         was_spec_token = false;  
+
+        if (parser->tok.type == TOK_STRUCT) {
+            was_spec_token = true;
+            parse_next_token(parser);
+
+            if (tag) {
+                err_report(EC_ERROR, &parser->tok.loc, "`struct <tag>` may be given only once.");
+                safe_free(tag);
+            }
+
+            if (parser->tok.type != TOK_ID) {
+                report_expected_err(&parser->tok, "`identifier`");
+                tag = tmp_name("anonstruct");                
+            } else {
+                tag = safe_strdup(parser->tok.id);
+            }
+            parse_next_token(parser);
+            continue;
+        }
+
         for (int i = 0; i < spec_token_count && !was_spec_token; i++) {
             if (parser->tok.type == spec_tokens[i].tt) {
                 spec_tokens[i].count++;
@@ -940,23 +1006,7 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         }
     }
 
-    if (spec_tokens[TOK_EXTERN_INDEX].count && spec_tokens[TOK_STATIC_INDEX].count) {
-        err_report(EC_ERROR, &loc, "`static` and `extern` are mutually exclusive.");
-    }
-
-    if (spec_tokens[TOK_SIGNED_INDEX].count && spec_tokens[TOK_UNSIGNED_INDEX].count) {
-        err_report(EC_ERROR, &loc, "`signed` and `unsigned` are mutually exclusive.");
-    }
-
     bool has_char = spec_tokens[TOK_CHAR_INDEX].count != 0;
-
-    if (has_char) {
-        if (spec_tokens[TOK_INT_INDEX].count) {
-            err_report(EC_ERROR, &loc, "`char` and `int` are mutually exclusive.");
-        } else if (spec_tokens[TOK_LONG_INDEX].count) {
-            err_report(EC_ERROR, &loc, "`char` and `long` are mutually exclusive.");
-        }
-    }
 
     bool has_int =
         spec_tokens[TOK_INT_INDEX].count || 
@@ -966,8 +1016,41 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
 
     bool has_double = spec_tokens[TOK_DOUBLE_INDEX].count;
 
-
     bool has_void = spec_tokens[TOK_VOID_INDEX].count;
+
+    if (spec_tokens[TOK_EXTERN_INDEX].count && spec_tokens[TOK_STATIC_INDEX].count) {
+        err_report(EC_ERROR, &loc, "`static` and `extern` are mutually exclusive.");
+    }
+
+    StorageClass sc = SC_NONE;
+    if (spec_tokens[TOK_STATIC_INDEX].count) {
+        sc = SC_STATIC;
+    } else if (spec_tokens[TOK_EXTERN_INDEX].count) {
+        sc = SC_EXTERN;
+    }
+
+    if (tag != NULL) {
+        if (has_char || has_int || has_double || has_void) {
+            err_report(EC_ERROR, &loc, "`struct` and all other type specifiers are mutually exclusive.");
+        }
+
+        TypeSpecifier *typespec = typespec_alloc(sc, type_struct(tag));
+        safe_free(tag);    
+        return typespec;
+    }
+
+
+    if (spec_tokens[TOK_SIGNED_INDEX].count && spec_tokens[TOK_UNSIGNED_INDEX].count) {
+        err_report(EC_ERROR, &loc, "`signed` and `unsigned` are mutually exclusive.");
+    }
+
+    if (has_char) {
+        if (spec_tokens[TOK_INT_INDEX].count) {
+            err_report(EC_ERROR, &loc, "`char` and `int` are mutually exclusive.");
+        } else if (spec_tokens[TOK_LONG_INDEX].count) {
+            err_report(EC_ERROR, &loc, "`char` and `long` are mutually exclusive.");
+        }
+    }
 
     if (has_void && (has_char || has_int || has_double)) {
         err_report(EC_ERROR, &loc, "`void` may not appear with any other base type.");        
@@ -981,12 +1064,6 @@ static TypeSpecifier *parse_type_specifier(Parser *parser)
         err_report(EC_ERROR, &loc, "`double` may not be combined with integral type specifiers.");
     }
 
-    StorageClass sc = SC_NONE;
-    if (spec_tokens[TOK_STATIC_INDEX].count) {
-        sc = SC_STATIC;
-    } else if (spec_tokens[TOK_EXTERN_INDEX].count) {
-        sc = SC_EXTERN;
-    }
 
     if (has_void) {
         return typespec_alloc(sc, type_void());
@@ -1517,8 +1594,89 @@ static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base)
 }
 
 //
+// Parse a structure declaration.
+//
+// <declaration> := 
+//    "struct" <identifier> [ { <type> <identifier> ";" }+ ] ";"
+//
+// "struct" <identifier> has already been parsed.
+//
+static Declaration *parse_struct(Parser *parser, char *tag)
+{
+    FileLine loc = parser->tok.loc;
+
+    List membs;
+    list_clear(&membs);
+
+    if (parser->tok.type == ';') {
+        //
+        // just a declaration, not a definition.
+        //
+        parse_next_token(parser);
+        Declaration *decl = decl_struct(parser->ast, tag, membs, loc);
+        return decl;
+    }
+
+    if (parser->tok.type != '{') {
+        report_expected_err(&parser->tok, "`{`");
+    }        
+    parse_next_token(parser);
+
+
+    while (true) {
+        //
+        // There must be at least one member.
+        //
+        FileLine loc = parser->tok.loc;
+        TypeSpecifier *typespec = parse_type_specifier(parser);
+        Declarator *declarator = parse_declarator(parser);
+        ProcessedDeclarator *pdecl = process_declarator(declarator, typespec->type);
+
+        declarator_free(declarator);
+
+        if (typespec->sc != SC_NONE) {
+            err_report(EC_ERROR, &loc, "storage class may not be specified on struct members.");
+        }
+
+        if (pdecl->type->tag == TT_FUNC) {
+            err_report(EC_ERROR, &loc, "functions may not be struct members.");
+        }
+
+        DeclStructMember *memb = safe_zalloc(sizeof(DeclStructMember));
+        memb->membname = safe_strdup(pdecl->name);
+        memb->type = type_clone(pdecl->type);
+
+        processed_declarator_free(pdecl);
+
+        list_push_back(&membs, &memb->list);
+
+        if (parser->tok.type != ';') {
+            report_expected_err(&parser->tok, "`;`");
+        }
+        parse_next_token(parser);
+
+        if (parser->tok.type == '}' || parser->tok.type == TOK_EOF) {
+            break;
+        }
+    }
+
+    if (parser->tok.type != '}') {
+        report_expected_err(&parser->tok, "`}`");
+    }
+    parse_next_token(parser);
+
+    if (parser->tok.type != ';') {
+        report_expected_err(&parser->tok, "`;`");
+    }
+    parse_next_token(parser);
+
+    return decl_struct(parser->ast, tag, membs, loc);
+}
+
+//
 // Parse a declaration.
 // <declaration> := 
+//    "struct" <identifier> [ { <type> <identifier> ";" }+ ] ";" |
 //    { <specifier> }+ <declarator> [ "=" <exp> ] ";"  |
 //    { <specifier> }+ <declarator> ( <block> | ";" )
 //
@@ -1527,14 +1685,31 @@ static ProcessedDeclarator *process_declarator(Declarator *decl, Type *base)
 static Declaration *parse_declaration(Parser *parser)
 {
     FileLine loc = parser->tok.loc;
+
     TypeSpecifier *typespec = parse_type_specifier(parser);
+
+    //
+    // This could either be a struct declaration or a struct type starting another declaration.
+    //
+    if (typespec->type->tag == TT_STRUCT && (parser->tok.type == ';' || parser->tok.type == '{')) {
+        if (typespec->sc != SC_NONE) {
+            err_report(EC_ERROR, &loc, "storage class may not be specified with struct declaration.");
+        }
+
+        Declaration *decl = parse_struct(parser, typespec->type->strct.tag);
+
+        typespec_free(typespec);
+        return decl;
+    }
+
+
     Declarator *declarator = parse_declarator(parser);
     ProcessedDeclarator *pdecl = process_declarator(declarator, typespec->type);
 
     declarator_free(declarator);
     
     Declaration *decl = NULL;
-    
+
     if (pdecl->type->tag == TT_FUNC) {
         decl = parse_function_body(parser, pdecl->name, type_clone(pdecl->type), typespec->sc, pdecl->params, loc);
         list_clear(&pdecl->params);

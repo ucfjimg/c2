@@ -216,6 +216,7 @@ void ast_validate_switch(AstProgram *prog)
         switch (decl->tag) {
             case DECL_FUNCTION: ast_switch_function(&decl->func); break;
             case DECL_VARIABLE: break;
+            case DECL_STRUCT:   break;
         }
     }
 }
