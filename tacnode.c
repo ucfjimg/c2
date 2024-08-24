@@ -843,7 +843,9 @@ static void tac_print_static_const(TacStaticConst *con, int tab)
 static void tac_print_return(TacReturn *ret, int tab, bool locs)
 {
     printf("%*sreturn() {\n", tab, "");
-    tac_print_recurse(ret->val, tab + 2, locs);
+    if (ret->val) {
+       tac_print_recurse(ret->val, tab + 2, locs);
+    }
     printf("%*s}\n", tab, "");
 }
 
@@ -956,7 +958,9 @@ static void tac_print_function_call(TacFunctionCall *call, int tab, bool locs)
     }
 
     printf("%*s} -> {\n", tab, "");
-    tac_print_recurse(call->dst, tab + 2, locs);
+    if (call->dst) {
+        tac_print_recurse(call->dst, tab + 2, locs);
+    }
     printf("%*s}\n", tab, "");
 }
 

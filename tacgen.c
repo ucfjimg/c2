@@ -433,18 +433,30 @@ static TacExpResult tcg_conditional(TacState *state, Expression *condexp)
     ICE_ASSERT(condexp->tag == EXP_CONDITIONAL);
     ExpConditional *cond = &condexp->conditional;
 
+    bool isvoid = condexp->type->tag == TT_VOID;
+
     TacNode *falsepart = tcg_make_label(cond->falseval->loc);
     TacNode *end = tcg_make_label(cond->falseval->loc);
-    TacNode *result = tcg_temporary(state, type_clone(condexp->type), cond->cond->loc);
+    TacNode *result = 
+        isvoid ? tac_var("dummy", cond->cond->loc) :
+        tcg_temporary(state, type_clone(condexp->type), cond->cond->loc);
 
     TacNode *condval = tcg_expression_and_convert(state, cond->cond);
     tcg_append(state, tac_jump_zero(condval, falsepart->label.name, cond->cond->loc));
     TacNode *trueval = tcg_expression_and_convert(state, cond->trueval);
-    tcg_append(state, tac_copy(trueval, tac_clone_operand(result), cond->trueval->loc));
+    if (!isvoid) {
+        tcg_append(state, tac_copy(trueval, tac_clone_operand(result), cond->trueval->loc));
+    } else {
+        tac_free(trueval);
+    }
     tcg_append(state, tac_jump(end->label.name, cond->trueval->loc));
     tcg_append(state, tac_label(falsepart->label.name, cond->falseval->loc));
     TacNode *falseval = tcg_expression_and_convert(state, cond->falseval);
-    tcg_append(state, tac_copy(falseval, tac_clone_operand(result), cond->falseval->loc));
+    if (!isvoid) {
+       tcg_append(state, tac_copy(falseval, tac_clone_operand(result), cond->falseval->loc));
+    } else {
+        tac_free(falseval);
+    }
     tcg_append(state, tac_label(end->label.name, cond->falseval->loc));
 
     return expres_plain(result);
@@ -611,6 +623,11 @@ static TacExpResult tcg_cast(TacState *state, Expression *exp)
     ExpCast *cast = &exp->cast;
 
     TacNode *inner = tcg_expression_and_convert(state, cast->exp);
+
+    if (cast->type->tag == TT_VOID) {
+        return expres_plain(tac_var("dummy", exp->loc));
+    }
+
     if (types_equal(cast->exp->type, cast->type)) {
         return expres_plain(inner);
     }
@@ -730,6 +747,32 @@ static TacExpResult tcg_const_string(TacState *state, Expression *exp)
 }
 
 //
+// Generate TAC for sizeof operators.
+//
+static TacExpResult tcg_sizeof(TacState *state, Expression *exp)
+{
+    ExpSizeof *szof = &exp->sizeof_;
+
+    size_t size = 0;
+
+    switch (szof->tag) {
+        case SIZEOF_EXP:
+            size = type_size(szof->exp->type);
+            break;
+
+        case SIZEOF_TYPE:
+            size = type_size(szof->type);
+            break;
+    }
+
+    //
+    // $TARGET assuming size_t is unsigned long
+    //
+    return expres_plain(tac_const(const_make_int(CIS_LONG, CIS_UNSIGNED, size), exp->loc));
+
+}
+
+//
 // Generate TAC for an expression.
 //
 static TacExpResult tcg_expression(TacState *state, Expression *exp)
@@ -753,7 +796,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_DEREF:         return tcg_deref(state, exp); break;
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
         case EXP_SUBSCRIPT:     return tcg_subscript(state, exp); break;
-        case EXP_SIZEOF:        ICE_NYI("tcg_expression::sizeof");
+        case EXP_SIZEOF:        return tcg_sizeof(state, exp); break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
