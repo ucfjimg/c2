@@ -1,6 +1,7 @@
 #include "typecheck.h"
 
 #include "ast.h"
+#include "bitmath.h"
 #include "errors.h"
 #include "ice.h"
 #include "safemem.h"
@@ -9,8 +10,11 @@
 #include "temporary.h"
 #include "type.h"
 
+#include <string.h>
+
 typedef struct {
     SymbolTable *stab;
+    TypeTable *typetab;
     Type *func_type;
     AstState *ast;
 } TypeCheckState;
@@ -18,6 +22,7 @@ typedef struct {
 static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool filescope);
 static void ast_check_statement(TypeCheckState *state, Statement *stmt);
 static void ast_check_block(TypeCheckState *state, List block);
+static void ast_check_var_init(TypeCheckState *state, Type *target, Initializer *init, FileLine loc);
 static Expression* ast_check_expression(TypeCheckState *state, Expression *exp);
 static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc);
 
@@ -43,6 +48,42 @@ static Type *types_common(Type *left, Type *right)
     int rrank = type_rank(right);
 
     return type_clone(lrank > rrank ? left : right);
+}
+
+//
+// Return the alignment of a type.
+//
+int typecheck_alignment(Type *type, TypeTable *typetab)
+{
+    TypetabEnt *ent;
+
+    switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:  return 1;
+
+        case TT_INT:
+        case TT_UINT:   return TARGET_INT_SIZE;
+
+        case TT_LONG:
+        case TT_ULONG:  return TARGET_LONG_SIZE;
+
+        case TT_DOUBLE: return TARGET_DOUBLE_SIZE;
+
+        case TT_VOID:   ICE_ASSERT(((void)"typecheck_aligmnent on void type", false));
+        case TT_FUNC:   ICE_ASSERT(((void)"typecheck_aligmnent on function type", false));
+
+        case TT_POINTER:return TARGET_POINTER_SIZE;
+
+        case TT_ARRAY:  return typecheck_alignment(type->array.element, typetab);
+
+        case TT_STRUCT:
+            ent = typetab_lookup(typetab, type->strct.tag);
+            return ent->struct_.align;
+    }
+
+    ICE_ASSERT(((void)"invalid tag in typecheck_alignment", false));
+    return 1;
 }
 
 //
@@ -80,7 +121,12 @@ static Expression *convert_to(TypeCheckState *state, Expression *exp, Type *type
 //
 static bool exp_is_lvalue(Expression *exp)
 {
+    if (exp->tag == EXP_DOT) {
+        return exp_is_lvalue(exp->dot.exp);
+    }
+
     return
+        exp->tag == EXP_ARROW ||
         exp->tag == EXP_VAR ||
         exp->tag == EXP_DEREF || 
         exp->tag == EXP_SUBSCRIPT ||
@@ -105,9 +151,11 @@ static bool exp_is_null_pointer(Expression *exp)
 //
 static bool validate_type_specifier(TypeCheckState *state, Type *type, FileLine loc)
 {
+    TypetabEnt *ent;
+
     switch (type->tag) {
         case TT_ARRAY:
-            if (!type_complete(type->array.element)) {
+            if (!type_complete(state->typetab, type->array.element)) {
                 err_report(EC_ERROR, &loc, "array element type must be complete.");
                 return false;
             }
@@ -131,7 +179,14 @@ static bool validate_type_specifier(TypeCheckState *state, Type *type, FileLine 
             return true;
 
         case TT_STRUCT:
-            ICE_NYI("validate_type_specifier::struct");
+            ent = typetab_lookup(state->typetab, type->strct.tag);
+            for (ListNode *curr = ent->struct_.members.head; curr; curr = curr->next) {
+                TypetabStructMember *tsm = CONTAINER_OF(curr, TypetabStructMember, list);
+                if (!type_complete(state->typetab, tsm->type)) {
+                    err_report(EC_ERROR, &loc, "the types of all members of struct `%s` must be complete.", type->strct.tag);
+                }
+            }
+            return true;
 
         case TT_CHAR:
         case TT_SCHAR:
@@ -218,6 +273,13 @@ static Expression *typecheck_and_convert(TypeCheckState *state, Expression *exp)
         Expression *addrof = exp_addrof(state->ast, exp, exp->loc);
         exp_set_type(addrof, type_pointer(type_clone(typed_exp->type->array.element)));
         return addrof;
+    }
+
+    if (typed_exp->type->tag == TT_STRUCT) {
+        TypetabEnt *ent = typetab_lookup(state->typetab, typed_exp->type->strct.tag);
+        if (!ent->struct_.members.head) {
+            err_report(EC_ERROR, &exp->loc, "structure type must be complete.");
+        }
     }
 
     return typed_exp;
@@ -327,12 +389,16 @@ static Expression *ast_check_unary(TypeCheckState *state, Expression *exp)
 
     exp_replace(&unary->exp, typecheck_and_convert(state, unary->exp));
 
-    if (!type_complete(unary->exp->type)) {
+    if (!type_complete(state->typetab, unary->exp->type)) {
         err_report(EC_ERROR, &exp->loc, "operand must be a complete type.");
         exp_set_type(exp, type_int());
         return exp;
-    } 
-    
+    } else if (unary->exp->type->tag == TT_STRUCT) {
+        err_report(EC_ERROR, &exp->loc, "`%s` may not be applied to a struct.", uop_describe(unary->op));
+        exp_set_type(exp, type_int());
+        return exp;
+    }
+
     if (
         unary->op == UOP_COMPLEMENT && (unary->exp->type->tag == TT_DOUBLE || unary->exp->type->tag == TT_POINTER)) {
         err_report(EC_ERROR, &exp->loc, "can only apply `~` to integers.");
@@ -513,13 +579,13 @@ static Expression *ast_check_add_pointers(TypeCheckState *state, Expression *exp
     //
     // The caller has verified that at least one operand is a pointer.
     //
-    if (type_ptr_to_complete(binary->left->type) && type_integral(binary->right->type)) {
+    if (type_ptr_to_complete(state->typetab, binary->left->type) && type_integral(binary->right->type)) {
         //
         // pointer + integer
         //
         exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
         exp_set_type(exp, type_clone(binary->left->type));
-    } else if (type_integral(binary->left->type) && type_ptr_to_complete(binary->right->type)) {
+    } else if (type_integral(binary->left->type) && type_ptr_to_complete(state->typetab, binary->right->type)) {
         //
         // integer + pointer
         //
@@ -545,13 +611,13 @@ static Expression *ast_check_sub_pointers(TypeCheckState *state, Expression *exp
     //
     // The caller has verified that at least one operand is a pointer.
     //
-    if (type_ptr_to_complete(binary->left->type) && type_integral(binary->right->type)) {
+    if (type_ptr_to_complete(state->typetab, binary->left->type) && type_integral(binary->right->type)) {
         //
         // pointer - integer
         //
         exp_replace(&binary->right, convert_to(state, binary->right, type_long()));
         exp_set_type(exp, type_clone(binary->left->type));
-    } else if (type_ptr_to_complete(binary->left->type) && type_ptr_to_complete(binary->right->type)) {
+    } else if (type_ptr_to_complete(state->typetab, binary->left->type) && type_ptr_to_complete(state->typetab, binary->right->type)) {
         if (!types_equal(binary->left->type, binary->right->type)) {
             err_report(EC_ERROR, &exp->loc, "cannot subtract pointers of different types.");
         }
@@ -726,8 +792,18 @@ static Expression *ast_check_conditional(TypeCheckState *state, Expression *exp)
     }
 
     Type *common;
-    
-    if (cond->trueval->type->tag == TT_POINTER || cond->falseval->type->tag == TT_POINTER) {
+
+    TypeTag truetag = cond->trueval->type->tag;
+    TypeTag falsetag = cond->falseval->type->tag;
+
+    if (truetag == TT_STRUCT || falsetag == TT_STRUCT) {
+        if (truetag != TT_STRUCT || falsetag != TT_STRUCT || strcmp(cond->trueval->type->strct.tag, cond->falseval->type->strct.tag) != 0) {
+            err_report(EC_ERROR, &exp->loc, "invalid types in conditional arms.");
+            common = type_int();
+        } else {
+            common = type_clone(cond->trueval->type);
+        }
+    } else if (truetag == TT_POINTER || falsetag == TT_POINTER) {
         common = ptr_type_common(cond->trueval, cond->falseval); 
     } else {
         common = types_common(cond->trueval->type, cond->falseval->type);
@@ -757,6 +833,8 @@ static Expression *ast_check_assignment(TypeCheckState *state, Expression *exp)
 
     if (!exp_is_lvalue(assign->left)) {
         err_report(EC_ERROR, &exp->loc, "l-value required for assignment.");
+    } else if (assign->left->type->tag == TT_VOID) {
+        err_report(EC_ERROR, &exp->loc, "cannot assign to expression with type `void`.");
     }
 
     assign->right = convert_by_assignment(state, assign->right, assign->left->type);
@@ -871,12 +949,17 @@ static Expression *ast_check_deref(TypeCheckState *state, Expression *exp)
 
     exp_replace(&deref->exp, typecheck_and_convert(state, deref->exp));
 
-    if (type_ptr_to_complete(deref->exp->type)) {
-        exp_set_type(exp, type_clone(deref->exp->type->ptr.ref));
+    if (deref->exp->type->tag != TT_POINTER) {
+        err_report(EC_ERROR, &exp->loc, "cannot dereference non pointer.");
+    } else if (deref->exp->type->ptr.ref->tag == TT_VOID) {
+        err_report(EC_ERROR, &exp->loc, "cannot dereference void pointer.");
     } else {
-        err_report(EC_ERROR, &exp->loc, "cannot dereference non-pointer.");
-        exp_set_type(exp, type_int());
+        exp_set_type(exp, type_clone(deref->exp->type->ptr.ref));
     }
+
+    if (exp->type == NULL) { 
+        exp_set_type(exp, type_int());
+    } 
 
     return exp;
 }
@@ -912,10 +995,10 @@ static Expression *ast_check_subscript(TypeCheckState *state, Expression *exp)
     exp_replace(&subs->left, typecheck_and_convert(state, subs->left));
     exp_replace(&subs->right, typecheck_and_convert(state, subs->right));
 
-    if (type_ptr_to_complete(subs->left->type) && type_integral(subs->right->type)) {
+    if (type_ptr_to_complete(state->typetab, subs->left->type) && type_integral(subs->right->type)) {
         exp_replace(&subs->right, convert_to(state, subs->right, type_long()));
         exp_set_type(exp, subs->left->type->ptr.ref);        
-    } else if (type_integral(subs->left->type) && type_ptr_to_complete(subs->right->type)) {
+    } else if (type_integral(subs->left->type) && type_ptr_to_complete(state->typetab, subs->right->type)) {
         exp_replace(&subs->left, convert_to(state, subs->left, type_long()));
         exp_set_type(exp, subs->right->type->ptr.ref);        
     } else {
@@ -937,7 +1020,7 @@ static Expression *ast_check_sizeof(TypeCheckState *state, Expression *exp)
     switch (szof->tag) {
         case SIZEOF_EXP:
             exp_replace(&szof->exp, ast_check_expression(state, szof->exp));
-            if (!type_complete(szof->exp->type)) {
+            if (!type_complete(state->typetab, szof->exp->type)) {
                 err_report(EC_ERROR, &exp->loc, "operand of `sizeof` must have complete type.");
             }
             break;
@@ -945,7 +1028,7 @@ static Expression *ast_check_sizeof(TypeCheckState *state, Expression *exp)
 
         case SIZEOF_TYPE:
             if (validate_type_specifier(state, szof->type, exp->loc)) {
-                if (!type_complete(szof->type)) {
+                if (!type_complete(state->typetab, szof->type)) {
                     err_report(EC_ERROR, &exp->loc, "operand of `sizeof` must have complete type.");
                 }
             }         
@@ -957,6 +1040,91 @@ static Expression *ast_check_sizeof(TypeCheckState *state, Expression *exp)
 
     // $TARGET assuming size_t size is ulong
     exp_set_type(exp, type_ulong());
+    return exp;
+}
+
+//
+// Find a named member in a struct.
+//
+static TypetabStructMember * ast_find_struct_member(TypetabEnt *ent, char *membname)
+{
+    for (ListNode *curr = ent->struct_.members.head; curr; curr = curr->next) {
+        TypetabStructMember *memb = CONTAINER_OF(curr, TypetabStructMember, list);
+        if (strcmp(memb->membname, membname) == 0) {
+            return memb;
+        }
+    }
+
+    return NULL;
+}
+
+//
+// Type check the dot (struct dereference) operator.
+//
+static Expression *ast_check_dot(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_DOT);
+    ExpDot *dot = &exp->dot;
+
+    exp_replace(&dot->exp, typecheck_and_convert(state, dot->exp));
+
+    if (dot->exp->type->tag == TT_STRUCT) {
+        char *tag = dot->exp->type->strct.tag;
+        TypetabEnt *ent = typetab_lookup(state->typetab, tag);
+        
+        if (ent->struct_.members.head == NULL) {
+            err_report(EC_ERROR, &exp->loc, "`.` may not be applied to incomplete struct `%s`.", tag);        
+        } else {
+            TypetabStructMember *tsm = ast_find_struct_member(ent, dot->membname); 
+            if (tsm) {
+                exp_set_type(exp, type_clone(tsm->type));
+            } else {
+                err_report(EC_ERROR, &exp->loc, "struct `%s` has no member `%s`.", tag, dot->membname);
+            }
+        }
+    } else {
+        err_report(EC_ERROR, &exp->loc, "struct dereference operator requires a struct.");
+    }
+
+    if (exp->type == NULL) {
+        exp_set_type(exp, type_int());
+    }
+
+    return exp;
+}
+
+//
+// Type check the arrow (struct pointer dereference) operator.
+//
+static Expression *ast_check_arrow(TypeCheckState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_ARROW);
+    ExpArrow *arrow = &exp->arrow;
+
+    exp_replace(&arrow->exp, typecheck_and_convert(state, arrow->exp));
+
+    if (arrow->exp->type->tag == TT_POINTER && arrow->exp->type->ptr.ref->tag == TT_STRUCT) {
+        char *tag = arrow->exp->type->ptr.ref->strct.tag;
+        TypetabEnt *ent = typetab_lookup(state->typetab, tag);
+
+        if (ent->struct_.members.head == NULL) {
+            err_report(EC_ERROR, &exp->loc, "`=>` may not be applied to incomplete struct `%s`.", tag);        
+        } else {
+            TypetabStructMember *tsm = ast_find_struct_member(ent, arrow->membname); 
+            if (tsm) {
+                exp_set_type(exp, type_clone(tsm->type));
+            } else {
+                err_report(EC_ERROR, &exp->loc, "struct `%s` has no member `%s`.", tag, arrow->membname);
+            }
+        }
+    } else {
+        err_report(EC_ERROR, &exp->loc, "struct pointer dereference operator requires a struct.");
+    }
+
+    if (exp->type == NULL) {
+        exp_set_type(exp, type_int());
+    }
+
     return exp;
 }
 
@@ -986,8 +1154,8 @@ static Expression* ast_check_expression(TypeCheckState *state, Expression *exp)
         case EXP_ADDROF:        return ast_check_addrof(state, exp);
         case EXP_SUBSCRIPT:     return ast_check_subscript(state, exp);
         case EXP_SIZEOF:        return ast_check_sizeof(state, exp);
-        case EXP_DOT:           ICE_NYI("ast_check_expression::dot");
-        case EXP_ARROW:         ICE_NYI("ast_check_expression::arrow");
+        case EXP_DOT:           return ast_check_dot(state, exp);
+        case EXP_ARROW:         return ast_check_arrow(state, exp);
     }
 
     ICE_ASSERT(((void)"invalid expression tag in ast_check_expression", false));
@@ -1201,7 +1369,7 @@ static void ast_check_block(TypeCheckState *state, List block)
 // the symbol table for the parameters, and the declaration type will be 
 // updated if needed.
 //
-static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func, FileLine loc)
+static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func, FileLine loc, bool check_complete)
 {
     ICE_ASSERT(func->type->tag == TT_FUNC);
 
@@ -1213,8 +1381,10 @@ static void ast_check_func_param_list(TypeCheckState *state, DeclFunction *func,
         TypeFuncParam *ptype = CONTAINER_OF(tcurr, TypeFuncParam, list);
 
         if (!validate_type_specifier(state, ptype->parmtype, loc)) {
-        } else if (!type_complete(ptype->parmtype)) {
-            err_report(EC_ERROR, &loc, "function parameter type `%s` must be complete.", parm->name);
+        } else if (ptype->parmtype->tag == TT_VOID) {
+            err_report(EC_ERROR, &loc, "type of parameter `%s` may not be `void`.", parm->name);    
+        } else if (check_complete && !type_complete(state->typetab, ptype->parmtype)) {
+            err_report(EC_ERROR, &loc, "type of parameters`%s` must be complete.", parm->name);
         }
 
         if (ptype->parmtype->tag == TT_ARRAY) {
@@ -1244,13 +1414,11 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
     bool had_body = false;
 
     if (!validate_type_specifier(state, func->func.type->func.ret, func->loc)) {
-    } else if (func->func.type->func.ret->tag != TT_VOID && !type_complete(func->func.type->func.ret)) {
-        err_report(EC_ERROR, &func->loc, "function return type must be complete.");
     } else if (func->func.type->func.ret->tag == TT_ARRAY) {
         err_report(EC_ERROR, &func->loc, "function may not return array type.");
     }
 
-    ast_check_func_param_list(state, &func->func, func->loc);
+    ast_check_func_param_list(state, &func->func, func->loc, func->func.has_body);
 
     if (sym->type) {
         if (sym->type->tag != TT_FUNC) {
@@ -1277,8 +1445,10 @@ static void ast_check_func_decl(TypeCheckState *state, Declaration *func)
 
     sym_update_func(sym, sym->type, had_body || func->func.has_body, global);
 
- 
     if (func->func.has_body) {
+        if (func->func.type->func.ret->tag != TT_VOID && !type_complete(state->typetab, func->func.type->func.ret)) {
+            err_report(EC_ERROR, &func->loc, "function return type must be complete.");
+        }
         Type *old_func_type = state->func_type;
         state->func_type = sym->type;
         ast_check_block(state, func->func.body);
@@ -1521,22 +1691,63 @@ static bool ast_flatten_compound_init_for_static(TypeCheckState *state, Initiali
         return true;
     }
 
-    ICE_ASSERT(target->tag == TT_ARRAY);        
+    ICE_ASSERT(target->tag == TT_ARRAY || target->tag == TT_STRUCT);        
     
-    for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
-        Initializer *sub = CONTAINER_OF(curr, Initializer, list);
-        ast_flatten_compound_init_for_static(state, sub, target->array.element, out, loc);
-    }
+    if (target->tag == TT_ARRAY) {
+        for (ListNode *curr = init->compound.head; curr; curr = curr->next) {
+            Initializer *sub = CONTAINER_OF(curr, Initializer, list);
+            ast_flatten_compound_init_for_static(state, sub, target->array.element, out, loc);
+        }
 
-    size_t init_count = list_count(&init->compound);
-    size_t arr_count  = target->array.size;
+        size_t init_count = list_count(&init->compound);
+        size_t arr_count  = target->array.size;
 
-    if (init_count > arr_count) {
-        err_report(EC_ERROR, &loc, "too many initializers.");
-    } else if (init_count < arr_count) {
-        size_t padding = (arr_count - init_count) * type_size(target->array.element);
-        StaticInitializer *si = sinit_make_zero(padding);
-        list_push_back(out, &si->list);
+        if (init_count > arr_count) {
+            err_report(EC_ERROR, &loc, "too many initializers.");
+        } else if (init_count < arr_count) {
+            size_t padding = (arr_count - init_count) * type_size(state->typetab, target->array.element);
+            StaticInitializer *si = sinit_make_zero(padding);
+            list_push_back(out, &si->list);
+        }
+    } else {
+        //
+        // struct
+        //
+        TypetabEnt *ent = typetab_lookup(state->typetab, target->strct.tag);
+        
+        unsigned long offset = 0;
+        ListNode *curr_init = init->compound.head;
+        ListNode *curr_memb = ent->struct_.members.head;
+
+        while (curr_init && curr_memb) {
+            ListNode *next_init = curr_init->next;
+
+            TypetabStructMember *tsm = CONTAINER_OF(curr_memb, TypetabStructMember, list);
+            ICE_ASSERT(tsm->offset >= offset);
+
+            if (tsm->offset > offset) {
+                StaticInitializer *si = sinit_make_zero(tsm->offset - offset);
+                list_push_back(out, &si->list);                
+            }
+    
+            Initializer *subinit = CONTAINER_OF(curr_init, Initializer, list);
+            
+            ast_flatten_compound_init_for_static(state, subinit, tsm->type, out, loc);
+
+            offset = tsm->offset + type_size(state->typetab, tsm->type);
+
+            curr_memb = curr_memb->next;
+            curr_init = next_init;
+        }
+
+        if (curr_init && !curr_memb) {
+            err_report(EC_ERROR, &loc, "too many initializers.");
+        }
+
+        if (offset < ent->struct_.size) {
+            StaticInitializer *si = sinit_make_zero(ent->struct_.size - offset);
+            list_push_back(out, &si->list);                
+        }
     }
 
     return false;
@@ -1549,23 +1760,25 @@ static bool ast_flatten_compound_init_for_static(TypeCheckState *state, Initiali
 // convertible to the declaration type.
 //
 // If the type is an array, then the list must not be longer than the number of the elements
-// in the array, and each initializer must be convertible to the element tyoe.
+// in the array, and each initializer must be convertible to the element type.
 //
 // If the initializer is too short, it will be padded with a zero initializer.
 //
-static void ast_check_static_init(Type *type, List *init, bool init_scalar, FileLine loc)
+static void ast_check_static_init(TypeCheckState *state, Type *type, List *init, bool init_scalar, FileLine loc)
 {
-    Type *base = type_array_element(type);
-    int size = type_array_size(type);
-    int init_size = list_count(init);
+    if (type->tag == TT_ARRAY) {
+        Type *base = type_array_element(type);
+        int size = type_array_size(type);
+        int init_size = list_count(init);
 
-    if (size > init_size) {
-        size_t init_bytes = type_size(base) * init_size;
-        size_t decl_bytes = type_size(type);
-        ICE_ASSERT(decl_bytes > init_bytes);
-        StaticInitializer *zeroes = sinit_make_zero(decl_bytes - init_bytes);
-        list_push_back(init, &zeroes->list);
-    }
+        if (size > init_size) {
+            size_t init_bytes = type_size(state->typetab, base) * init_size;
+            size_t decl_bytes = type_size(state->typetab, type);
+            ICE_ASSERT(decl_bytes > init_bytes);
+            StaticInitializer *zeroes = sinit_make_zero(decl_bytes - init_bytes);
+            list_push_back(init, &zeroes->list);
+        }
+    } 
 }
 
 //
@@ -1636,14 +1849,13 @@ static void ast_check_global_var_decl(TypeCheckState *state, Declaration *decl)
 
         if (!validate_type_specifier(state, type, decl->loc)) {
             type = type_int();
-        } else if (!type_complete(type)) {
+        } else if (var->storage_class != SC_EXTERN && !type_complete(state->typetab, type)) {
             err_report(EC_ERROR, &decl->loc, "symbol `%s` type must be complete.", var->name);
             type = type_int();
         }
     }
 
-    ast_check_static_init(type, &init, init_scalar, decl->loc);
-
+    ast_check_static_init(state, type, &init, init_scalar, decl->loc);
     sym_update_static_var(sym, type, siv, init, globally_visible, decl->loc);
 }
 
@@ -1679,6 +1891,31 @@ static Initializer *make_zero_init_array(TypeCheckState *state, Type *type, File
 }
 
 //
+// Create a zero initializer for a struct.
+//
+static Initializer *make_zero_init_struct(TypeCheckState *state, Type *type, FileLine loc)
+{
+    ICE_ASSERT(type->tag == TT_STRUCT);
+
+    TypetabEnt *ent = typetab_lookup(state->typetab, type->strct.tag);
+
+    List inits;
+    list_clear(&inits);
+
+    for (ListNode *curr = ent->struct_.members.head; curr; curr = curr->next) {
+        TypetabStructMember *tsm = CONTAINER_OF(curr, TypetabStructMember, list);
+
+        Initializer *init = make_zero_init(state, tsm->type, loc);
+        list_push_back(&inits, &init->list);
+    }
+
+    Initializer *init = init_compound(inits);
+    init->type = type_clone(type);
+
+    return init;
+}
+
+//
 // Create an initialize of the shape of the given type.
 //
 static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine loc)
@@ -1695,7 +1932,7 @@ static Initializer *make_zero_init(TypeCheckState *state, Type *type, FileLine l
         case TT_UCHAR:      return make_zero_init_scalar(type, exp_uchar(state->ast, 0, loc));
 
         case TT_ARRAY:      return make_zero_init_array(state, type, loc);
-        case TT_STRUCT:     ICE_NYI("make_zero_init::struct");
+        case TT_STRUCT:     return make_zero_init_struct(state, type, loc);
         case TT_INT:        return make_zero_init_scalar(type, exp_int(state->ast, 0, loc));
         case TT_UINT:       return make_zero_init_scalar(type, exp_uint(state->ast, 0, loc));
         case TT_LONG:       return make_zero_init_scalar(type, exp_long(state->ast, 0, loc));
@@ -1730,7 +1967,43 @@ static void ast_check_var_init_string(TypeCheckState *state, Type *target, Initi
 
     exp_set_type(init->single, type_clone(target));
 }
- 
+
+//
+// Check the intializer of a structure.
+//
+static void ast_check_struct_init(TypeCheckState *state, Type *target, Initializer *init, FileLine loc)
+{
+    ICE_ASSERT(init->tag == INIT_COMPOUND);
+    ICE_ASSERT(target->tag == TT_STRUCT);
+
+    TypetabEnt *ent = typetab_lookup(state->typetab, target->strct.tag);
+
+    if (list_count(&init->compound) > list_count(&ent->struct_.members)) {
+        err_report(EC_ERROR, &loc, "too many initializers for struct `%s`.", target->strct.tag);
+    }
+
+    ListNode *curr_init = init->compound.head;
+    ListNode *curr_memb = ent->struct_.members.head;
+
+    while (curr_init && curr_memb) {
+        Initializer *subinit = CONTAINER_OF(curr_init, Initializer, list);
+        TypetabStructMember *tsm = CONTAINER_OF(curr_memb, TypetabStructMember, list);
+
+        ast_check_var_init(state, tsm->type, subinit, loc);
+
+        curr_init = curr_init->next;
+        curr_memb = curr_memb->next;
+    }
+
+    for (; curr_memb; curr_memb = curr_memb->next) {
+        TypetabStructMember *tsm = CONTAINER_OF(curr_memb, TypetabStructMember, list);
+        Initializer *zero = make_zero_init(state, tsm->type, loc);
+        list_push_back(&init->compound, &zero->list);
+    }
+
+    init->type = type_clone(target);
+} 
+
 //
 // Check the initializer of a non-static variable.
 //
@@ -1753,6 +2026,11 @@ static void ast_check_var_init(TypeCheckState *state, Type *target, Initializer 
     //
     // Compound initializer
     //
+    if (target->tag == TT_STRUCT) {
+        ast_check_struct_init(state, target, init, loc);
+        return;
+    }
+
     if (target->tag != TT_ARRAY) {
         err_report(EC_ERROR, &loc, "cannot initialize scalar with compound initializer.");
         return;
@@ -1799,7 +2077,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
     
     if (!validate_type_specifier(state, type, decl->loc)) {
         type = type_int();
-    } else if (!type_complete(type)) {
+    } else if (!type_complete(state->typetab, type)) {
         err_report(EC_ERROR, &decl->loc, "declaration of variable `%s` must be complete type.", var->name);
         type = type_int();
     } else {
@@ -1820,16 +2098,16 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
             }
             type_free(type);
         } else {
-            ast_check_static_init(type, &init, init_scalar, decl->loc);
+            ast_check_static_init(state, type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_NO_INIT, init, true, decl->loc);
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            ast_check_static_init(type, &init, init_scalar, decl->loc);
+            ast_check_static_init(state, type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
             init_scalar = ast_flatten_compound_init_for_static(state, var->init, var->type, &init, decl->loc);
-            ast_check_static_init(type, &init, init_scalar, decl->loc);
+            ast_check_static_init(state, type, &init, init_scalar, decl->loc);
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         }
     } else {
@@ -1844,6 +2122,84 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
 }
 
 //
+// Validate a structure definition.
+//
+static void validate_struct_definition(TypeCheckState *state, DeclStruct *ds, FileLine loc)
+{
+    TypetabEnt *ent = typetab_lookup(state->typetab, ds->tag);
+    if (ent->struct_.members.head) {
+        err_report(EC_ERROR, &loc, "redefinition of struct `%s`.", ds->tag);
+        return;
+    }
+
+    for (ListNode *curr = ds->memb.head; curr; curr = curr->next) {
+        DeclStructMember *memb = CONTAINER_OF(curr, DeclStructMember, list);
+
+        for (ListNode *inner = ds->memb.head; inner != curr; inner = inner->next) {
+            DeclStructMember *prevmemb = CONTAINER_OF(inner, DeclStructMember, list);
+
+            if (strcmp(memb->membname, prevmemb->membname) == 0) {
+                err_report(EC_ERROR, &loc, "duplicate member `%s` in struct `%s`.", memb->membname, ds->tag);
+                break;        
+            }
+        }
+
+        if (!validate_type_specifier(state, memb->type, loc)) { 
+        } else if (!type_complete(state->typetab, memb->type)) {
+            err_report(EC_ERROR, &loc, "member `%s` in struct `%s` has incomplete type.", memb->membname, ds->tag);
+        }
+    }
+}
+
+//
+// Type check a structure declaration.
+//
+static void ast_check_struct_decl(TypeCheckState *state, Declaration *decl)
+{
+    ICE_ASSERT(decl->tag == DECL_STRUCT);
+    DeclStruct *ds = &decl->strct;
+
+    //
+    // If not a definition, do nothing.
+    //
+    if (ds->memb.head == NULL) {
+        return;
+    }
+
+    validate_struct_definition(state, ds, decl->loc);
+
+    List memb;
+    list_clear(&memb);
+
+    size_t struct_size = 0;
+    int struct_align = 1;
+
+    for (ListNode *curr = ds->memb.head; curr; curr = curr->next) {
+        DeclStructMember *dsm = CONTAINER_OF(curr, DeclStructMember, list);
+
+        int align = typecheck_alignment(dsm->type, state->typetab);
+        if (align > struct_align) {
+            struct_align = align;
+        }
+
+        size_t member_offset = align_up(struct_size, struct_align);
+
+        TypetabStructMember *tsm = ttab_struct_member(dsm->membname, type_clone(dsm->type), member_offset);
+        list_push_back(&memb, &tsm->list);
+
+        struct_size = member_offset + type_size(state->typetab, dsm->type);
+    }
+
+    struct_size = align_up(struct_size, struct_align);
+
+    TypetabEnt *ent = typetab_lookup(state->typetab, ds->tag);
+
+    ent->struct_.align = struct_align;
+    ent->struct_.size = struct_size;
+    ent->struct_.members = memb;
+}
+
+//
 // Type check a declaration.
 //
 static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool filescope)
@@ -1851,18 +2207,19 @@ static void ast_check_declaration(TypeCheckState *state, Declaration *decl, bool
     switch (decl->tag) {
         case DECL_FUNCTION: ast_check_func_decl(state, decl); break;
         case DECL_VARIABLE: ast_check_var_decl(state, decl, filescope); break;
-        case DECL_STRUCT:   ICE_NYI("ast_check_declaration::struct"); break;
+        case DECL_STRUCT:   ast_check_struct_decl(state, decl); break;
     }
 }
 
 //
 // Type check an entire program.
 //
-void ast_typecheck(AstProgram *prog, SymbolTable *stab, AstState *ast)
+void ast_typecheck(AstProgram *prog, SymbolTable *stab, TypeTable *typetab, AstState *ast)
 {
     TypeCheckState state;
 
     state.stab = stab;
+    state.typetab = typetab;
     state.ast = ast;
 
     for (ListNode *curr = prog->decls.head; curr; curr = curr->next) {

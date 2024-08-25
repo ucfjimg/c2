@@ -6,6 +6,7 @@
 #include "safemem.h"
 #include "symtab.h"
 #include "temporary.h"
+#include "typetab.h"
 
 #include <ctype.h>
 
@@ -15,6 +16,7 @@ typedef struct
     List *statics;
     BackEndSymbolTable *bstab;
     SymbolTable *stab;
+    TypeTable *typetab;
     char *neg_zero;
     char *dbl_to_uint_ub;
 } CodegenState;
@@ -152,27 +154,27 @@ static void codegen_push_static(CodegenState *state, AsmNode *instr)
 }
 
 static AsmOperand *codegen_expression(CodegenState *state, TacNode *tac);
-static int codegen_type_align(Type *type);
+static int codegen_type_align(TypeTable *tab, Type *type);
 
 //
 // Compute the alignment of a type system array.
 //
-static int codegen_type_array_align(Type *type)
+static int codegen_type_array_align(TypeTable *tab, Type *type)
 {
     ICE_ASSERT(type->tag == TT_ARRAY);
 
-    if (type_size(type) >= 16)
+    if (type_size(tab, type) >= 16)
     {
         return 16;
     }
 
-    return codegen_type_align(type_array_element(type));
+    return codegen_type_align(tab, type_array_element(type));
 }
 
 //
 // Compute the alignment of a type system type.
 //
-static int codegen_type_align(Type *type)
+static int codegen_type_align(TypeTable *tab, Type *type)
 {
     switch (type->tag)
     {
@@ -198,7 +200,7 @@ static int codegen_type_align(Type *type)
     case TT_POINTER:
         return 8;
     case TT_ARRAY:
-        return codegen_type_array_align(type);
+        return codegen_type_array_align(tab, type);
     case TT_STRUCT:
         ICE_NYI("codegen_type_align::struct");
     }
@@ -210,12 +212,12 @@ static int codegen_type_align(Type *type)
 //
 // Convert an array type to an byte array.
 //
-static AsmType *codegen_array_to_asmtype(Type *type)
+static AsmType *codegen_array_to_asmtype(TypeTable *tab, Type *type)
 {
     ICE_ASSERT(type->tag == TT_ARRAY);
 
-    size_t size = type_size(type);
-    int align = codegen_type_align(type);
+    size_t size = type_size(tab, type);
+    int align = codegen_type_align(tab, type);
 
     return asmtype_bytearray(size, align);
 }
@@ -223,7 +225,7 @@ static AsmType *codegen_array_to_asmtype(Type *type)
 //
 // Convert a type system type to the proper assembly type.
 //
-static AsmType *codegen_type_to_asmtype(Type *type)
+static AsmType *codegen_type_to_asmtype(TypeTable *tab, Type *type)
 {
     ICE_ASSERT(type != NULL);
 
@@ -251,7 +253,7 @@ static AsmType *codegen_type_to_asmtype(Type *type)
     case TT_POINTER:
         return asmtype_quad();
     case TT_ARRAY:
-        return codegen_array_to_asmtype(type);
+        return codegen_array_to_asmtype(tab, type);
     case TT_STRUCT:
         ICE_NYI("codegen_type_to_asmtype::struct");
     }
@@ -301,7 +303,7 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
     if (tac->tag == TAC_VAR)
     {
         Symbol *sym = stab_lookup(state->stab, tac->var.name);
-        return codegen_type_to_asmtype(sym->type);
+        return codegen_type_to_asmtype(state->typetab, sym->type);
     }
 
     ICE_ASSERT(((void)"TAC node in codegen_tac_to_asmtype was not an operand.", false));
@@ -312,10 +314,10 @@ static AsmType *codegen_tac_to_asmtype(CodegenState *state, TacNode *tac)
 //
 // Return the alignment for a static variable.
 //
-static int codegen_align(Type *type)
+static int codegen_align(TypeTable *typetab, Type *type)
 {
     int align = 1;
-    AsmType *at = codegen_type_to_asmtype(type);
+    AsmType *at = codegen_type_to_asmtype(typetab, type);
 
     switch (at->tag)
     {
@@ -950,7 +952,7 @@ static void codegen_static_var(CodegenState *state, TacNode *decl)
                         asm_static_var(
                             decl->static_var.name,
                             decl->static_var.global,
-                            codegen_align(decl->static_var.type),
+                            codegen_align(state->typetab, decl->static_var.type),
                             decl->static_var.init,
                             decl->loc));
 }
@@ -965,7 +967,7 @@ static void codegen_static_const(CodegenState *state, TacNode *decl)
     codegen_push_static(state,
                         asm_static_const(
                             decl->static_const.name,
-                            codegen_align(decl->static_const.type),
+                            codegen_align(state->typetab, decl->static_const.type),
                             decl->static_const.init,
                             decl->loc));
 }
@@ -1409,7 +1411,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 
         Symbol *sym = stab_lookup(state->stab, param->name);
 
-        AsmType *at = codegen_type_to_asmtype(sym->type);
+        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
@@ -1433,7 +1435,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 
         ICE_ASSERT(sym->type->tag != TT_ARRAY);
 
-        AsmType *at = codegen_type_to_asmtype(sym->type);
+        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
@@ -1456,7 +1458,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 
         Symbol *sym = stab_lookup(state->stab, param->name);
 
-        AsmType *at = codegen_type_to_asmtype(sym->type);
+        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
@@ -1483,7 +1485,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 //
 // Generate code from the AST.
 //
-AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
+AsmNode *codegen(TacNode *tac, SymbolTable *stab, TypeTable *typetab, BackEndSymbolTable *bstab)
 {
     ICE_ASSERT(tac->tag == TAC_PROGRAM);
 
@@ -1494,6 +1496,7 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
     list_clear(&state.code);
     state.statics = &statics;
     state.stab = stab;
+    state.typetab = typetab;
     state.bstab = bstab;
     state.neg_zero = NULL;
     state.dbl_to_uint_ub = NULL;
@@ -1532,7 +1535,7 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, BackEndSymbolTable *bstab)
 //
 // Convert a function symbol to a back end symbol.
 //
-void codegen_func_sym_to_backsym(SymFunction *func, BackEndSymbol *bsym)
+static void codegen_func_sym_to_backsym(SymFunction *func, BackEndSymbol *bsym)
 {
     bsym->tag = BST_FUNCTION;
     bsym->func.is_defined = func->defined;
@@ -1541,34 +1544,34 @@ void codegen_func_sym_to_backsym(SymFunction *func, BackEndSymbol *bsym)
 //
 // Convert a static variable symbol to a back end symbol.
 //
-void codegen_static_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+static void codegen_static_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym, TypeTable *typetab)
 {
     ICE_ASSERT(sym->tag == ST_STATIC_VAR);
 
     bsym->tag = BST_OBJECT;
-    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.type = codegen_type_to_asmtype(typetab, sym->type);
     bsym->object.is_static = true;
 }
 
 //
 // Convert a local variable symbol to a back end symbol.
 //
-void codegen_local_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+static void codegen_local_sym_to_backsym(Symbol *sym, BackEndSymbol *bsym, TypeTable *typetab)
 {
     ICE_ASSERT(sym->tag == ST_LOCAL_VAR);
 
     bsym->tag = BST_OBJECT;
-    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.type = codegen_type_to_asmtype(typetab, sym->type);
     bsym->object.is_static = false;
 }
 
 //
 // Convert a static constant to a back end symbol.
 //
-void codegen_static_const_to_backsym(Symbol *sym, BackEndSymbol *bsym)
+static void codegen_static_const_to_backsym(Symbol *sym, BackEndSymbol *bsym, TypeTable *typetab)
 {
     bsym->tag = BST_OBJECT;
-    bsym->object.type = codegen_type_to_asmtype(sym->type);
+    bsym->object.type = codegen_type_to_asmtype(typetab, sym->type);
     bsym->object.is_literal = true;
     bsym->object.is_static = true;
 }
@@ -1577,7 +1580,7 @@ void codegen_static_const_to_backsym(Symbol *sym, BackEndSymbol *bsym)
 // Allocate a back end symbol table an populate it from the front end
 // symbol table.
 //
-void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
+void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab, TypeTable *typetab)
 {
     HashIterator iter;
 
@@ -1601,13 +1604,13 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab)
             codegen_func_sym_to_backsym(&sym->func, bsym);
             break;
         case ST_STATIC_VAR:
-            codegen_static_sym_to_backsym(sym, bsym);
+            codegen_static_sym_to_backsym(sym, bsym, typetab);
             break;
         case ST_LOCAL_VAR:
-            codegen_local_sym_to_backsym(sym, bsym);            
+            codegen_local_sym_to_backsym(sym, bsym, typetab);
             break;
         case ST_CONSTANT:
-            codegen_static_const_to_backsym(sym, bsym);
+            codegen_static_const_to_backsym(sym, bsym, typetab);
             break;
             break;
         }

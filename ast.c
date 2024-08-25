@@ -991,7 +991,7 @@ static void print_exp_sizeof(ExpSizeof *szof, int tab, bool locs)
 //
 static void print_exp_dot(ExpDot *dot, int tab, bool locs)
 {
-    printf("dot {");
+    printf("dot {\n");
     exp_print_recurse(dot->exp, tab + 2, locs);
     printf("%*s} . %s\n", tab, "", dot->membname);
 }
@@ -1001,7 +1001,7 @@ static void print_exp_dot(ExpDot *dot, int tab, bool locs)
 //
 static void print_exp_arrow(ExpArrow *arrow, int tab, bool locs)
 {
-    printf("arrow {");
+    printf("arrow {\n");
     exp_print_recurse(arrow->exp, tab + 2, locs);
     printf("%*s} -> %s\n", tab, "", arrow->membname);
 }
@@ -1164,7 +1164,7 @@ static void decl_print_function(DeclFunction *func, int tab, bool locs)
 //
 static void decl_print_struct(DeclStruct *strct, int tab, bool locs)
 {
-    printf("%*sdeclare-struct %s {", tab, "", strct->tag);
+    printf("%*sdeclare-struct %s {\n", tab, "", strct->tag);
         for (ListNode *curr = strct->memb.head; curr; curr = curr->next) {
             DeclStructMember *memb = CONTAINER_OF(curr, DeclStructMember, list);
             char *desc = type_describe(memb->type);
@@ -1172,7 +1172,7 @@ static void decl_print_struct(DeclStruct *strct, int tab, bool locs)
             safe_free(desc);
         }
 
-    printf("%*s{", tab, "");
+    printf("%*s};\n", tab, "");
 }
 
 //

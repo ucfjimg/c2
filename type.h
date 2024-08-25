@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 typedef struct Type Type;
+typedef struct TypeTable TypeTable;
 
 typedef enum {
     TT_CHAR,
@@ -86,17 +87,17 @@ extern Type *type_struct(char *tag);
 
 extern Type *type_clone(Type *type);
 extern bool types_equal(Type *left, Type *right);
-extern bool types_same_size(Type *left, Type *right);
+extern bool types_same_size(TypeTable *tab, Type *left, Type *right);
 extern bool type_unsigned(Type *type);
 extern bool type_arithmetic(Type *type);
 extern bool type_integral(Type *type);
 extern bool type_void_pointer(Type *type);
 extern bool type_scalar(Type *type);
-extern bool type_complete(Type *type);
-extern bool type_ptr_to_complete(Type *type);
+extern bool type_complete(TypeTable *tab, Type *type);
+extern bool type_ptr_to_complete(TypeTable *tab, Type *type);
 extern Type *type_array_element(Type *type);
 extern size_t type_array_size(Type *type);
-extern size_t type_size(Type *type);
+extern size_t type_size(TypeTable *tab, Type *type);
 extern int type_rank(Type *type);
 extern void type_free(Type *type);
 extern char *type_describe(Type *type);

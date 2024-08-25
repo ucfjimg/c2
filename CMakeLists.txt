@@ -36,6 +36,7 @@ add_executable(cc
     temporary.c
     token.c
     type.c
+    typetab.c
     typecheck.c
 )
 

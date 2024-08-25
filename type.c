@@ -4,6 +4,7 @@
 #include "safemem.h"
 #include "strbuilder.h"
 #include "target.h"
+#include "typetab.h"
 
 #include <stdbool.h>
 
@@ -314,9 +315,9 @@ bool types_equal(Type *left, Type *right)
 //
 // Return true if two types are the same size, regardless of sign.
 //
-bool types_same_size(Type *left, Type *right)
+bool types_same_size(TypeTable *tab, Type *left, Type *right)
 {
-    return type_size(left) == type_size(right);
+    return type_size(tab, left) == type_size(tab, right);
 }
 
 //
@@ -433,17 +434,29 @@ bool type_scalar(Type *type)
 //
 // Return true if the type is complete.
 //
-bool type_complete(Type *type)
+bool type_complete(TypeTable *tab, Type *type)
 {
-    return type->tag != TT_VOID;
+    if (type->tag == TT_VOID) {
+        return false;
+    }
+
+    if (type->tag == TT_STRUCT) {
+        TypetabEnt *ent = typetab_lookup(tab, type->strct.tag);
+        if (ent->struct_.members.head) {
+            return true;
+        }
+        return false;
+    }
+
+    return true;
 }
 
 //
 // Return true if the type is a pointer to a complete type.
 //
-bool type_ptr_to_complete(Type *type)
+bool type_ptr_to_complete(TypeTable *tab, Type *type)
 {
-    return type->tag == TT_POINTER && type_complete(type->ptr.ref);
+    return type->tag == TT_POINTER && type_complete(tab, type->ptr.ref);
 }
 
 //
@@ -471,9 +484,18 @@ size_t type_array_size(Type *type)
 }
 
 //
+// Return the size of a struct. The struct type must be complete.
+// 
+static size_t type_struct_size(TypeTable *tab, TypeStruct *ts)
+{
+    TypetabEnt *ent = typetab_lookup(tab, ts->tag);
+    return ent->struct_.size;
+}
+
+//
 // Return the total size of the type, in bytes.
 //
-size_t type_size(Type *type)
+size_t type_size(TypeTable *tab, Type *type)
 {
     switch (type->tag) {
         case TT_CHAR:
@@ -487,9 +509,9 @@ size_t type_size(Type *type)
         case TT_DOUBLE:     return TARGET_DOUBLE_SIZE;
         case TT_POINTER:    return TARGET_POINTER_SIZE;
 
-        case TT_ARRAY:      return type->array.size * type_size(type->array.element);
+        case TT_ARRAY:      return type->array.size * type_size(tab, type->array.element);
 
-        case TT_STRUCT:     ICE_NYI("type_size::struct");
+        case TT_STRUCT:     return type_struct_size(tab, &type->strct);
 
         case TT_FUNC:       ICE_ASSERT(((void)"type_size asked for size of function", false));
         case TT_VOID:       ICE_ASSERT(((void)"type_size asked for size of void", false));

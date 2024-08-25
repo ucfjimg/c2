@@ -20,7 +20,7 @@ static HashNode *stab_alloc_symbol(void)
 //
 // Free a symbol table node.
 //
-static void stab_free_symbol(HashNode *hash)
+    static void stab_free_symbol(HashNode *hash)
 {
     Symbol *sym = CONTAINER_OF(hash, Symbol, hash);
 

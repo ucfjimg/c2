@@ -9,10 +9,12 @@
 #include "symtab.h"
 #include "tacnode.h"
 #include "temporary.h"
+#include "typetab.h"
 
 typedef struct {
     List code;              // list of TacNode *
     SymbolTable *stab;      // symbol table
+    TypeTable *typetab;     // type table
 } TacState;
 
 typedef enum {
@@ -333,7 +335,7 @@ static TacExpResult tcg_pointer_add(TacState *state, Expression *binary)
     Expression *eptr = lptr ? binary->binary.left : binary->binary.right;
     Expression *eidx = rptr ? binary->binary.left : binary->binary.right;
 
-    size_t element_size = type_size(eptr->type->ptr.ref);
+    size_t element_size = type_size(state->typetab, eptr->type->ptr.ref);
 
     TacNode *ptr = tcg_expression_and_convert(state, eptr);
     TacNode *idx = tcg_expression_and_convert(state, eidx);
@@ -349,7 +351,7 @@ static TacExpResult tcg_pointer_add(TacState *state, Expression *binary)
 //
 static TacExpResult tcg_pointer_sub(TacState *state, Expression *binary)
 {
-    size_t element_size = type_size(binary->binary.left->type->ptr.ref);
+    size_t element_size = type_size(state->typetab, binary->binary.left->type->ptr.ref);
 
     if (binary->binary.right->type->tag == TT_POINTER)
     {
@@ -646,9 +648,9 @@ static TacExpResult tcg_cast(TacState *state, Expression *exp)
         } else {
             tcg_append(state, tac_double_to_int(inner, tmp, exp->loc));
         }
-    } else if (types_same_size(cast->exp->type, cast->type)) {
+    } else if (types_same_size(state->typetab, cast->exp->type, cast->type)) {
         tcg_append(state, tac_copy(inner, tmp, exp->loc));
-    } else if (type_size(cast->type) < type_size(cast->exp->type)) {
+    } else if (type_size(state->typetab, cast->type) < type_size(state->typetab, cast->exp->type)) {
         tcg_append(state, tac_truncate(inner, tmp, exp->loc));
     } else if (type_unsigned(cast->exp->type)) {
         tcg_append(state, tac_zero_extend(inner, tmp, exp->loc));
@@ -712,7 +714,7 @@ static TacExpResult tcg_subscript(TacState *state, Expression *exp)
     Expression *eptr = lptr ? exp->subscript.left : exp->subscript.right;
     Expression *eidx = rptr ? exp->subscript.left : exp->subscript.right;
 
-    size_t element_size = type_size(eptr->type->ptr.ref);
+    size_t element_size = type_size(state->typetab, eptr->type->ptr.ref);
 
     TacNode *ptr = tcg_expression_and_convert(state, eptr);
     TacNode *idx = tcg_expression_and_convert(state, eidx);
@@ -757,11 +759,11 @@ static TacExpResult tcg_sizeof(TacState *state, Expression *exp)
 
     switch (szof->tag) {
         case SIZEOF_EXP:
-            size = type_size(szof->exp->type);
+            size = type_size(state->typetab, szof->exp->type);
             break;
 
         case SIZEOF_TYPE:
-            size = type_size(szof->type);
+            size = type_size(state->typetab, szof->type);
             break;
     }
 
@@ -919,7 +921,7 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
 
     TacNode *val = tcg_expression_and_convert(state, init->single);
     tcg_append(state, tac_copy_to_offset(val, var, *offset, loc));
-    *offset += type_size(type);
+    *offset += type_size(state->typetab, type);
 }
 
 //
@@ -1273,7 +1275,7 @@ static void tcg_statement(TacState *state, Statement *stmt)
 //
 // Generate TAC for a function definition.
 //
-static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
+static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab, TypeTable *typetab)
 {
     ICE_ASSERT(func);
     ICE_ASSERT(func->tag == DECL_FUNCTION);
@@ -1293,6 +1295,7 @@ static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
     TacState funcstate;
     list_clear(&funcstate.code);
     funcstate.stab = stab;
+    funcstate.typetab = typetab;
 
     tcg_block(&funcstate, func->func.body);
 
@@ -1319,7 +1322,7 @@ static TacNode *tcg_funcdef(Declaration *func, SymbolTable *stab)
 //
 // Enumerate the symbol table for static variables.
 //
-static void tcg_statics(List *code, SymbolTable *stab)
+static void tcg_statics(List *code, SymbolTable *stab, TypeTable *typetab)
 {
     HashIterator iter;
 
@@ -1337,7 +1340,7 @@ static void tcg_statics(List *code, SymbolTable *stab)
                 case SIV_INIT:      var = tac_static_var(node->key, global, type_clone(sym->type), sym->stvar.initial, loc); break;
                 case SIV_NO_INIT:   break;
                 case SIV_TENTATIVE:
-                    list_push_back(&zeroes, &sinit_make_zero(type_size(sym->type))->list);
+                    list_push_back(&zeroes, &sinit_make_zero(type_size(typetab, sym->type))->list);
                     var = tac_static_var(node->key, global, type_clone(sym->type), zeroes, loc); 
                     break;
             }
@@ -1357,7 +1360,7 @@ static void tcg_statics(List *code, SymbolTable *stab)
 //
 // Top level entry to generate a TAC program from an AST.
 //
-TacNode *tcg_gen(AstProgram *prog, SymbolTable *stab)
+TacNode *tcg_gen(AstProgram *prog, SymbolTable *stab, TypeTable *typetab)
 {
     List funcs;
     list_clear(&funcs);
@@ -1369,12 +1372,12 @@ TacNode *tcg_gen(AstProgram *prog, SymbolTable *stab)
         Declaration *decl = CONTAINER_OF(curr, Declaration, list);
 
         if (decl->tag == DECL_FUNCTION && decl->func.has_body) {
-            TacNode *func = tcg_funcdef(decl, stab);
+            TacNode *func = tcg_funcdef(decl, stab, typetab);
             list_push_back(&funcs, &func->list);
         }
     }
 
-    tcg_statics(&funcs, stab);
+    tcg_statics(&funcs, stab, typetab);
 
     return tac_program(funcs, prog->loc);
 }

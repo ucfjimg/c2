@@ -5,6 +5,7 @@
 #include "ice.h"
 #include "list.h"
 #include "safemem.h"
+#include "temporary.h"
 
 #include <stdbool.h>
 
@@ -79,7 +80,7 @@ static void restab_new_scope(ResolveState *curr, ResolveState *next)
         IdentifierMapNode *currmap = CONTAINER_OF(node, IdentifierMapNode, hash);        
         IdentifierMapNode *nextmap = CONTAINER_OF(newnode, IdentifierMapNode, hash);    
 
-        nextmap->from_curr_scope = false;
+        nextmap->from_curr_scope = false; 
         nextmap->new_name = safe_strdup(currmap->new_name);    
     }
 }
@@ -124,7 +125,8 @@ static void ast_resolve_struct_type(ResolveState *state, Type *type, FileLine lo
         safe_free(type->strct.tag);
         type->strct.tag = safe_strdup(mapnode->new_name);
     } else {
-        err_report(EC_ERROR, &loc, "use of undeclared struct `%s`.", type->strct.tag);
+        err_report(EC_ERROR, &loc, "use of undeclared struct `%s`.", type->strct.tag);        
+        mapnode->new_name = tmp_name("error");
     }
 }
 

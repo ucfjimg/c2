@@ -24,6 +24,7 @@
 #include "tacgen.h"
 #include "token.h"
 #include "typecheck.h"
+#include "typetab.h"
 
 typedef enum {
     STAGE_LEX = 256,
@@ -426,6 +427,7 @@ static int compile(Args *args)
     AsmNode *asmcode = NULL;
     TacNode *taccode = NULL;
     SymbolTable *stab = NULL;
+    TypeTable *typetab = NULL;
     BackEndSymbolTable *bstab = NULL;
     FILE *asmfile;
 
@@ -463,7 +465,8 @@ static int compile(Args *args)
     ast_label_loops(ast);
     if (args->stage == STAGE_VALIDATE_LOOPS) goto semantic_done;
     stab = stab_alloc();
-    ast_typecheck(ast, stab, ast_state);
+    typetab = typetab_alloc();
+    ast_typecheck(ast, stab, typetab, ast_state);
     if (args->stage == STAGE_VALIDATE_TYPECHECK) goto semantic_done;
     ast_validate_switch(ast);
     if (args->stage == STAGE_VALIDATE_SWITCH) goto semantic_done;
@@ -485,7 +488,7 @@ semantic_done:
     //
     // TAC generation.
     //
-    taccode = tcg_gen(ast, stab);
+    taccode = tcg_gen(ast, stab, typetab);
     if (args->stage == STAGE_TACKY) {
         tac_print(taccode, args->line_nos);
         goto done;
@@ -496,11 +499,11 @@ semantic_done:
     //
     bstab = bstab_alloc();
 
-    asmcode = codegen(taccode, stab, bstab);
+    asmcode = codegen(taccode, stab, typetab, bstab);
     ast_free_program(ast);
     ast = NULL;
 
-    codegen_sym_to_backsym(stab, bstab);
+    codegen_sym_to_backsym(stab, bstab, typetab);
     asm_allocate_vars(asmcode, bstab, args->print_stab);
     asm_fix_operands(asmcode);
 
@@ -534,6 +537,7 @@ done:
     }
     bstab_free(bstab);
     stab_free(stab);
+    typetab_free(typetab);
     tac_free(taccode);
     asm_free(asmcode);
     // TODO fix this - current scheme leads to duplicate free's
