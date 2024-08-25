@@ -16,12 +16,15 @@ typedef struct {
 } IdentifierMapNode;
 
 typedef struct {
-    HashTable *table;
+    HashTable *vartab;
+    HashTable *structtab;
 } ResolveState;
 
+static void ast_resolve_type(ResolveState *state, Type *type, FileLine loc);
 static void ast_resolve_expression(ResolveState *state, Expression *exp);
 static void ast_resolve_statement(ResolveState *state, Statement *stmt);
 static void ast_resolve_function(ResolveState *state, Declaration *decl, bool global);
+static void ast_resolve_struct(ResolveState *state, Declaration *decl);
 
 //
 // Allocate a hash node for the resolve table.
@@ -43,11 +46,12 @@ static void restab_free_mapnode(HashNode *node)
 }
 
 //
-// Initialize variable map table.
+// Initialize map tables.
 //
 static void restab_init(ResolveState *state)
 {
-    state->table = hashtab_alloc(restab_alloc_mapnode, restab_free_mapnode);
+    state->vartab = hashtab_alloc(restab_alloc_mapnode, restab_free_mapnode);
+    state->structtab = hashtab_alloc(restab_alloc_mapnode, restab_free_mapnode);
 }
 
 //
@@ -59,8 +63,18 @@ static void restab_new_scope(ResolveState *curr, ResolveState *next)
     restab_init(next);
 
     HashIterator iter;
-    for (HashNode *node = hashtab_first(curr->table, &iter); node; node = hashtab_next(&iter)) {
-        HashNode *newnode = hashtab_lookup(next->table, node->key);
+    for (HashNode *node = hashtab_first(curr->vartab, &iter); node; node = hashtab_next(&iter)) {
+        HashNode *newnode = hashtab_lookup(next->vartab, node->key);
+
+        IdentifierMapNode *currmap = CONTAINER_OF(node, IdentifierMapNode, hash);        
+        IdentifierMapNode *nextmap = CONTAINER_OF(newnode, IdentifierMapNode, hash);    
+
+        nextmap->from_curr_scope = false;
+        nextmap->new_name = safe_strdup(currmap->new_name);    
+    }
+
+    for (HashNode *node = hashtab_first(curr->structtab, &iter); node; node = hashtab_next(&iter)) {
+        HashNode *newnode = hashtab_lookup(next->structtab, node->key);
 
         IdentifierMapNode *currmap = CONTAINER_OF(node, IdentifierMapNode, hash);        
         IdentifierMapNode *nextmap = CONTAINER_OF(newnode, IdentifierMapNode, hash);    
@@ -73,18 +87,82 @@ static void restab_new_scope(ResolveState *curr, ResolveState *next)
 //
 // Look up a variable.
 //
-static IdentifierMapNode *restab_get(ResolveState *state, char *name)
+static IdentifierMapNode *restab_get_var(ResolveState *state, char *name)
 {
-    HashNode *node = hashtab_lookup(state->table, name);
+    HashNode *node = hashtab_lookup(state->vartab, name);
     return CONTAINER_OF(node, IdentifierMapNode, hash);    
 }
 
 //
-// Free the variable table
+// Look up a struct tag.
+//
+static IdentifierMapNode *restab_get_struct(ResolveState *state, char *name)
+{
+    HashNode *node = hashtab_lookup(state->structtab, name);
+    return CONTAINER_OF(node, IdentifierMapNode, hash);    
+}
+
+//
+// Free the tables.
 //
 static void restab_free(ResolveState *state)
 {
-    hashtab_free(state->table);
+    hashtab_free(state->vartab);
+    hashtab_free(state->structtab);
+}
+
+//
+// Resolve a structure type.
+//
+static void ast_resolve_struct_type(ResolveState *state, Type *type, FileLine loc)
+{
+    ICE_ASSERT(type->tag == TT_STRUCT);
+
+    IdentifierMapNode *mapnode = restab_get_struct(state, type->strct.tag);
+
+    if (mapnode->new_name) {
+        safe_free(type->strct.tag);
+        type->strct.tag = safe_strdup(mapnode->new_name);
+    } else {
+        err_report(EC_ERROR, &loc, "use of undeclared struct `%s`.", type->strct.tag);
+    }
+}
+
+//
+// Resolve a function type.
+//
+static void ast_resolve_func_type(ResolveState *state, TypeFunction *func, FileLine loc)
+{
+    ast_resolve_type(state, func->ret, loc);
+
+    for (ListNode *curr = func->parms.head; curr; curr = curr->next) {
+        TypeFuncParam *param = CONTAINER_OF(curr, TypeFuncParam, list);
+        ast_resolve_type(state, param->parmtype, loc);
+    }
+}
+
+//
+// Resolve a type.
+//
+static void ast_resolve_type(ResolveState *state, Type *type, FileLine loc)
+{
+    switch (type->tag) {
+        case TT_CHAR:
+        case TT_SCHAR:
+        case TT_UCHAR:
+        case TT_INT:
+        case TT_LONG:
+        case TT_UINT:
+        case TT_ULONG:
+        case TT_DOUBLE:
+        case TT_VOID:
+            break;
+
+        case TT_FUNC:       ast_resolve_func_type(state, &type->func, loc); break;
+        case TT_POINTER:    ast_resolve_type(state, type->ptr.ref, loc); break;
+        case TT_ARRAY:      ast_resolve_type(state, type->array.element, loc); break;
+        case TT_STRUCT:     ast_resolve_struct_type(state, type, loc); break;
+    }
 }
 
 //
@@ -103,7 +181,7 @@ static char *ast_unique_varname(char *name)
 //
 static char *ast_resolve_name(ResolveState *state, char *name, FileLine loc)
 {
-    IdentifierMapNode *mapnode = restab_get(state, name);
+    IdentifierMapNode *mapnode = restab_get_var(state, name);
     if (mapnode->new_name && mapnode->from_curr_scope) {
         err_report(EC_ERROR, &loc, "variable `%s` has already been declared.", name);
     } else {
@@ -149,7 +227,9 @@ static void ast_resolve_global_var_decl(ResolveState *state, Declaration *decl)
     ICE_ASSERT(decl->tag == DECL_VARIABLE);
     DeclVariable *var = &decl->var;
 
-    IdentifierMapNode *mapnode = restab_get(state, var->name);
+    ast_resolve_type(state, var->type, decl->loc);
+
+    IdentifierMapNode *mapnode = restab_get_var(state, var->name);
     update_map_node(mapnode, var->name, true, true);
 
     if (var->init) {
@@ -165,7 +245,9 @@ static void ast_resolve_var_decl(ResolveState *state, Declaration *decl)
     ICE_ASSERT(decl->tag == DECL_VARIABLE);
     DeclVariable *var = &decl->var;
 
-    IdentifierMapNode *mapnode = restab_get(state, var->name);
+    ast_resolve_type(state, var->type, decl->loc);
+
+    IdentifierMapNode *mapnode = restab_get_var(state, var->name);
 
     if (mapnode->new_name) {
         if (mapnode->from_curr_scope) {
@@ -199,7 +281,7 @@ static void ast_resolve_declaration(ResolveState *state, Declaration *decl)
     switch (decl->tag) {
         case DECL_FUNCTION: ast_resolve_function(state, decl, false); break;
         case DECL_VARIABLE: ast_resolve_var_decl(state, decl); break;
-        case DECL_STRUCT:   ICE_NYI("ast_resolve_declaration::struct");
+        case DECL_STRUCT:   ast_resolve_struct(state, decl); break;
     }
 }
 
@@ -211,7 +293,7 @@ static void ast_resolve_var_reference(ResolveState *state, Expression *exp)
     ICE_ASSERT(exp->tag == EXP_VAR);
     ExpVar *var = &exp->var;
 
-    IdentifierMapNode *mapnode = restab_get(state, var->name);
+    IdentifierMapNode *mapnode = restab_get_var(state, var->name);
     if (mapnode->new_name == NULL) {
         err_report(EC_ERROR, &exp->loc, "variable `%s` used without being declared.", var->name);
         mapnode->new_name = ast_unique_varname(var->name);
@@ -265,7 +347,7 @@ static void ast_resolve_function_call(ResolveState *state, Expression *callexp)
     ICE_ASSERT(callexp->tag == EXP_FUNCTION_CALL);
     ExpFunctionCall *call = &callexp->call;
 
-    IdentifierMapNode *mapnode = restab_get(state, call->name);
+    IdentifierMapNode *mapnode = restab_get_var(state, call->name);
     if (mapnode->new_name == NULL) {
         err_report(EC_ERROR, &callexp->loc, "function `%s` has not been declared.", call->name);
     } else {
@@ -282,8 +364,9 @@ static void ast_resolve_function_call(ResolveState *state, Expression *callexp)
 //
 // Resolve a cast expression.
 //
-static void ast_resolve_cast_exp(ResolveState *state, ExpCast *cast)
+static void ast_resolve_cast_exp(ResolveState *state, ExpCast *cast, FileLine loc)
 {
+    ast_resolve_type(state, cast->type, loc);
     ast_resolve_expression(state, cast->exp);
 }
 
@@ -315,11 +398,28 @@ static void ast_resolve_subscript_exp(ResolveState *state, ExpSubscript *subs)
 //
 // Resolve a sizeof expression.
 //
-static void ast_resolve_sizeof_exp(ResolveState *state, ExpSizeof *szof)
+static void ast_resolve_sizeof_exp(ResolveState *state, ExpSizeof *szof, FileLine loc)
 {
-    if (szof->tag == SIZEOF_EXP) {
-        ast_resolve_expression(state, szof->exp);
+    switch (szof->tag) {
+        case SIZEOF_EXP:    ast_resolve_expression(state, szof->exp); break;
+        case SIZEOF_TYPE:   ast_resolve_type(state, szof->type, loc); break;
     }
+}
+
+//
+// Resolve a dot expression.
+//
+static void ast_resolve_dot(ResolveState *state, ExpDot *dot)
+{
+    ast_resolve_expression(state, dot->exp);
+}
+
+//
+// Resolve an arrow expression.
+//
+static void ast_resolve_arrow(ResolveState *state, ExpArrow *arrow)
+{
+    ast_resolve_expression(state, arrow->exp);
 }
 
 //
@@ -334,13 +434,13 @@ static void ast_resolve_expression(ResolveState *state, Expression *exp)
         case EXP_CONDITIONAL:   ast_resolve_conditional_exp(state, &exp->conditional); break;
         case EXP_ASSIGNMENT:    ast_resolve_assign_exp(state, &exp->assignment); break;
         case EXP_FUNCTION_CALL: ast_resolve_function_call(state, exp); break;
-        case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast); break;
+        case EXP_CAST:          ast_resolve_cast_exp(state, &exp->cast, exp->loc); break;
         case EXP_DEREF:         ast_resolve_deref_exp(state, &exp->deref); break;
         case EXP_ADDROF:        ast_resolve_addrof_exp(state, &exp->addrof); break;
         case EXP_SUBSCRIPT:     ast_resolve_subscript_exp(state, &exp->subscript); break;
-        case EXP_SIZEOF:        ast_resolve_sizeof_exp(state, &exp->sizeof_); break;
-        case EXP_DOT:           ICE_NYI("ast_resolve_expression::dot");
-        case EXP_ARROW:         ICE_NYI("ast_resolve_expression::arrow");
+        case EXP_SIZEOF:        ast_resolve_sizeof_exp(state, &exp->sizeof_, exp->loc); break;
+        case EXP_DOT:           ast_resolve_dot(state, &exp->dot); break;
+        case EXP_ARROW:         ast_resolve_arrow(state, &exp->arrow); break;
 
         case EXP_SCHAR:         break;
         case EXP_UCHAR:         break;
@@ -520,7 +620,7 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
         err_report(EC_ERROR, &decl->loc, "invalid storage class for function `%s`.", func->name);
     }
     
-    IdentifierMapNode *mapnode = restab_get(state, func->name);
+    IdentifierMapNode *mapnode = restab_get_var(state, func->name);
     if (mapnode->new_name) {
         if (mapnode->from_curr_scope && !mapnode->has_linkage) {
             err_report(EC_ERROR, &decl->loc, "duplicate declaration for function `%s`.\n", func->name);
@@ -547,6 +647,18 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
     }
 
     //
+    // Resolve paramerter types.
+    //
+    for (ListNode *curr = func->type->func.parms.head; curr; curr= curr->next) {
+        TypeFuncParam *tfp = CONTAINER_OF(curr, TypeFuncParam, list);
+        ast_resolve_type(state, tfp->parmtype, decl->loc);
+    }
+
+    if (func->type->func.ret) {
+        ast_resolve_type(state, func->type->func.ret, decl->loc);
+    }
+
+    //
     // New scope for function body.
     //
     ast_resolve_block(&newstate, func->body);
@@ -556,6 +668,31 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
     } 
 
     restab_free(&newstate);
+}
+
+//
+// Resolve a structure declaration.
+//
+static void ast_resolve_struct(ResolveState *state, Declaration *decl)
+{
+    IdentifierMapNode *node = restab_get_struct(state, decl->strct.tag);
+    
+    char *unique_tag;
+
+    if (node->new_name == NULL || !node->from_curr_scope) {
+        unique_tag = ast_unique_varname(decl->strct.tag);
+        update_map_node(node, unique_tag, true, false);
+    } else {
+        unique_tag = node->new_name;
+    }
+
+    safe_free(decl->strct.tag);
+    decl->strct.tag = safe_strdup(unique_tag);
+
+    for (ListNode *curr = decl->strct.memb.head; curr; curr = curr->next) {
+        DeclStructMember *memb = CONTAINER_OF(curr, DeclStructMember, list);
+        ast_resolve_type(state, memb->type, decl->loc);
+    }
 }
 
 //
@@ -575,7 +712,7 @@ void ast_resolve(AstProgram *prog)
         switch (decl->tag) {
             case DECL_FUNCTION: ast_resolve_function(&state, decl, true); break;
             case DECL_VARIABLE: ast_resolve_global_var_decl(&state, decl); break;
-            case DECL_STRUCT:   ICE_NYI("ast_resolve::struct");
+            case DECL_STRUCT:   ast_resolve_struct(&state, decl); break;
         }
     } 
 
