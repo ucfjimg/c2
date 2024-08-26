@@ -37,6 +37,7 @@ typedef enum {
     TAC_STORE,
     TAC_ADDPTR,
     TAC_COPY_TO_OFFSET,
+    TAC_COPY_FROM_OFFSET,
 } TacTag;
 
 typedef struct TacNode TacNode;
@@ -258,6 +259,16 @@ typedef struct {
 } TacCopyToOffset;
 
 //
+// Copy data from an aggregate. The src is NOT a pointer but the actual
+// label of the object.
+// 
+typedef struct {
+    char *src;
+    int offset;
+    TacNode *dst;
+} TacCopyFromOffset;
+
+//
 // A TAC node -- discriminated union based on `tag`
 //
 typedef struct TacNode {
@@ -266,33 +277,34 @@ typedef struct TacNode {
     FileLine loc;
 
     union {
-        TacProgram      prog;
-        TacFuncDef      funcdef;
-        TacStaticVar    static_var;
-        TacStaticConst  static_const;
-        TacReturn       ret;
-        TacCopy         copy;
-        TacJump         jump;
-        TacJumpZero     jump_zero;
-        TacJumpNotZero  jump_not_zero;
-        TacLabel        label;
-        TacUnary        unary;
-        TacBinary       binary;
-        Const           constant;
-        TacVar          var;
-        TacFunctionCall call;
-        TacSignExtend   sign_extend;
-        TacZeroExtend   zero_extend;
-        TacTruncate     truncate;
-        TacDoubleToInt  dbl_to_int;
-        TacDoubleToUInt dbl_to_uint;
-        TacIntToDouble  int_to_dbl;
-        TacUIntToDouble uint_to_dbl;
-        TacGetAddress   get_address;
-        TacLoad         load;
-        TacStore        store;
-        TacAddPtr       add_ptr;
-        TacCopyToOffset copy_to_offset;
+        TacProgram          prog;
+        TacFuncDef          funcdef;
+        TacStaticVar        static_var;
+        TacStaticConst      static_const;
+        TacReturn           ret;
+        TacCopy             copy;
+        TacJump             jump;
+        TacJumpZero         jump_zero;
+        TacJumpNotZero      jump_not_zero;
+        TacLabel            label;
+        TacUnary            unary;
+        TacBinary           binary;
+        Const               constant;
+        TacVar              var;
+        TacFunctionCall     call;
+        TacSignExtend       sign_extend;
+        TacZeroExtend       zero_extend;
+        TacTruncate         truncate;
+        TacDoubleToInt      dbl_to_int;
+        TacDoubleToUInt     dbl_to_uint;
+        TacIntToDouble      int_to_dbl;
+        TacUIntToDouble     uint_to_dbl;
+        TacGetAddress       get_address;
+        TacLoad             load;
+        TacStore            store;
+        TacAddPtr           add_ptr;
+        TacCopyToOffset     copy_to_offset;
+        TacCopyFromOffset   copy_from_offset;
     };
 } TacNode;
 
@@ -323,6 +335,7 @@ extern TacNode *tac_load(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_store(TacNode *src, TacNode *dst, FileLine loc);
 extern TacNode *tac_add_ptr(TacNode *ptr, TacNode *index, size_t scale, TacNode *dst, FileLine loc);
 extern TacNode *tac_copy_to_offset(TacNode *src, char *dst, int offset, FileLine loc);
+extern TacNode *tac_copy_from_offset(char *src, int offset, TacNode *dst, FileLine loc);
 
 extern TacNode *tac_clone_operand(TacNode *tac);
 

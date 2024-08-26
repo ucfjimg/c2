@@ -20,14 +20,21 @@ typedef struct {
 typedef enum {
     ER_PLAIN,               // just a regular operand
     ER_DEREF_POINTER,       // a dereferenced pointer
+    ER_SUB_OBJECT,          // an offset into a struct
 } TacExpResultTag;
+
+typedef struct {
+    char *id;               // base of aggregate
+    int offset;             // offset into aggregate
+} TacExpResultSubObject;
 
 typedef struct {
     TacExpResultTag tag;
 
     union {
-        TacNode *plain;
-        TacNode *deref_pointer;
+        TacNode                 *plain;
+        TacNode                 *deref_pointer;
+        TacExpResultSubObject   sub_object;
     };
 } TacExpResult;
 
@@ -35,6 +42,7 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp);
 static void tcg_statement(TacState *state, Statement *stmt);
 static void tcg_append(TacState *state, TacNode *tac);
 static TacNode *tcg_temporary(TacState *state, Type *type, FileLine loc);
+static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Type *type, char *var, FileLine loc);
 
 //
 // NOTE TAC generation expects a syntactically correct program from
@@ -64,6 +72,18 @@ static TacExpResult expres_deref(TacNode *deref)
 }
 
 //
+// Construct an expression result for a sub-object operand.
+//
+static TacExpResult expres_sub_object(char *id, int offset)
+{
+    TacExpResult expres;
+    expres.tag = ER_SUB_OBJECT;
+    expres.sub_object.id = safe_strdup(id);
+    expres.sub_object.offset = offset;
+    return expres;
+}
+
+//
 // Generate TAC to dereference a pointer and return the result.
 //
 static TacNode *tcg_deref_pointer(TacState *state, TacNode *ptr, Type *type)
@@ -79,10 +99,16 @@ static TacNode *tcg_deref_pointer(TacState *state, TacNode *ptr, Type *type)
 static TacNode *tcg_expression_and_convert(TacState *state, Expression *exp)
 {
     TacExpResult result = tcg_expression(state, exp);
+    TacNode *tmp;
+
 
     switch (result.tag) {
         case ER_PLAIN:          return result.plain;
         case ER_DEREF_POINTER:  return tcg_deref_pointer(state, result.deref_pointer, exp->type);
+        case ER_SUB_OBJECT:
+            tmp = tcg_temporary(state, type_clone(exp->type), exp->loc);
+            tcg_append(state, tac_copy_from_offset(result.sub_object.id, result.sub_object.offset, tmp, exp->loc));
+            return tac_clone_operand(tmp);
     }
 
     ICE_ASSERT(((void)"invalid tag in tcg_expression_and_convert", false));
@@ -213,6 +239,9 @@ static TacExpResult tcg_unary_incdec(TacState *state, Expression *unary)
             case ER_DEREF_POINTER:
                 operand = tcg_deref_pointer(state, operand_res.deref_pointer, type_clone(unary->unary.exp->type));
                 break;
+
+            case ER_SUB_OBJECT:
+                ICE_NYI("tcg_unary_incdec::ER_SUB_OBJECT");
         }
 
         tcg_append(state, tac_binary(bop, operand, tac_const(one, loc), post_value, loc));
@@ -225,6 +254,9 @@ static TacExpResult tcg_unary_incdec(TacState *state, Expression *unary)
             case ER_DEREF_POINTER:
                 tcg_append(state, tac_store(tac_clone_operand(post_value), tac_clone_operand(operand_res.deref_pointer), loc));
                 break;
+
+            case ER_SUB_OBJECT:
+                ICE_NYI("tcg_unary_incdec::ER_SUB_OBJECT");
         }
 
         return expres_plain(tac_clone_operand(post_value));
@@ -244,6 +276,9 @@ static TacExpResult tcg_unary_incdec(TacState *state, Expression *unary)
         case ER_DEREF_POINTER:
             operand = tcg_deref_pointer(state, operand_res.deref_pointer, type_clone(unary->unary.exp->type));
             break;
+
+        case ER_SUB_OBJECT:
+            ICE_NYI("tcg_unary_incdec::ER_SUB_OBJECT");
     }
             
     tcg_append(state, tac_copy(tac_clone_operand(operand), old_value, loc));
@@ -258,6 +293,9 @@ static TacExpResult tcg_unary_incdec(TacState *state, Expression *unary)
         case ER_DEREF_POINTER:
             tcg_append(state, tac_store(tac_clone_operand(post_value), tac_clone_operand(operand_res.deref_pointer), loc));
             break;
+
+        case ER_SUB_OBJECT:
+            ICE_NYI("tcg_unary_incdec::ER_SUB_OBJECT");
     }
 
     return expres_plain(tac_clone_operand(old_value));
@@ -487,6 +525,11 @@ static TacExpResult tcg_assignment(TacState *state, Expression *exp)
                 tcg_append(state, tac_store(right, left.deref_pointer, exp->loc));
                 retval = right;
                 break;
+
+            case ER_SUB_OBJECT:
+                tcg_append(state, tac_copy_to_offset(right, left.sub_object.id, left.sub_object.offset, exp->loc));
+                retval = right;
+                break;
         }
 
     } else {
@@ -509,6 +552,9 @@ static TacExpResult tcg_assignment(TacState *state, Expression *exp)
                 tcg_append(state, tac_store(tmp, left.deref_pointer, exp->loc));
                 retval = tmp;
                 break;
+
+            case ER_SUB_OBJECT:
+                ICE_NYI("tcg_assignment::sub-object");
         }
     }
 
@@ -676,7 +722,7 @@ static TacExpResult tcg_deref(TacState *state, Expression *exp)
 static TacExpResult tcg_addrof(TacState *state, Expression *exp)
 {
     TacExpResult value = tcg_expression(state, exp->addrof.exp);
-    TacNode *dst;
+    TacNode *tmp, *dst;
 
     switch (value.tag) {
         case ER_PLAIN:
@@ -689,6 +735,20 @@ static TacExpResult tcg_addrof(TacState *state, Expression *exp)
             // Expression was something like &*ptr, which is by defintion ptr.
             //
             return expres_plain(value.deref_pointer);
+
+        
+        case ER_SUB_OBJECT:
+            tmp = tcg_temporary(state, type_clone(exp->type), exp->loc);
+            dst = tcg_temporary(state, type_clone(exp->type), exp->loc);
+            tcg_append(state, tac_get_address(tac_var(value.sub_object.id, exp->loc), tmp, exp->loc));
+            tcg_append(state, tac_add_ptr(
+                tac_clone_operand(tmp),
+                tac_const(const_make_int(CIS_LONG, CIS_UNSIGNED, value.sub_object.offset), exp->loc),
+                1,
+                dst,
+                exp->loc));
+
+            return expres_deref(tac_clone_operand(dst));
     }
 
     ICE_ASSERT(((void)"invalid tag in tcg_addrof", false));
@@ -771,7 +831,101 @@ static TacExpResult tcg_sizeof(TacState *state, Expression *exp)
     // $TARGET assuming size_t is unsigned long
     //
     return expres_plain(tac_const(const_make_int(CIS_LONG, CIS_UNSIGNED, size), exp->loc));
+}
 
+//
+// Find the offset of a member in a struct. The typecheck pass ensures
+// that this exists.
+//
+static int tcg_member_offset(TacState *state, char *tag, char *membname)
+{
+    TypetabEnt *ent = typetab_lookup(state->typetab, tag);
+
+    TypetabStructMember *tsm = NULL;
+    for (ListNode *curr = ent->struct_.members.head; curr; curr = curr->next) {
+        TypetabStructMember *check = CONTAINER_OF(curr, TypetabStructMember, list);
+        if (strcmp(check->membname, membname) == 0) {
+            tsm = check;
+            break;
+        }
+    }
+
+    ICE_ASSERT(tsm);
+    return tsm->offset;
+}
+
+//
+// Generate code for a dot operator.
+//
+static TacExpResult tcg_dot(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_DOT);
+    ExpDot *dot = &exp->dot;
+
+    ICE_ASSERT(dot->exp->type->tag == TT_STRUCT);
+    char *tag = dot->exp->type->strct.tag;
+
+    int offset = tcg_member_offset(state, tag, dot->membname);
+
+    TacExpResult result = tcg_expression(state, dot->exp);
+    TacNode *var;
+
+    switch (result.tag) {
+        case ER_PLAIN:
+            ICE_ASSERT(result.plain->tag == TAC_VAR);
+            return expres_sub_object(result.plain->var.name, offset);
+
+        case ER_SUB_OBJECT:
+            return expres_sub_object(result.sub_object.id, result.sub_object.offset + offset);
+
+        case ER_DEREF_POINTER:
+            var = tcg_temporary(state, type_pointer(type_clone(exp->type)), exp->loc);
+            tcg_append(
+                state,
+                tac_add_ptr(
+                    result.deref_pointer,
+                    tac_const(const_make_int(CIS_LONG, CIS_UNSIGNED, offset), exp->loc),
+                    1,
+                    var,
+                    exp->loc
+                )
+            );
+            return expres_deref(tac_var(var->var.name, exp->loc));
+            break;
+    }
+
+    ICE_ASSERT(((void)"invalid result in tcg_dot", false));
+    return expres_plain(tac_var("dummy", exp->loc));
+}
+
+//
+// Generate code for an arrow operator.
+//
+static TacExpResult tcg_arrow(TacState *state, Expression *exp)
+{
+    ICE_ASSERT(exp->tag == EXP_ARROW);
+    ExpArrow *arrow = &exp->arrow;
+
+    ICE_ASSERT(arrow->exp->type->tag == TT_POINTER && arrow->exp->type->ptr.ref->tag == TT_STRUCT);
+    char *tag = arrow->exp->type->ptr.ref->strct.tag;
+    int offset = tcg_member_offset(state, tag, arrow->membname);
+
+    TacNode *ptr = tcg_expression_and_convert(state, arrow->exp);
+
+    TacNode *var;
+    var = tcg_temporary(state, type_pointer(type_clone(exp->type)), exp->loc);
+
+    tcg_append(
+        state,
+        tac_add_ptr(
+            ptr,
+            tac_const(const_make_int(CIS_LONG, CIS_UNSIGNED, offset), exp->loc),
+            1,
+            var,
+            exp->loc
+        )
+    );
+    return expres_deref(tac_var(var->var.name, exp->loc));
 }
 
 //
@@ -799,8 +953,8 @@ static TacExpResult tcg_expression(TacState *state, Expression *exp)
         case EXP_ADDROF:        return tcg_addrof(state, exp); break;
         case EXP_SUBSCRIPT:     return tcg_subscript(state, exp); break;
         case EXP_SIZEOF:        return tcg_sizeof(state, exp); break;
-        case EXP_DOT:           ICE_NYI("tcg_expression::dot");
-        case EXP_ARROW:         ICE_NYI("tcg_expression::arrow");
+        case EXP_DOT:           return tcg_dot(state, exp); break;
+        case EXP_ARROW:         return tcg_arrow(state, exp); break;
     }
 
     ICE_ASSERT(((void)"invalid expression node", false));
@@ -873,6 +1027,34 @@ static int tcg_nested_init_array_with_string(TacState *state, Type *type, ExpStr
 }
 
 //
+// Generate TAC for a nested struct initializer.
+//
+static void tcg_nested_struct_init(TacState *state, Initializer *init, char *tag, char *var, int *offset, FileLine loc)
+{
+    ICE_ASSERT(init->tag == INIT_COMPOUND);
+
+    TypetabEnt *ent = typetab_lookup(state->typetab, tag);
+
+    ListNode *curr_init = init->compound.head;
+    ListNode *curr_memb = ent->struct_.members.head;
+
+    while (curr_init && curr_memb) {
+        Initializer *subinit = CONTAINER_OF(curr_init, Initializer, list);
+        TypetabStructMember *member = CONTAINER_OF(curr_memb, TypetabStructMember, list);
+
+        int suboffset = *offset + member->offset;
+        tcg_nested_init(state, subinit, &suboffset, member->type, var, loc);
+
+        curr_init = curr_init->next;
+        curr_memb = curr_memb->next;
+    }
+
+    *offset += ent->struct_.size;
+
+    ICE_ASSERT(curr_init == NULL && curr_memb == NULL);
+}
+
+//
 // Generate TAC for a nested initializer.
 //
 static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Type *type, char *var, FileLine loc)
@@ -882,7 +1064,7 @@ static void tcg_nested_init(TacState *state, Initializer *init, int *offset, Typ
     if (init->tag == INIT_COMPOUND) {
         switch (type->tag) {
             case TT_ARRAY:      inner = type->array.element; break;
-            case TT_STRUCT:     ICE_NYI("tcg_nested_init::struct");
+            case TT_STRUCT:     tcg_nested_struct_init(state, init, type->strct.tag, var, offset, loc); return;
 
             case TT_CHAR:
             case TT_UCHAR:

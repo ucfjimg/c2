@@ -1621,6 +1621,7 @@ static void ast_type_check_static_pointer_string_init(TypeCheckState *state, Ini
     Symbol *sym = stab_lookup(state->stab, strname);
 
     sym->tag = ST_CONSTANT;
+    sym->type = type_array(type_char(), strlen(strname) + 1);
     sym->stconst = sinit_make_string(strcon->data, strcon->length, true);
 
     //

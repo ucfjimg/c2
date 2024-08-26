@@ -506,6 +506,21 @@ TacNode *tac_copy_to_offset(TacNode *src, char *dst, int offset, FileLine loc)
 }
 
 //
+// Constructor for a TAC copy from offset operation.
+//
+TacNode *tac_copy_from_offset(char *src, int offset, TacNode *dst, FileLine loc)
+{
+    TacNode *tac = tac_alloc(TAC_COPY_FROM_OFFSET, loc);
+
+    tac->copy_from_offset.src = safe_strdup(src);
+    tac->copy_from_offset.offset = offset;
+    tac->copy_from_offset.dst = dst;
+
+    return tac;
+}
+
+
+//
 // Free a TAC function call.
 //
 static void tac_function_call_free(TacFunctionCall *call)
@@ -634,6 +649,15 @@ static void tac_copy_to_offset_free(TacCopyToOffset *copy)
 }
 
 //
+// Free a TAC copy to offset operation.
+//
+static void tac_copy_from_offset_free(TacCopyFromOffset *copy)
+{
+    safe_free(copy->src);
+    tac_free(copy->dst);
+}
+
+//
 // Clone and operand node. The operand must be of type
 // TAC_VAR or TAC_CONST.
 //
@@ -658,33 +682,34 @@ void tac_free(TacNode *tac)
 {
     if (tac) {
         switch (tac->tag) {
-            case TAC_PROGRAM:       tac_program_free(&tac->prog); break;
-            case TAC_FUNCDEF:       tac_function_def_free(&tac->funcdef); break;
-            case TAC_STATIC_VAR:    tac_static_var_free(&tac->static_var); break;
-            case TAC_STATIC_CONST:  tac_static_const_free(&tac->static_const); break;
-            case TAC_CONST:         break;
-            case TAC_RETURN:        tac_return_free(&tac->ret); break;
-            case TAC_COPY:          tac_copy_free(&tac->copy); break;
-            case TAC_JUMP:          tac_jump_free(&tac->jump); break;
-            case TAC_JUMP_ZERO:     tac_jump_zero_free(&tac->jump_zero); break;
-            case TAC_JUMP_NOT_ZERO: tac_jump_not_zero_free(&tac->jump_not_zero); break;
-            case TAC_LABEL:         tac_label_free(&tac->label); break;
-            case TAC_UNARY:         tac_unary_free(&tac->unary); break;
-            case TAC_BINARY:        tac_binary_free(&tac->binary); break;
-            case TAC_VAR:           tac_var_free(&tac->var); break;
-            case TAC_FUNCTION_CALL: tac_function_call_free(&tac->call); break;
-            case TAC_SIGN_EXTEND:   tac_sign_extend_free(&tac->sign_extend); break;
-            case TAC_ZERO_EXTEND:   tac_zero_extend_free(&tac->zero_extend); break;
-            case TAC_TRUNCATE:      tac_truncate_free(&tac->truncate); break;
-            case TAC_DOUBLE_TO_INT: tac_double_to_int_free(&tac->dbl_to_int); break;
-            case TAC_DOUBLE_TO_UINT:tac_double_to_uint_free(&tac->dbl_to_uint); break;
-            case TAC_INT_TO_DOUBLE: tac_int_to_double_free(&tac->int_to_dbl); break;
-            case TAC_UINT_TO_DOUBLE:tac_uint_to_double_free(&tac->uint_to_dbl); break;
-            case TAC_GET_ADDRESS:   tac_get_address_free(&tac->get_address); break;
-            case TAC_LOAD:          tac_load_free(&tac->load); break;
-            case TAC_STORE:         tac_store_free(&tac->store); break;
-            case TAC_ADDPTR:        tac_add_ptr_free(&tac->add_ptr); break;
-            case TAC_COPY_TO_OFFSET:tac_copy_to_offset_free(&tac->copy_to_offset); break;
+            case TAC_PROGRAM:           tac_program_free(&tac->prog); break;
+            case TAC_FUNCDEF:           tac_function_def_free(&tac->funcdef); break;
+            case TAC_STATIC_VAR:        tac_static_var_free(&tac->static_var); break;
+            case TAC_STATIC_CONST:      tac_static_const_free(&tac->static_const); break;
+            case TAC_CONST:             break;
+            case TAC_RETURN:            tac_return_free(&tac->ret); break;
+            case TAC_COPY:              tac_copy_free(&tac->copy); break;
+            case TAC_JUMP:              tac_jump_free(&tac->jump); break;
+            case TAC_JUMP_ZERO:         tac_jump_zero_free(&tac->jump_zero); break;
+            case TAC_JUMP_NOT_ZERO:     tac_jump_not_zero_free(&tac->jump_not_zero); break;
+            case TAC_LABEL:             tac_label_free(&tac->label); break;
+            case TAC_UNARY:             tac_unary_free(&tac->unary); break;
+            case TAC_BINARY:            tac_binary_free(&tac->binary); break;
+            case TAC_VAR:               tac_var_free(&tac->var); break;
+            case TAC_FUNCTION_CALL:     tac_function_call_free(&tac->call); break;
+            case TAC_SIGN_EXTEND:       tac_sign_extend_free(&tac->sign_extend); break;
+            case TAC_ZERO_EXTEND:       tac_zero_extend_free(&tac->zero_extend); break;
+            case TAC_TRUNCATE:          tac_truncate_free(&tac->truncate); break;
+            case TAC_DOUBLE_TO_INT:     tac_double_to_int_free(&tac->dbl_to_int); break;
+            case TAC_DOUBLE_TO_UINT:    tac_double_to_uint_free(&tac->dbl_to_uint); break;
+            case TAC_INT_TO_DOUBLE:     tac_int_to_double_free(&tac->int_to_dbl); break;
+            case TAC_UINT_TO_DOUBLE:    tac_uint_to_double_free(&tac->uint_to_dbl); break;
+            case TAC_GET_ADDRESS:       tac_get_address_free(&tac->get_address); break;
+            case TAC_LOAD:              tac_load_free(&tac->load); break;
+            case TAC_STORE:             tac_store_free(&tac->store); break;
+            case TAC_ADDPTR:            tac_add_ptr_free(&tac->add_ptr); break;
+            case TAC_COPY_TO_OFFSET:    tac_copy_to_offset_free(&tac->copy_to_offset); break;
+            case TAC_COPY_FROM_OFFSET:  tac_copy_from_offset_free(&tac->copy_from_offset); break;
         }
 
         safe_free(tac);
@@ -1109,6 +1134,16 @@ static void tac_print_copy_to_offset(TacCopyToOffset *copy, int tab, bool locs)
 }
 
 //
+// Print a TAC copy from offset operation.
+//
+static void tac_print_copy_from_offset(TacCopyFromOffset *copy, int tab, bool locs)
+{
+    printf("%*scopy-from-offset(\n", tab, "");
+    tac_print_recurse(copy->dst, tab + 2, locs);
+    printf("%*s<= %s at %d)\n", tab, "", copy->src, copy->offset);
+}
+
+//
 // Print a node of a TAC tree.
 //
 static void tac_print_recurse(TacNode *tac, int tab, bool locs)
@@ -1117,33 +1152,34 @@ static void tac_print_recurse(TacNode *tac, int tab, bool locs)
         tac_print_location(tac->loc, tab);
     }
     switch (tac->tag) {
-        case TAC_PROGRAM:       tac_print_program(&tac->prog, tab, locs); break;
-        case TAC_FUNCDEF:       tac_print_funcdef(&tac->funcdef, tab, locs); break;
-        case TAC_STATIC_VAR:    tac_print_static_var(&tac->static_var, tab); break;
-        case TAC_STATIC_CONST:  tac_print_static_const(&tac->static_const, tab); break;
-        case TAC_RETURN:        tac_print_return(&tac->ret, tab, locs); break;
-        case TAC_COPY:          tac_print_copy(&tac->copy, tab, locs); break;
-        case TAC_JUMP:          tac_print_jump(&tac->jump, tab, locs); break;
-        case TAC_JUMP_ZERO:     tac_print_jump_zero(&tac->jump_zero, tab, locs); break;
-        case TAC_JUMP_NOT_ZERO: tac_print_jump_not_zero(&tac->jump_not_zero, tab, locs); break;
-        case TAC_LABEL:         tac_print_label(&tac->label, tab); break;
-        case TAC_UNARY:         tac_print_unary(&tac->unary, tab, locs); break;
-        case TAC_BINARY:        tac_print_binary(&tac->binary, tab, locs); break;
-        case TAC_CONST:         tac_print_const(&tac->constant, tab); break;
-        case TAC_VAR:           tac_print_var(&tac->var, tab); break;
-        case TAC_FUNCTION_CALL: tac_print_function_call(&tac->call, tab, locs); break;
-        case TAC_SIGN_EXTEND:   tac_print_sign_extend(&tac->sign_extend, tab, locs); break;
-        case TAC_ZERO_EXTEND:   tac_print_zero_extend(&tac->zero_extend, tab, locs); break;
-        case TAC_TRUNCATE:      tac_print_truncate(&tac->truncate, tab, locs); break;
-        case TAC_DOUBLE_TO_INT: tac_print_dbl_to_int(&tac->dbl_to_int, tab, locs); break;
-        case TAC_DOUBLE_TO_UINT:tac_print_dbl_to_uint(&tac->dbl_to_uint, tab, locs); break;
-        case TAC_INT_TO_DOUBLE: tac_print_int_to_dbl(&tac->int_to_dbl, tab, locs); break;
-        case TAC_UINT_TO_DOUBLE:tac_print_uint_to_dbl(&tac->uint_to_dbl, tab, locs); break;
-        case TAC_GET_ADDRESS:   tac_print_get_address(&tac->get_address, tab, locs); break;
-        case TAC_LOAD:          tac_print_load(&tac->load, tab, locs); break;
-        case TAC_STORE:         tac_print_store(&tac->store, tab, locs); break;
-        case TAC_ADDPTR:        tac_print_add_ptr(&tac->add_ptr, tab, locs); break;
-        case TAC_COPY_TO_OFFSET:tac_print_copy_to_offset(&tac->copy_to_offset, tab, locs); break;
+        case TAC_PROGRAM:           tac_print_program(&tac->prog, tab, locs); break;
+        case TAC_FUNCDEF:           tac_print_funcdef(&tac->funcdef, tab, locs); break;
+        case TAC_STATIC_VAR:        tac_print_static_var(&tac->static_var, tab); break;
+        case TAC_STATIC_CONST:      tac_print_static_const(&tac->static_const, tab); break;
+        case TAC_RETURN:            tac_print_return(&tac->ret, tab, locs); break;
+        case TAC_COPY:              tac_print_copy(&tac->copy, tab, locs); break;
+        case TAC_JUMP:              tac_print_jump(&tac->jump, tab, locs); break;
+        case TAC_JUMP_ZERO:         tac_print_jump_zero(&tac->jump_zero, tab, locs); break;
+        case TAC_JUMP_NOT_ZERO:     tac_print_jump_not_zero(&tac->jump_not_zero, tab, locs); break;
+        case TAC_LABEL:             tac_print_label(&tac->label, tab); break;
+        case TAC_UNARY:             tac_print_unary(&tac->unary, tab, locs); break;
+        case TAC_BINARY:            tac_print_binary(&tac->binary, tab, locs); break;
+        case TAC_CONST:             tac_print_const(&tac->constant, tab); break;
+        case TAC_VAR:               tac_print_var(&tac->var, tab); break;
+        case TAC_FUNCTION_CALL:     tac_print_function_call(&tac->call, tab, locs); break;
+        case TAC_SIGN_EXTEND:       tac_print_sign_extend(&tac->sign_extend, tab, locs); break;
+        case TAC_ZERO_EXTEND:       tac_print_zero_extend(&tac->zero_extend, tab, locs); break;
+        case TAC_TRUNCATE:          tac_print_truncate(&tac->truncate, tab, locs); break;
+        case TAC_DOUBLE_TO_INT:     tac_print_dbl_to_int(&tac->dbl_to_int, tab, locs); break;
+        case TAC_DOUBLE_TO_UINT:    tac_print_dbl_to_uint(&tac->dbl_to_uint, tab, locs); break;
+        case TAC_INT_TO_DOUBLE:     tac_print_int_to_dbl(&tac->int_to_dbl, tab, locs); break;
+        case TAC_UINT_TO_DOUBLE:    tac_print_uint_to_dbl(&tac->uint_to_dbl, tab, locs); break;
+        case TAC_GET_ADDRESS:       tac_print_get_address(&tac->get_address, tab, locs); break;
+        case TAC_LOAD:              tac_print_load(&tac->load, tab, locs); break;
+        case TAC_STORE:             tac_print_store(&tac->store, tab, locs); break;
+        case TAC_ADDPTR:            tac_print_add_ptr(&tac->add_ptr, tab, locs); break;
+        case TAC_COPY_TO_OFFSET:    tac_print_copy_to_offset(&tac->copy_to_offset, tab, locs); break;
+        case TAC_COPY_FROM_OFFSET:  tac_print_copy_from_offset(&tac->copy_from_offset, tab, locs); break;
     }
 }
 

@@ -1363,8 +1363,12 @@ static void codegen_single(CodegenState *state, TacNode *tac)
     case TAC_ADDPTR:
         codegen_add_ptr(state, tac);
         break;
+
     case TAC_COPY_TO_OFFSET:
         codegen_copy_to_offset(state, tac);
+
+    case TAC_COPY_FROM_OFFSET:
+        ICE_NYI("codegen_single::copy-from-offset");
 
     case TAC_PROGRAM:
         break;
