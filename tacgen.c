@@ -578,7 +578,14 @@ static TacExpResult tcg_function_call(TacState *state, Expression *exp)
         list_push_back(&args, &tacarg->list);
     }
 
-    TacNode *result = tcg_temporary(state, type_clone(exp->type), exp->loc);
+    Symbol *sym = stab_lookup(state->stab, call->name);
+
+    TacNode *result = NULL;
+    if (sym->type->func.ret->tag != TT_VOID) {
+        result = tcg_temporary(state, type_clone(exp->type), exp->loc);
+    } else {
+        result = tcg_temporary(state, type_int(), exp->loc);
+    }
 
     tcg_append(state, tac_function_call(call->name, args, result, exp->loc));
 

@@ -92,8 +92,9 @@ static void bstab_object_print(BackEndObject *obj)
 //
 static void bstab_function_print(BackEndFunction *obj)
 {
-    printf("  defined %s\n",
-        obj->is_defined ? "yes" : "no");
+    printf("  defined %s return_on_stack %s\n",
+        obj->is_defined ? "yes" : "no",
+        obj->return_on_stack ? "yes" : "no");
 }
 
 //

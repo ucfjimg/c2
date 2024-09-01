@@ -29,7 +29,6 @@
 typedef enum {
     STAGE_LEX = 256,
     STAGE_PARSE,
-    STAGE_CODEGEN,
     STAGE_TACKY,
     STAGE_ALL,
 
@@ -41,12 +40,23 @@ typedef enum {
     STAGE_VALIDATE_TYPECHECK,
     STAGE_VALIDATE_LAST = STAGE_VALIDATE_TYPECHECK,
 
+    STAGE_CODEGEN,
+    STAGE_CODEGEN_CODEGEN,
+    STAGE_CODEGEN_ALLOCATE,
+    STAGE_CODEGEN_FIXOPER,
+    STAGE_CODEGEN_LAST = STAGE_CODEGEN_FIXOPER,
+
     STAGE_INVALID,
 } Stage;
 
 static bool is_validate_stage(Stage stage)
 {
     return stage >= STAGE_VALIDATE && stage <= STAGE_VALIDATE_LAST;
+}
+
+static bool is_codegen_stage(Stage stage)
+{
+    return stage >= STAGE_CODEGEN && stage <= STAGE_CODEGEN_LAST;
 }
 
 typedef enum {
@@ -81,7 +91,7 @@ static struct option long_opts[] = {
     { "lex",        no_argument, 0, STAGE_LEX },
     { "parse",      no_argument, 0, STAGE_PARSE },
     { "validate",   optional_argument, 0, STAGE_VALIDATE },
-    { "codegen",    no_argument, 0, STAGE_CODEGEN },
+    { "codegen",    optional_argument, 0, STAGE_CODEGEN },
     { "tacky",      no_argument, 0, STAGE_TACKY },
     { "keep",       no_argument, 0, OPT_KEEP },
     { "line-nos",   no_argument, 0, OPT_LINENOS },
@@ -102,6 +112,14 @@ static Substage validate_substages[] = {
     { "typecheck",  STAGE_VALIDATE_TYPECHECK },
     { NULL,         0 },
 };
+
+static Substage codegen_substages[] = {
+    { "codegen",    STAGE_CODEGEN_CODEGEN },
+    { "allocate",   STAGE_CODEGEN_ALLOCATE },
+    { "fixoper",    STAGE_CODEGEN_FIXOPER },
+    { NULL,         0 },
+};
+
 
 //
 // Print usage and exit
@@ -267,6 +285,12 @@ static void parse_args(int argc, char *argv[], Args *args)
                     flag = lookup_substage(validate_substages, optarg);
                     if (flag == STAGE_INVALID) {
                         fprintf(stderr, "invalid substage `%s` for --validate.\n", optarg);
+                        usage();
+                    }
+                } else if (flag == STAGE_CODEGEN && optarg) {
+                    flag = lookup_substage(codegen_substages, optarg);
+                    if (flag == STAGE_INVALID) {
+                        fprintf(stderr, "invalid substage `%s` for --codegen.\n", optarg);
                         usage();
                     }
                 }
@@ -502,15 +526,22 @@ semantic_done:
     asmcode = codegen(taccode, stab, typetab, bstab);
     ast_free_program(ast);
     ast = NULL;
-
     codegen_sym_to_backsym(stab, bstab, typetab);
-    asm_allocate_vars(asmcode, bstab, args->print_stab);
-    asm_fix_operands(asmcode);
+    if (args->stage == STAGE_CODEGEN_CODEGEN) goto codegen_done;
 
-    if (args->stage == STAGE_CODEGEN) {
+    asm_allocate_vars(asmcode, bstab, args->print_stab);
+    if (args->stage == STAGE_CODEGEN_ALLOCATE) goto codegen_done;
+    asm_fix_operands(asmcode);
+    if (args->stage == STAGE_CODEGEN_FIXOPER) goto codegen_done;
+
+codegen_done:
+    if (is_codegen_stage(args->stage)) {
         asm_print(asmcode, args->line_nos);
         goto done;
     }
+
+    
+
 
     //
     // Final assembly source emission.

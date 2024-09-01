@@ -18,6 +18,7 @@ typedef struct {
 
 typedef struct {
     bool is_defined;
+    bool return_on_stack;    
 } BackEndFunction;
 
 typedef struct {

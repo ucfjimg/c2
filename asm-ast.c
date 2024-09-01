@@ -213,7 +213,7 @@ AsmOperand *aoper_clone(AsmOperand *oper)
         case AOP_IMM:       return aoper_imm(oper->imm);
         case AOP_REG:       return aoper_reg(oper->reg);
         case AOP_PSEUDOREG: return aoper_pseudoreg(oper->pseudoreg);
-        case AOP_DATA:      return aoper_data(oper->data);
+        case AOP_DATA:      return aoper_data(oper->data.name, oper->data.offset);
         case AOP_MEMORY:    return aoper_memory(oper->memory.reg, oper->memory.offset);
     default:
         ICE_ASSERT(((void)"invalid operand in aoper_clone", false));
@@ -311,12 +311,13 @@ AsmOperand *aoper_pseudomem(char *name, int offset)
 //
 // Allocate a static operand.
 //
-AsmOperand *aoper_data(char *name)
+AsmOperand *aoper_data(char *name, int offset)
 {
     AsmOperand *op = safe_zalloc(sizeof(AsmOperand));
 
     op->tag = AOP_DATA;
-    op->data = safe_strdup(name);
+    op->data.name = safe_strdup(name);
+    op->data.offset = offset;
     return op;    
 }
 
@@ -336,7 +337,7 @@ void aoper_free(AsmOperand *op)
     if (op) {
         switch (op->tag) { 
             case AOP_PSEUDOREG: safe_free(op->pseudoreg); break;
-            case AOP_DATA: safe_free(op->data); break;
+            case AOP_DATA:      safe_free(op->data.name); break;
             case AOP_PSEUDOMEM: safe_free(op->pseudomem.name); break;
 
             default:
@@ -356,7 +357,7 @@ void aoper_print(AsmOperand *op)
         case AOP_REG: printf("$%s", reg_name(op->reg)); break;
         case AOP_PSEUDOREG: printf("%s", op->pseudoreg); break;
         case AOP_MEMORY: printf("mem[%s+%d]", reg_name(op->memory.reg), op->memory.offset); break;
-        case AOP_DATA: printf("%s", op->data); break;
+        case AOP_DATA: printf("data[%s+%d]", op->data.name, op->data.offset); break;
         case AOP_INDEXED: printf("[%s+%s*%u]", reg_name(op->indexed.base), reg_name(op->indexed.index), op->indexed.scale); break;
         case AOP_PSEUDOMEM: printf("pseudomem[%s+%d]", op->pseudomem.name, op->pseudomem.offset); break;
     }

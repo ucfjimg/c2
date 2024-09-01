@@ -223,9 +223,10 @@ static void emit_memory(EmitState *state, AsmMemoryOperand *mem)
 //
 // Emit a data reference.
 //
-static void emit_data(EmitState *state, char *name)
+static void emit_data(EmitState *state, AsmDataOperand *data)
 {
-    fprintf(state->out, "%s(%%rip)", name);
+    ICE_NYI("emit_data::data");
+//    fprintf(state->out, "%s(%%rip)", name);
 }
 
 //
@@ -249,7 +250,7 @@ static void emit_asmoper(EmitState *state, AsmOperand *oper, OperandSize os)
         case AOP_IMM:       emit_imm(state, oper->imm, os); break;
         case AOP_REG:       emit_reg(state, oper->reg, os); break;
         case AOP_MEMORY:    emit_memory(state, &oper->memory); break;
-        case AOP_DATA:      emit_data(state, oper->data); break;
+        case AOP_DATA:      emit_data(state, &oper->data); break;
         case AOP_INDEXED:   emit_indexed(state, &oper->indexed); break;
 
         case AOP_PSEUDOMEM:

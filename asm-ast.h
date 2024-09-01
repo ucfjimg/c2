@@ -98,6 +98,11 @@ typedef enum {
 extern const char *acc_describe(AsmConditionCode cc);
 
 typedef struct {
+    char *name;             // name of static object
+    int offset;             // offset to object
+} AsmDataOperand;
+
+typedef struct {
     Register reg;           // base register
     int offset;             // offset 
 } AsmMemoryOperand;
@@ -120,7 +125,7 @@ typedef struct {
         Register            reg;        // AOP_REG
         unsigned long       imm;        // AOP_IMM
         char               *pseudoreg;  // AOP_PSEUDOREG 
-        char               *data;       // AOP_DATA
+        AsmDataOperand      data;       // AOP_DATA
         AsmMemoryOperand    memory;     // AOP_MEMORY
         AsmIndexedOperand   indexed;    // AOP_INDEXED
         AsmPseudoMem        pseudomem;  // AOP_PSEUDOMEM
@@ -131,7 +136,7 @@ extern AsmOperand *aoper_clone(AsmOperand *oper);
 extern AsmOperand *aoper_reg(Register reg);
 extern AsmOperand *aoper_pseudoreg(char *name);
 extern AsmOperand *aoper_imm(unsigned long val);
-extern AsmOperand *aoper_data(char *name);
+extern AsmOperand *aoper_data(char *name, int offset);
 extern AsmOperand *aoper_memory(Register reg, int offset);
 extern AsmOperand *aoper_indexed(Register base, Register index, int scale);
 extern AsmOperand *aoper_pseudomem(char *name, int offset);

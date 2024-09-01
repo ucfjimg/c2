@@ -48,6 +48,40 @@ static const int float_arg_reg_count = sizeof(float_arg_regs) / sizeof(float_arg
 #define DBL_TO_UINT_UPPER_FLT 9223372036854775808.0
 #define DBL_TO_UINT_UPPER_INT 9223372036854775808lu
 
+typedef enum {
+    STC_MEMORY,
+    STC_SSE,
+    STC_INTEGER,
+} StructClass;
+
+typedef struct {
+    size_t size;
+    size_t eightbytes;
+    StructClass sc[1];
+} ClassifiedStruct;
+
+typedef struct {
+    ListNode list;
+    Type *type;
+} TypeList;
+
+typedef struct {
+    List *ints;
+    int nints;
+    List *floats;
+    int nfloats;
+    List *stack;
+    int intregs;
+} ClassifyParmsState;
+
+typedef struct {
+    ListNode list;
+    AsmType *type;
+    AsmOperand *oper;
+} TypedOperand;
+
+static bool classify_return_value(CodegenState *state, TacNode *retval, List *ints, List *doubles);
+
 //
 // Create a nested state.
 //
@@ -172,6 +206,17 @@ static int codegen_type_array_align(TypeTable *tab, Type *type)
 }
 
 //
+// Compute the alignment of a type system struct.
+//
+static int codegen_type_struct_align(TypeTable *tab, Type *type)
+{
+    ICE_ASSERT(type->tag == TT_STRUCT);
+
+    TypetabEnt *ent = typetab_lookup(tab, type->strct.tag);
+    return ent->struct_.align;
+}
+
+//
 // Compute the alignment of a type system type.
 //
 static int codegen_type_align(TypeTable *tab, Type *type)
@@ -202,7 +247,7 @@ static int codegen_type_align(TypeTable *tab, Type *type)
     case TT_ARRAY:
         return codegen_type_array_align(tab, type);
     case TT_STRUCT:
-        ICE_NYI("codegen_type_align::struct");
+        return codegen_type_struct_align(tab, type);
     }
 
     ICE_ASSERT(((void)"invalid type tag in codegen_type_align false", false));
@@ -210,11 +255,11 @@ static int codegen_type_align(TypeTable *tab, Type *type)
 }
 
 //
-// Convert an array type to an byte array.
+// Convert an aggregate type to an byte array.
 //
-static AsmType *codegen_array_to_asmtype(TypeTable *tab, Type *type)
+static AsmType *codegen_aggregate_to_asmtype(TypeTable *tab, Type *type)
 {
-    ICE_ASSERT(type->tag == TT_ARRAY);
+    ICE_ASSERT(type->tag == TT_ARRAY || type->tag == TT_STRUCT);
 
     size_t size = type_size(tab, type);
     int align = codegen_type_align(tab, type);
@@ -253,9 +298,8 @@ static AsmType *codegen_type_to_asmtype(TypeTable *tab, Type *type)
     case TT_POINTER:
         return asmtype_quad();
     case TT_ARRAY:
-        return codegen_array_to_asmtype(tab, type);
     case TT_STRUCT:
-        ICE_NYI("codegen_type_to_asmtype::struct");
+        return codegen_aggregate_to_asmtype(tab, type);
     }
 
     ICE_ASSERT(false);
@@ -344,6 +388,242 @@ static int codegen_align(TypeTable *typetab, Type *type)
 }
 
 //
+// Flatten out list of scalar types in an aggregate type, recursively.
+// Caller is responsible for making sure the list is initially empty.
+//
+// List is of type TypeList.
+//
+static void codegen_flatten_struct(TypeTable *typetab, Type *type, List *out)
+{
+    if (type->tag == TT_STRUCT) {
+        TypetabEnt *ent = typetab_lookup(typetab, type->strct.tag);
+
+        for (ListNode *curr = ent->struct_.members.head; curr; curr = curr->next) {
+            TypetabStructMember *member = CONTAINER_OF(curr, TypetabStructMember, list);
+            codegen_flatten_struct(typetab, member->type, out);
+        }
+    } else if (type->tag == TT_ARRAY) {
+        for (size_t i = 0; i < type->array.size; i++) {
+            TypeList *tl = safe_zalloc(sizeof(TypeList));
+            tl->type = type_clone(type->array.element);
+            list_push_back(out, &tl->list);
+        }
+    } else {
+        TypeList *tl = safe_zalloc(sizeof(TypeList));
+        tl->type = type_clone(type);
+        list_push_back(out, &tl->list);
+    }
+}
+
+//
+// Free a list of TypeList nodes.
+//
+static void codegen_free_typelist(List *list)
+{
+    ListNode *next = NULL;
+    for (ListNode *curr = list->head; curr; curr = next) {
+        next = curr->next;
+        TypeList *tl = CONTAINER_OF(curr, TypeList, list);
+        type_free(tl->type);
+        safe_free(tl);
+    }
+}
+
+//
+// Classify a structure.
+//
+// The returned struct is allocated.
+//
+static ClassifiedStruct *codegen_classify_struct(TypeTable *typetab, Type *type)
+{
+    ICE_ASSERT(type->tag == TT_STRUCT);
+    TypetabEnt *ent = typetab_lookup(typetab, type->strct.tag);
+
+    size_t eightbytes = (ent->struct_.size + 7) / 8;
+    ClassifiedStruct *cs = safe_zalloc(sizeof(ClassifiedStruct) + (eightbytes - 1) * sizeof(StructClass));
+
+    cs->eightbytes = eightbytes;
+    cs->size = ent->struct_.size;
+
+    if (eightbytes > 2) {
+        for (size_t i = 0; i < eightbytes; i++) {
+            cs->sc[i] = STC_MEMORY;
+        }
+    } else {
+        List types;
+        list_clear(&types);
+        codegen_flatten_struct(typetab, type, &types);
+
+        if (eightbytes == 2) {
+            ICE_ASSERT(types.head);
+            ICE_ASSERT(types.tail);
+            ICE_ASSERT(types.head != types.tail);
+
+            Type *first = CONTAINER_OF(types.head, TypeList, list)->type;
+            Type *last =  CONTAINER_OF(types.tail, TypeList, list)->type;
+
+            if (first->tag == TT_DOUBLE && last->tag == TT_DOUBLE) {
+                cs->sc[0] = STC_SSE;
+                cs->sc[1] = STC_SSE;
+            } else if (first->tag == TT_DOUBLE) {
+                cs->sc[0] = STC_SSE;
+                cs->sc[1] = STC_INTEGER;
+            } else if (last->tag == TT_DOUBLE) {
+                cs->sc[0] = STC_INTEGER;
+                cs->sc[1] = STC_SSE;
+            } else {
+                cs->sc[0] = STC_INTEGER;
+                cs->sc[1] = STC_INTEGER;
+            }
+        } else {
+            ICE_ASSERT(eightbytes == 1);
+            ICE_ASSERT(types.head);
+
+            Type *first = CONTAINER_OF(types.head, TypeList, list)->type;
+
+            if (first->tag == TT_DOUBLE) {
+                cs->sc[0] = STC_SSE;
+            } else {
+                cs->sc[0] = STC_INTEGER;
+            }
+        }
+
+        codegen_free_typelist(&types);
+    }
+
+    return cs;
+}
+
+//
+// Clone an operand, which must be a pseudoreg or memory, and add an offset to the the 
+// cloned operand.
+//
+static AsmOperand *clone_with_offset(AsmOperand *src, int offset)
+{
+    ICE_ASSERT(src->tag == AOP_PSEUDOREG || src->tag == AOP_MEMORY || src->tag == AOP_PSEUDOMEM);
+
+    if (src->tag == AOP_PSEUDOREG) {
+        return aoper_pseudomem(src->pseudoreg, offset);
+    }
+
+    if (src->tag == AOP_PSEUDOMEM) {
+        return aoper_pseudomem(src->pseudomem.name, src->pseudomem.offset + offset);
+    }
+
+    return aoper_memory(src->memory.reg, src->memory.offset + offset);
+}
+
+//
+// Generate code to copy memory. src and dst may be either pseudoreg or memory operands.
+//
+static void codegen_copy_bytes(CodegenState *state, AsmOperand *src, AsmOperand *dst, size_t bytes, FileLine loc)
+{
+    int offset = 0;
+
+    while (bytes - offset >= 8) {
+        codegen_push_instr(state, asm_mov(clone_with_offset(src, offset), clone_with_offset(dst, offset), asmtype_quad(), loc));
+        offset += 8;
+    }
+
+    while (bytes - offset >= 4) {
+        codegen_push_instr(state, asm_mov(clone_with_offset(src, offset), clone_with_offset(dst, offset), asmtype_long(), loc));
+        offset += 4;
+    }
+
+
+    while (bytes > offset) {
+        codegen_push_instr(state, asm_mov(clone_with_offset(src, offset), clone_with_offset(dst, offset), asmtype_byte(), loc));
+        offset++;
+    }
+}
+
+//
+// Generate code to load memory from a pointer variable.
+//
+static void codegen_load_bytes(CodegenState *state, char *ptr, char *dst, size_t bytes, FileLine loc)
+{
+    codegen_push_instr(state, asm_mov(aoper_pseudoreg(ptr), aoper_reg(REG_RAX), asmtype_quad(), loc));
+    
+    int offset = 0;
+
+    while (bytes - offset >= 8) {
+        codegen_push_instr(state, asm_mov(aoper_memory(REG_RAX, offset), aoper_pseudomem(dst, offset), asmtype_quad(), loc));
+        offset += 8;
+    }
+
+    while (bytes - offset >= 4) {
+        codegen_push_instr(state, asm_mov(aoper_memory(REG_RAX, offset), aoper_pseudomem(dst, offset), asmtype_long(), loc));
+        offset += 4;
+    }
+
+
+    while (bytes > offset) {
+        codegen_push_instr(state, asm_mov(aoper_memory(REG_RAX, offset), aoper_pseudomem(dst, offset), asmtype_byte(), loc));
+        offset++;
+    }
+}
+
+//
+// Generate code to store memory to a pointer variable.
+//
+static void codegen_store_bytes(CodegenState *state, char *src, char *ptr, size_t bytes, FileLine loc)
+{
+    codegen_push_instr(state, asm_mov(aoper_pseudoreg(ptr), aoper_reg(REG_RAX), asmtype_quad(), loc));
+    
+    int offset = 0;
+
+    while (bytes - offset >= 8) {
+        codegen_push_instr(state, asm_mov(aoper_pseudomem(src, offset), aoper_memory(REG_RAX, offset),asmtype_quad(), loc));
+        offset += 8;
+    }
+
+    while (bytes - offset >= 4) {
+        codegen_push_instr(state, asm_mov(aoper_pseudomem(src, offset), aoper_memory(REG_RAX, offset),asmtype_long(), loc));
+        offset += 4;
+    }
+
+
+    while (bytes > offset) {
+        codegen_push_instr(state, asm_mov(aoper_pseudomem(src, offset), aoper_memory(REG_RAX, offset),asmtype_byte(), loc));
+        offset++;
+    }
+}
+
+//
+// Insert bytes from the source operand into a register.
+//
+static void codegen_copy_bytes_to_reg(CodegenState *state, AsmOperand *src, Register dst, size_t size, FileLine loc)
+{
+    int offset = size - 1;
+
+    while (offset >= 0) {
+        AsmOperand *srcoff = clone_with_offset(src, offset);
+        codegen_push_instr(state, asm_mov(srcoff, aoper_reg(dst), asmtype_byte(), loc));
+        if (offset > 0) {
+            codegen_push_instr(state, asm_binary(BOP_LSHIFT, aoper_imm(8), aoper_reg(dst), asmtype_quad(), loc));        
+        }   
+        offset--;     
+    }
+}
+
+//
+// Insert bytes from a register into the dest operand.
+//
+static void codegen_copy_bytes_from_reg(CodegenState *state, Register src, AsmOperand *dst, size_t size, FileLine loc)
+{
+    int offset = 0;
+
+    while (offset < size) {
+        AsmOperand *dstoff = clone_with_offset(dst, offset);
+        codegen_push_instr(state, asm_mov(aoper_reg(src), dstoff, asmtype_byte(), loc));
+        if (offset < size - 1) {            
+            codegen_push_instr(state, asm_binary(BOP_RSHIFT, aoper_imm(8), aoper_reg(src), asmtype_quad(), loc));        
+        }
+        offset++;
+    }
+}
+
+//
 // Create a labeled floating point literal and return the allocated label.
 //
 static char *codegen_float_literal(CodegenState *state, double floatval, int align, FileLine loc)
@@ -385,7 +665,7 @@ static AsmOperand *codegen_constant(CodegenState *state, TacNode *tac)
     if (tac->constant.tag == CON_FLOAT)
     {
         char *label = codegen_float_literal(state, tac->constant.floatval, 8, tac->loc);
-        return aoper_data(label);
+        return aoper_data(label, 0);
     }
 
     return aoper_imm(tac->constant.intval.value);
@@ -477,7 +757,7 @@ static void codegen_unary_neg_float(CodegenState *state, TacNode *tac)
     }
 
     codegen_push_instr(state, asm_mov(src, dst, asmtype_double(), tac->loc));
-    codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_data(state->neg_zero), aoper_clone(dst), asmtype_double(), tac->loc));
+    codegen_push_instr(state, asm_binary(BOP_BITXOR, aoper_data(state->neg_zero, 0), aoper_clone(dst), asmtype_double(), tac->loc));
 }
 
 //
@@ -687,17 +967,45 @@ static void codegen_return(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_RETURN);
 
+    static Register int_regs[2] = { REG_RAX, REG_RDX };
+    static Register flt_regs[2] = { REG_XMM0, REG_XMM1 };
+
     if (tac->ret.val) {
         AsmOperand *retval = codegen_expression(state, tac->ret.val);
         AsmType *rettype = codegen_tac_to_asmtype(state, tac->ret.val);
 
-        if (rettype->tag == AT_DOUBLE)
-        {
-            codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_XMM0), rettype, tac->loc));
-        }
-        else
-        {
-            codegen_push_instr(state, asm_mov(retval, aoper_reg(REG_RAX), rettype, tac->loc));
+        List ints;
+        List flts;
+        bool return_in_memory = classify_return_value(state, tac->ret.val, &ints, &flts);
+
+        if (return_in_memory) {
+            codegen_push_instr(state, asm_mov(aoper_memory(REG_RBP, -8), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
+            codegen_copy_bytes(state, aoper_memory(REG_RAX, 0), retval, rettype->array.size, tac->loc); 
+        } else {
+            int reg_index = 0;
+
+            ListNode *next = NULL;
+            for (ListNode *curr = ints.head; curr; curr = next, reg_index++) {
+                next = curr->next;
+                TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+                if (to->type->tag == AT_BYTEARRAY) {
+                    codegen_copy_bytes_to_reg(state, to->oper, int_regs[reg_index], to->type->array.size, tac->loc);
+                } else {
+                    codegen_push_instr(state, asm_mov(to->oper, aoper_reg(int_regs[reg_index]), to->type, tac->loc));
+                }
+                safe_free(to);
+            }
+
+            next = NULL;
+            reg_index = 0;
+            for (ListNode *curr = flts.head; curr; curr = next, reg_index++) {
+                next = curr->next;
+                TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+
+                codegen_push_instr(state, asm_mov(to->oper, aoper_reg(flt_regs[reg_index]), to->type, tac->loc));
+
+                safe_free(to);
+            }
         }
     }
     codegen_push_instr(state, asm_ret(tac->loc));
@@ -764,10 +1072,16 @@ static void codegen_copy(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_COPY);
 
+    AsmType *dsttype = codegen_tac_to_asmtype(state, tac->copy.dst);
     AsmOperand *src = codegen_expression(state, tac->copy.src);
     AsmOperand *dst = codegen_expression(state, tac->copy.dst);
-    AsmType *dsttype = codegen_tac_to_asmtype(state, tac->copy.dst);
 
+    if (dsttype->tag == AT_BYTEARRAY) {        
+        codegen_copy_bytes(state, src, dst, dsttype->array.size, tac->loc);
+        return;
+    }
+
+    
     codegen_push_instr(state, asm_mov(src, dst, dsttype, tac->loc));
 }
 
@@ -782,8 +1096,118 @@ static void codegen_label(CodegenState *state, TacNode *tac)
 }
 
 //
+// Construct a typed operand and push it onto a list.
+//
+static void push_typed_operand(List *list, AsmType *type, AsmOperand *oper)
+{
+    TypedOperand *to = safe_zalloc(sizeof(TypedOperand));
+    to->type = type;
+    to->oper = oper;
+    list_push_back(list, &to->list);
+}
+
+//
+// For structure pieces, get the type of the current 8byte based on how
+// much structure is left.
+//
+static AsmType *get_eightbyte_type(size_t offset, size_t structsize)
+{
+    size_t bytes_left = structsize - offset;
+
+    if (bytes_left >= 8) {
+        return asmtype_quad();
+    } else if (bytes_left == 4) {
+        return asmtype_long();
+    } else if (bytes_left == 1) {
+        return asmtype_byte();
+    }
+    return asmtype_bytearray(bytes_left, 8);
+}
+
+//
+// Classify a struct parameter into int/float registers or on the stack, and
+// populate the pieces of the struct into the proper parameter list.
+//
+static void codegen_classify_struct_parameter(CodegenState *state, char *var, ClassifyParmsState *cpstate, Type *structtype)
+{
+    ClassifiedStruct *cs = codegen_classify_struct(state->typetab, structtype);
+
+    bool use_stack = true;
+    size_t struct_size = cs->size;
+
+    if (cs->sc[0] != STC_MEMORY) {
+        int tent_ints = 0;
+        int tent_floats = 0;
+
+        //
+        // First count classes and see if everything fits in remaining
+        // registers.
+        //
+        for (size_t i = 0; i < cs->eightbytes; i++) {
+            switch (cs->sc[i]) {
+                case STC_INTEGER:
+                    tent_ints++;
+                    break;
+
+                case STC_SSE:
+                    tent_floats++;
+                    break;
+
+                case STC_MEMORY:
+                    ICE_ASSERT(((void)"memory eightbyte mixed with scalars", false));
+                    break;
+            }
+        }
+
+        if (tent_ints <= cpstate->intregs && tent_floats <= float_arg_reg_count) {
+            // 
+            // Fits in registers, add to lists.
+            //
+            size_t offset = 0;
+            for (size_t i = 0; i < cs->eightbytes; i++) {
+                AsmOperand *oper = aoper_pseudomem(var, offset);
+                AsmType *type = get_eightbyte_type(offset, struct_size);
+
+                switch (cs->sc[i]) {
+                    case STC_INTEGER:
+                        push_typed_operand(cpstate->ints, type, oper);
+                        break;
+
+                    case STC_SSE:
+                        push_typed_operand(cpstate->floats, type, oper);
+                        break;
+
+                    case STC_MEMORY:
+                        ICE_ASSERT(((void)"memory eightbyte mixed with scalars", false));
+                        break;
+                }
+
+                offset += 8;
+            }
+
+            use_stack = false;
+        }
+    }
+
+    if (use_stack) {
+        // 
+        // Does not fit in registers, add to stack list.
+        //
+        size_t offset = 0;
+        for (size_t i = 0; i < cs->eightbytes; i++) {
+            AsmOperand *oper = aoper_pseudomem(var, offset);
+            AsmType *type = get_eightbyte_type(offset, struct_size);
+            push_typed_operand(cpstate->stack, type, oper);
+            offset += 8;
+        }
+    }
+
+    safe_free(cs);
+}
+
+//
 // Given a list of TAC operand nodes, partition the list into new lists based on
-// parameter passing conventions.
+// parameter passing conventions. The returned lists contain <TypeOperand> node.
 //
 // - First 6 integer operands go into integer registers.
 // - First 8 float operands go into XMM registers.
@@ -791,38 +1215,175 @@ static void codegen_label(CodegenState *state, TacNode *tac)
 //
 // The original list will be destroyed.
 //
-static void codegen_classify_parameters(CodegenState *state, List *nodes, List *ints, List *floats, List *stack)
+static void codegen_classify_parameters(CodegenState *state, List *nodes, List *ints, List *floats, List *stack, bool return_in_memory)
 {
-    int nints = 0;
-    int nfloats = 0;
+    ClassifyParmsState cpstate;
 
-    list_clear(ints);
-    list_clear(floats);
-    list_clear(stack);
+    cpstate.nints = 0;
+    cpstate.nfloats = 0;
+    cpstate.ints = ints;
+    cpstate.floats = floats;
+    cpstate.stack = stack;
+
+    list_clear(cpstate.ints);
+    list_clear(cpstate.floats);
+    list_clear(cpstate.stack);
+
+    cpstate.intregs = int_arg_reg_count;
+    if (return_in_memory) {
+        cpstate.intregs--;
+    }
 
     ListNode *next = NULL;
-    for (ListNode *curr = nodes->head; curr; curr = next)
-    {
+    for (ListNode *curr = nodes->head; curr; curr = next) {
         next = curr->next;
 
         TacNode *parm = CONTAINER_OF(curr, TacNode, list);
+        
+        enum ParmType {
+            Double,
+            Scalar,
+            Struct
+        } parmtype = Scalar;
 
-        if (nfloats < float_arg_reg_count && codegen_operand_float(state, parm))
-        {
-            list_push_back(floats, curr);
-            nfloats++;
-            continue;
+        Type *structtype = NULL;
+
+        if (parm->tag == TAC_CONST) {
+            if (parm->constant.tag == CON_FLOAT) {
+                parmtype = Scalar;
+            } else {
+                parmtype = Double;
+            }
+        } else if (parm->tag == TAC_VAR) {
+            Symbol *sym = stab_lookup(state->stab, parm->var.name);
+            if (sym->type->tag == TT_DOUBLE) {
+                parmtype = Scalar;
+            } else if (type_scalar(sym->type)) {
+                parmtype = Scalar;
+            } else {
+                ICE_ASSERT(sym->type->tag == TT_STRUCT);
+                parmtype = Struct;
+                structtype = sym->type;
+            }
+        } else {
+            ICE_ASSERT(((void)"function operand not const or var", false));
+            return;
         }
 
-        if (nints < int_arg_reg_count && !codegen_operand_float(state, parm))
-        {
-            list_push_back(ints, curr);
-            nints++;
-            continue;
-        }
+        AsmOperand *oper = codegen_expression(state, parm);
+        AsmType *at = codegen_tac_to_asmtype(state, parm);
 
-        list_push_back(stack, curr);
+        switch (parmtype) {
+            case Double:
+                if (cpstate.nfloats < float_arg_reg_count) {
+                    push_typed_operand(cpstate.floats, at, oper);
+                    cpstate.nfloats++;
+                } else {
+                    push_typed_operand(cpstate.stack, at, oper);
+                }
+                break;
+
+            case Scalar:
+                if (cpstate.nints < cpstate.intregs) {
+                    push_typed_operand(cpstate.ints, at, oper);
+                    cpstate.nints++;
+                } else {
+                    push_typed_operand(cpstate.stack, at, oper);
+                }
+                break;
+
+            case Struct:
+                ICE_ASSERT(parm->tag = TAC_VAR);
+                codegen_classify_struct_parameter(state, parm->var.name, &cpstate, structtype);
+                break;
+        }        
     }
+}
+
+//
+// Classify how a return value is to be returned: in registers or in memory.
+// If in registers, populate the `ints` and `doubles` lists with the 
+// registers to use.
+//
+// Returns true if the value is returned in memory; else false.
+//
+static bool classify_return_value(CodegenState *state, TacNode *retval, List *ints, List *doubles)
+{
+    AsmType *at = codegen_tac_to_asmtype(state, retval);
+
+    list_clear(ints);
+    list_clear(doubles);
+
+    if (at->tag == AT_DOUBLE) {
+        AsmOperand *oper = codegen_expression(state, retval);
+        push_typed_operand(doubles, at, oper);
+        return false;
+    }
+
+    if (at->tag != AT_BYTEARRAY) {
+        //
+        // scalar
+        //
+        AsmOperand *oper = codegen_expression(state, retval);
+        push_typed_operand(ints, at, oper);
+        return false;
+    }
+
+    //
+    // Must be a struct
+    //
+    ICE_ASSERT(retval->tag == TAC_VAR);
+    char *var = retval->var.name;
+    Symbol *sym = stab_lookup(state->stab, var);
+    ICE_ASSERT(sym->type->tag == TT_STRUCT);
+    ClassifiedStruct *cs = codegen_classify_struct(state->typetab, sym->type);
+
+    asmtype_free(at);
+
+    bool return_in_memory = true;
+
+    if (cs->sc[0] != STC_MEMORY) {
+        size_t offset = 0;
+        for (size_t i = 0; i < cs->eightbytes; i++) {            
+            AsmOperand *oper = aoper_pseudomem(var, offset);
+            AsmType *at = get_eightbyte_type(offset, cs->size);
+
+            switch (cs->sc[i]) {
+                case STC_INTEGER:
+                    push_typed_operand(ints, at, oper);
+                    break;
+
+                case STC_SSE:
+                    push_typed_operand(doubles, at, oper);
+                    break;
+
+                case STC_MEMORY:
+                    ICE_ASSERT(((void)"STC_MEMORY found in classify_return_value", false));
+            }
+            offset += 8;
+        }
+        return_in_memory = false;
+    }
+
+    safe_free(cs);
+    return return_in_memory;
+}
+
+//
+// Check if a return value would be in memory without building the
+// parameter lists.
+//
+static bool check_return_in_memory(TypeTable *typetab, Type *rettype)
+{
+    if (rettype->tag != TT_STRUCT) {
+        return false;
+    }
+
+    ClassifiedStruct *cs = codegen_classify_struct(typetab, rettype);
+    bool return_in_memory = cs->sc[0] == STC_MEMORY;
+    safe_free(cs);
+
+    return return_in_memory;
 }
 
 //
@@ -842,7 +1403,23 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
 
     List ints, floats, stack;
 
-    codegen_classify_parameters(state, &call->args, &ints, &floats, &stack);
+    List int_dests;
+    List double_dests;
+    bool return_in_memory = false;
+    
+    if (call->dst) {
+        classify_return_value(state, call->dst, &int_dests, &double_dests);
+    }
+
+    int intreg = 0;
+
+    if (return_in_memory) {
+        AsmOperand *dstop = codegen_expression(state, call->dst);
+        codegen_push_instr(state, asm_lea(dstop, aoper_reg(REG_RDI), tac->loc));
+        intreg++;
+    }
+
+    codegen_classify_parameters(state, &call->args, &ints, &floats, &stack, return_in_memory);
 
     int args_on_stack = list_count(&stack);
 
@@ -853,8 +1430,7 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     //
     int stack_padding = (args_on_stack & 1) ? 8 : 0;
 
-    if (stack_padding)
-    {
+    if (stack_padding) {
         codegen_push_instr(state, asm_stack_reserve(stack_padding, tac->loc));
     }
 
@@ -862,26 +1438,31 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     // Load integer register arguments.
     //
     ListNode *curr = ints.head;
-    for (int i = 0; curr; i++, curr = curr->next)
-    {
+    ListNode *next = NULL;
+    for (int i = 0; curr; i++, curr = next) {
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
         Register arg_reg = int_arg_regs[i];
-        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
-        AsmOperand *arg = codegen_expression(state, tac_arg);
-        AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
-        codegen_push_instr(state, asm_mov(arg, aoper_reg(arg_reg), argtype, tac->loc));
+        
+        if (to->type->tag == AT_BYTEARRAY) {
+            codegen_copy_bytes_to_reg(state, to->oper, arg_reg, to->type->array.size, tac->loc);
+        } else {
+            codegen_push_instr(state, asm_mov(to->oper, aoper_reg(arg_reg), to->type, tac->loc));
+        }        
+        safe_free(to);
     }
 
     //
     // Load floating point register arguments.
     //
     curr = floats.head;
-    for (int i = 0; curr; i++, curr = curr->next)
-    {
+    next = NULL;
+    for (int i = 0; curr; i++, curr = next) {
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
         Register arg_reg = float_arg_regs[i];
-        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
-        AsmOperand *arg = codegen_expression(state, tac_arg);
-        AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
-        codegen_push_instr(state, asm_mov(arg, aoper_reg(arg_reg), argtype, tac->loc));
+        codegen_push_instr(state, asm_mov(to->oper, aoper_reg(arg_reg), to->type, tac->loc));
+        safe_free(to);
     }
 
     //
@@ -890,20 +1471,20 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     list_reverse(&stack);
 
     curr = stack.head;
-    for (int i = 0; i < args_on_stack; i++, curr = curr->next)
-    {
-        TacNode *tac_arg = CONTAINER_OF(curr, TacNode, list);
-        AsmOperand *arg = codegen_expression(state, tac_arg);
-        AsmType *argtype = codegen_tac_to_asmtype(state, tac_arg);
-        if (argtype->tag == AT_DOUBLE)
-        {
-            codegen_push_instr(state, asm_push(arg, tac->loc));
-        }
-        else
-        {
-            codegen_push_instr(state, asm_mov(arg, aoper_reg(REG_RAX), argtype, tac->loc));
+    next = NULL;
+    for (int i = 0; i < args_on_stack; i++, curr = next) {
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+        if (to->type->tag == AT_BYTEARRAY) {
+            codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_imm(8), aoper_reg(REG_RSP), asmtype_quad(), tac->loc));
+            codegen_copy_bytes(state, to->oper, aoper_memory(REG_RSP, 0), to->type->array.size, tac->loc);
+        } else if (to->type->tag == AT_DOUBLE) {
+            codegen_push_instr(state, asm_push(to->oper, tac->loc));
+        } else {
+            codegen_push_instr(state, asm_mov(to->oper, aoper_reg(REG_RAX), to->type, tac->loc));
             codegen_push_instr(state, asm_push(aoper_reg(REG_RAX), tac->loc));
         }
+        safe_free(to);
     }
 
     //
@@ -915,28 +1496,42 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     // Clean up
     //
     int bytes_to_free = stack_padding + 8 * args_on_stack;
-    if (bytes_to_free)
-    {
+    if (bytes_to_free) {
         codegen_push_instr(state, asm_stack_free((bytes_to_free), tac->loc));
     }
 
     //
-    // Return value, if any, goes in RAX or XMM0.
+    // Return value, if any and not in memory.
     //
-    Symbol *sym = stab_lookup(state->stab, call->name);
-    ICE_ASSERT(sym->tag == ST_FUNCTION);
+    if (call->dst && !return_in_memory) {
+        Register int_ret_reg[2] = { REG_RAX, REG_RDX };
+        Register flt_ret_reg[2] = { REG_XMM0, REG_XMM1 };
 
-    if (sym->type->func.ret->tag != TT_VOID) {
-        AsmOperand *result = codegen_expression(state, call->dst);
-        AsmType *restype = codegen_tac_to_asmtype(state, call->dst);
+        int reg_index = 0;
 
-        if (restype->tag == AT_DOUBLE)
-        {
-            codegen_push_instr(state, asm_mov(aoper_reg(REG_XMM0), result, restype, tac->loc));
+        ListNode *next = NULL;
+        for (ListNode *curr = int_dests.head; curr; curr = next, reg_index++) {
+            next = curr->next;
+            TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+            if (to->type->tag == AT_BYTEARRAY) {
+                codegen_copy_bytes_from_reg(state, int_ret_reg[reg_index], to->oper, to->type->array.size, tac->loc);
+            } else {
+                codegen_push_instr(state, asm_mov(aoper_reg(int_ret_reg[reg_index]), to->oper, to->type, tac->loc));
+            }
+            safe_free(to);
         }
-        else
-        {
-            codegen_push_instr(state, asm_mov(aoper_reg(REG_RAX), result, restype, tac->loc));
+
+        reg_index = 0;
+        next = NULL;
+        for (ListNode *curr = double_dests.head; curr; curr = next, reg_index++) {
+            next = curr->next;
+            TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+            if (to->type->tag == AT_BYTEARRAY) {
+                codegen_copy_bytes_from_reg(state, flt_ret_reg[reg_index], to->oper, to->type->array.size, tac->loc);
+            } else {
+                codegen_push_instr(state, asm_mov(aoper_reg(flt_ret_reg[reg_index]), to->oper, to->type, tac->loc));
+            }
+            safe_free(to);
         }
     }
 }
@@ -1081,13 +1676,13 @@ static void codegen_dbl_to_uint(CodegenState *state, TacNode *tac)
         // This algorithm avoids rounding error in the conversion by adjusting the
         // value to convert if it's over the max that can be represented in a signed long.
         //
-        codegen_push_instr(state, asm_cmp(aoper_clone(src), aoper_data(state->dbl_to_uint_ub), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_cmp(aoper_clone(src), aoper_data(state->dbl_to_uint_ub, 0), asmtype_double(), tac->loc));
         codegen_push_instr(state, asm_jumpcc(label1, ACC_AE, tac->loc));
         codegen_push_instr(state, asm_cvttsd2si(aoper_clone(src), aoper_clone(dst), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_jump(label2, tac->loc));
         codegen_push_instr(state, asm_label(label1, tac->loc));
         codegen_push_instr(state, asm_mov(aoper_clone(src), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
-        codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_data(state->dbl_to_uint_ub), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
+        codegen_push_instr(state, asm_binary(BOP_SUBTRACT, aoper_data(state->dbl_to_uint_ub, 0), aoper_reg(REG_XMM13), asmtype_double(), tac->loc));
         codegen_push_instr(state, asm_cvttsd2si(aoper_reg(REG_XMM13), aoper_clone(dst), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_mov(aoper_imm(DBL_TO_UINT_UPPER_INT), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
         codegen_push_instr(state, asm_binary(BOP_ADD, aoper_reg(REG_RAX), aoper_clone(dst), asmtype_quad(), tac->loc));
@@ -1192,9 +1787,15 @@ static void codegen_load(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_LOAD);
 
+    AsmType *type = codegen_tac_to_asmtype(state, tac->load.dst);
+
+    if (type->tag == AT_BYTEARRAY && tac->load.src->tag == TAC_VAR && tac->load.dst->tag == TAC_VAR) {
+        codegen_load_bytes(state, tac->load.src->var.name, tac->load.dst->var.name, type->array.size, tac->loc);
+        return;
+    }
+
     AsmOperand *src = codegen_expression(state, tac->load.src);
     AsmOperand *dst = codegen_expression(state, tac->load.dst);
-    AsmType *type = codegen_tac_to_asmtype(state, tac->load.dst);
 
     codegen_push_instr(state, asm_mov(src, aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
     codegen_push_instr(state, asm_mov(aoper_memory(REG_RDX, 0), dst, type, tac->loc));
@@ -1207,9 +1808,15 @@ static void codegen_store(CodegenState *state, TacNode *tac)
 {
     ICE_ASSERT(tac->tag == TAC_STORE);
 
+    AsmType *type = codegen_tac_to_asmtype(state, tac->store.src);
+
+    if (type->tag == AT_BYTEARRAY && tac->load.src->tag == TAC_VAR && tac->load.dst->tag == TAC_VAR) {
+        codegen_store_bytes(state, tac->load.src->var.name, tac->load.dst->var.name, type->array.size, tac->loc);
+        return;
+    }
+
     AsmOperand *src = codegen_expression(state, tac->store.src);
     AsmOperand *dst = codegen_expression(state, tac->store.dst);
-    AsmType *type = codegen_tac_to_asmtype(state, tac->store.src);
 
     codegen_push_instr(state, asm_mov(dst, aoper_reg(REG_RDX), asmtype_quad(), tac->loc));
     codegen_push_instr(state, asm_mov(src, aoper_memory(REG_RDX, 0), type, tac->loc));
@@ -1284,7 +1891,29 @@ static void codegen_copy_to_offset(CodegenState *state, TacNode *tac)
     AsmOperand *src = codegen_expression(state, copy->src);
     AsmType *at = codegen_tac_to_asmtype(state, copy->src);
 
-    codegen_push_instr(state, asm_mov(src, aoper_pseudomem(copy->dst, copy->offset), at, tac->loc));
+    if (at->tag == AT_BYTEARRAY) {
+        codegen_copy_bytes(state, src, aoper_pseudomem(copy->dst, copy->offset), at->array.size, tac->loc);
+    } else {
+        codegen_push_instr(state, asm_mov(src, aoper_pseudomem(copy->dst, copy->offset), at, tac->loc));
+    }
+}
+
+//
+// Generate code for copy from an aggregate
+//
+static void codegen_copy_from_offset(CodegenState *state, TacNode *tac)
+{
+    ICE_ASSERT(tac->tag == TAC_COPY_FROM_OFFSET);
+
+    TacCopyFromOffset *copy = &tac->copy_from_offset;
+    AsmOperand *dst = codegen_expression(state, copy->dst);
+    AsmType *at = codegen_tac_to_asmtype(state, copy->dst);
+
+    if (at->tag == AT_BYTEARRAY) {
+        codegen_copy_bytes(state, aoper_pseudomem(copy->src, copy->offset), dst, at->array.size, tac->loc);
+    } else {
+        codegen_push_instr(state, asm_mov(aoper_pseudomem(copy->src, copy->offset), dst, at, tac->loc));
+    }
 }
 
 //
@@ -1366,9 +1995,11 @@ static void codegen_single(CodegenState *state, TacNode *tac)
 
     case TAC_COPY_TO_OFFSET:
         codegen_copy_to_offset(state, tac);
+        break;
 
     case TAC_COPY_FROM_OFFSET:
-        ICE_NYI("codegen_single::copy-from-offset");
+        codegen_copy_from_offset(state, tac);
+        break;
 
     case TAC_PROGRAM:
         break;
@@ -1392,61 +2023,84 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
     CodegenState funcstate = nested_state(state);
     list_clear(&funcstate.code);
 
+    Symbol *sym = stab_lookup(state->stab, func->name);
+    ICE_ASSERT(sym->type->tag == TT_FUNC);
+    bool return_in_memory = check_return_in_memory(state->typetab, sym->type->func.ret);
+
     List ints;
     List floats;
     List stack;
 
-    codegen_classify_parameters(state, &func->parms, &ints, &floats, &stack);
+    codegen_classify_parameters(state, &func->parms, &ints, &floats, &stack, return_in_memory);
 
     //
     // Move parameters into local pseudoregisters.
     //
+    int reg_index = 0;
+    if (return_in_memory) {
+        codegen_push_instr(
+            &funcstate,
+            asm_mov(
+                aoper_reg(REG_RDI),
+                aoper_memory(REG_RBP, -8),
+                asmtype_quad(),
+                tac->loc
+            )
+        );
+        reg_index = 1;
+    }
 
     //
     // Integer register based parameters.
     //
     ListNode *curr = ints.head;
+    ListNode *next = NULL;
 
-    for (int i = 0; curr; i++, curr = curr->next)
+    for (int i = reg_index; curr; i++, curr = next)
     {
-        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
-        ICE_ASSERT(param_node->tag == TAC_VAR);
-        TacVar *param = &param_node->var;
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
+        Register reg = int_arg_regs[i];
 
-        Symbol *sym = stab_lookup(state->stab, param->name);
-
-        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
-        codegen_push_instr(
-            &funcstate,
-            asm_mov(
-                aoper_reg(int_arg_regs[i]),
-                sym->type->tag == TT_ARRAY ? aoper_pseudomem(param->name, 0) : aoper_pseudoreg(param->name),
-                at,
-                tac->loc));
+        if (to->type->tag == AT_BYTEARRAY) {
+            codegen_copy_bytes_from_reg(
+                state,
+                reg,
+                to->oper,
+                to->type->array.size,
+                tac->loc
+            );
+        } else {
+            codegen_push_instr(
+                &funcstate,
+                asm_mov(
+                    aoper_reg(reg),
+                    to->oper,
+                    to->type,
+                    tac->loc));
+        }
+        safe_free(to);
     }
 
     //
     // Float register based parameters.
     //
     curr = floats.head;
-    for (int i = 0; curr; i++, curr = curr->next)
+    next = NULL;
+
+    for (int i = 0; curr; i++, curr = next)
     {
-        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
-        ICE_ASSERT(param_node->tag == TAC_VAR);
-        TacVar *param = &param_node->var;
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
 
-        Symbol *sym = stab_lookup(state->stab, param->name);
-
-        ICE_ASSERT(sym->type->tag != TT_ARRAY);
-
-        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
         codegen_push_instr(
             &funcstate,
             asm_mov(
                 aoper_reg(float_arg_regs[i]),
-                aoper_pseudoreg(param->name),
-                at,
+                to->oper,
+                to->type,
                 tac->loc));
+        safe_free(to);
     }
 
     //
@@ -1454,24 +2108,31 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
     //
     int offset = 16;
     curr = stack.head;
-    for (int i = 0; curr; i++, curr = curr->next)
+    next = NULL;
+    for (int i = 0; curr; i++, curr = next)
     {
-        TacNode *param_node = CONTAINER_OF(curr, TacNode, list);
-        ICE_ASSERT(param_node->tag == TAC_VAR);
-        TacVar *param = &param_node->var;
+        next = curr->next;
+        TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
 
-        Symbol *sym = stab_lookup(state->stab, param->name);
-
-        AsmType *at = codegen_type_to_asmtype(state->typetab, sym->type);
-        codegen_push_instr(
-            &funcstate,
-            asm_mov(
+        if (to->type->tag == AT_BYTEARRAY) {
+            codegen_copy_bytes(
+                state,
                 aoper_memory(REG_RBP, offset),
-                sym->type->tag == TT_ARRAY ? aoper_pseudomem(param->name, 0) : aoper_pseudoreg(param->name),
-                at,
-                tac->loc));
-
+                to->oper,
+                to->type->array.size,
+                tac->loc
+            );
+        } else {
+            codegen_push_instr(
+                &funcstate,
+                asm_mov(
+                    aoper_memory(REG_RBP, offset),
+                    to->oper,
+                    to->type,
+                    tac->loc));
+        }
         offset += 8;
+        safe_free(to);
     }
 
     //
@@ -1539,10 +2200,15 @@ AsmNode *codegen(TacNode *tac, SymbolTable *stab, TypeTable *typetab, BackEndSym
 //
 // Convert a function symbol to a back end symbol.
 //
-static void codegen_func_sym_to_backsym(SymFunction *func, BackEndSymbol *bsym)
+static void codegen_func_sym_to_backsym(TypeTable *typetab, Type *type, SymFunction *func, BackEndSymbol *bsym)
 {
     bsym->tag = BST_FUNCTION;
     bsym->func.is_defined = func->defined;
+    bsym->func.return_on_stack = false;
+    
+    if (type_complete(typetab, type->func.ret)) {
+        check_return_in_memory(typetab, type->func.ret);
+    }
 }
 
 //
@@ -1602,10 +2268,9 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab, TypeTa
 
         BackEndSymbol *bsym = bstab_lookup(bstab, curr->key);
 
-        switch (sym->tag)
-        {
+        switch (sym->tag) {
         case ST_FUNCTION:
-            codegen_func_sym_to_backsym(&sym->func, bsym);
+            codegen_func_sym_to_backsym(typetab, sym->type, &sym->func, bsym);
             break;
         case ST_STATIC_VAR:
             codegen_static_sym_to_backsym(sym, bsym, typetab);
@@ -1615,7 +2280,6 @@ void codegen_sym_to_backsym(SymbolTable *stab, BackEndSymbolTable *bstab, TypeTa
             break;
         case ST_CONSTANT:
             codegen_static_const_to_backsym(sym, bsym, typetab);
-            break;
             break;
         }
     }

@@ -80,7 +80,7 @@ static void asm_alloc_pseudoreg(VarTable *vartab, AsmOperand **oper)
         ICE_ASSERT(sym->tag == BST_OBJECT);
         if (sym->object.is_static) {
             AsmOperand *old = *oper;
-            *oper = aoper_data(name);
+            *oper = aoper_data(name, 0);
             aoper_free(old);
             return;
         }
@@ -121,7 +121,7 @@ static void asm_alloc_pseudomem(VarTable *vartab, AsmOperand **oper)
         ICE_ASSERT(sym->tag == BST_OBJECT);
         if (sym->object.is_static) {
             AsmOperand *old = *oper;
-            *oper = aoper_data(pm->name);
+            *oper = aoper_data(pm->name, pm->offset);
             aoper_free(old);
             return;
         }
@@ -342,10 +342,12 @@ static void asm_alloc_func(VarTable *vartab, AsmNode *func)
 {
     ICE_ASSERT(func->tag == ASM_FUNC);
 
+    BackEndSymbol *bsym = bstab_lookup(vartab->bstab, func->func.name);
+
     //
     // Reset local variables for start of function
     //
-    vartab->next_offset = 0;
+    vartab->next_offset = bsym->func.return_on_stack ? -8 : 0;
 
     for (ListNode *curr = func->func.body.head; curr; curr = curr->next) {
         AsmNode *node = CONTAINER_OF(curr, AsmNode, list);
