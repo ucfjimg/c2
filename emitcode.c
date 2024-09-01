@@ -225,8 +225,7 @@ static void emit_memory(EmitState *state, AsmMemoryOperand *mem)
 //
 static void emit_data(EmitState *state, AsmDataOperand *data)
 {
-    ICE_NYI("emit_data::data");
-//    fprintf(state->out, "%s(%%rip)", name);
+    fprintf(state->out, "%s+%d(%%rip)", data->name, data->offset);
 }
 
 //

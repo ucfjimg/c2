@@ -1249,7 +1249,7 @@ static void codegen_classify_parameters(CodegenState *state, List *nodes, List *
         Type *structtype = NULL;
 
         if (parm->tag == TAC_CONST) {
-            if (parm->constant.tag == CON_FLOAT) {
+            if (parm->constant.tag != CON_FLOAT) {
                 parmtype = Scalar;
             } else {
                 parmtype = Double;
@@ -1257,7 +1257,7 @@ static void codegen_classify_parameters(CodegenState *state, List *nodes, List *
         } else if (parm->tag == TAC_VAR) {
             Symbol *sym = stab_lookup(state->stab, parm->var.name);
             if (sym->type->tag == TT_DOUBLE) {
-                parmtype = Scalar;
+                parmtype = Double;
             } else if (type_scalar(sym->type)) {
                 parmtype = Scalar;
             } else {
