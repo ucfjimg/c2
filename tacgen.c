@@ -743,7 +743,6 @@ static TacExpResult tcg_addrof(TacState *state, Expression *exp)
             //
             return expres_plain(value.deref_pointer);
 
-        
         case ER_SUB_OBJECT:
             tmp = tcg_temporary(state, type_clone(exp->type), exp->loc);
             dst = tcg_temporary(state, type_clone(exp->type), exp->loc);
@@ -755,7 +754,7 @@ static TacExpResult tcg_addrof(TacState *state, Expression *exp)
                 dst,
                 exp->loc));
 
-            return expres_deref(tac_clone_operand(dst));
+            return expres_plain(tac_clone_operand(dst));
     }
 
     ICE_ASSERT(((void)"invalid tag in tcg_addrof", false));

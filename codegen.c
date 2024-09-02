@@ -1171,10 +1171,12 @@ static void codegen_classify_struct_parameter(CodegenState *state, char *var, Cl
                 switch (cs->sc[i]) {
                     case STC_INTEGER:
                         push_typed_operand(cpstate->ints, type, oper);
+                        cpstate->nints++;
                         break;
 
                     case STC_SSE:
                         push_typed_operand(cpstate->floats, type, oper);
+                        cpstate->nfloats++;
                         break;
 
                     case STC_MEMORY:
@@ -1408,7 +1410,7 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     bool return_in_memory = false;
     
     if (call->dst) {
-        classify_return_value(state, call->dst, &int_dests, &double_dests);
+        return_in_memory = classify_return_value(state, call->dst, &int_dests, &double_dests);
     }
 
     int intreg = 0;
@@ -1439,7 +1441,7 @@ static void codegen_function_call(CodegenState *state, TacNode *tac)
     //
     ListNode *curr = ints.head;
     ListNode *next = NULL;
-    for (int i = 0; curr; i++, curr = next) {
+    for (int i = return_in_memory ? 1 : 0; curr; i++, curr = next) {
         next = curr->next;
         TypedOperand *to = CONTAINER_OF(curr, TypedOperand, list);
         Register arg_reg = int_arg_regs[i];
@@ -2207,7 +2209,7 @@ static void codegen_func_sym_to_backsym(TypeTable *typetab, Type *type, SymFunct
     bsym->func.return_on_stack = false;
     
     if (type_complete(typetab, type->func.ret)) {
-        check_return_in_memory(typetab, type->func.ret);
+        bsym->func.return_on_stack = check_return_in_memory(typetab, type->func.ret);
     }
 }
 
