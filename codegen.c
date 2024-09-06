@@ -980,7 +980,7 @@ static void codegen_return(CodegenState *state, TacNode *tac)
 
         if (return_in_memory) {
             codegen_push_instr(state, asm_mov(aoper_memory(REG_RBP, -8), aoper_reg(REG_RAX), asmtype_quad(), tac->loc));
-            codegen_copy_bytes(state, aoper_memory(REG_RAX, 0), retval, rettype->array.size, tac->loc); 
+            codegen_copy_bytes(state, retval, aoper_memory(REG_RAX, 0), rettype->array.size, tac->loc); 
         } else {
             int reg_index = 0;
 
@@ -2066,7 +2066,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 
         if (to->type->tag == AT_BYTEARRAY) {
             codegen_copy_bytes_from_reg(
-                state,
+                &funcstate,
                 reg,
                 to->oper,
                 to->type->array.size,
@@ -2118,7 +2118,7 @@ static void codegen_funcdef(CodegenState *state, TacNode *tac)
 
         if (to->type->tag == AT_BYTEARRAY) {
             codegen_copy_bytes(
-                state,
+                &funcstate,
                 aoper_memory(REG_RBP, offset),
                 to->oper,
                 to->type->array.size,
