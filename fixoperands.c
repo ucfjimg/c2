@@ -305,23 +305,6 @@ static void ast_fixup_binary_arith(List *code, AsmNode *binopnode)
 }
 
 //
-// Fix a shift operator.
-//
-// - shift count must be in CL register.
-//
-static void asm_fixop_shift(List *code, AsmNode *binopnode)
-{
-    ICE_ASSERT(binopnode->tag == ASM_BINARY);
-    AsmBinary *binop = &binopnode->binary;
-
-    AsmType *at = asmtype_clone(binop->type);
-    list_push_back(code, &asm_mov(aoper_clone(binop->src), aoper_reg(REG_RCX), at, binopnode->loc)->list);
-
-    binop->src = aoper_reg(REG_RCX);
-    list_push_back(code, &binopnode->list);
-}
-
-//
 // Fix floating point arith operators.
 //
 // - destination must be a register.
@@ -388,12 +371,6 @@ static void asm_fixop_binary(List *code, AsmNode *binopnode)
 
             case BOP_MULTIPLY:
                 asm_fixop_imul(code, binopnode);
-                break;
-
-            case BOP_LSHIFT:
-            case BOP_RSHIFT:
-            case BOP_URSHIFT:
-                asm_fixop_shift(code, binopnode);
                 break;
 
             default:
