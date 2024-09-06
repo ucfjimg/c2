@@ -1159,7 +1159,7 @@ static void codegen_classify_struct_parameter(CodegenState *state, char *var, Cl
             }
         }
 
-        if (cpstate->nints + tent_ints <= cpstate->intregs && tent_floats <= float_arg_reg_count) {
+        if (cpstate->nints + tent_ints <= cpstate->intregs && cpstate->nfloats + tent_floats <= float_arg_reg_count) {
             // 
             // Fits in registers, add to lists.
             //
