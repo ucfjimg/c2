@@ -1781,7 +1781,7 @@ static void ast_check_static_init(TypeCheckState *state, Type *type, List *init,
         }
     }
 
-    if (type->tag == TT_STRUCT && init->head == NULL) {
+    if (init->head == NULL) {
         StaticInitializer *zeroes = sinit_make_zero(type_size(state->typetab, type));
         list_push_back(init, &zeroes->list);
     }
@@ -2188,7 +2188,7 @@ static void ast_check_struct_decl(TypeCheckState *state, Declaration *decl)
             struct_align = align;
         }
 
-        size_t member_offset = align_up(struct_size, struct_align);
+        size_t member_offset = align_up(struct_size, align);
 
         TypetabStructMember *tsm = ttab_struct_member(dsm->membname, type_clone(dsm->type), member_offset);
         list_push_back(&memb, &tsm->list);
