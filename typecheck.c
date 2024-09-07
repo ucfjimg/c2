@@ -1779,7 +1779,12 @@ static void ast_check_static_init(TypeCheckState *state, Type *type, List *init,
             StaticInitializer *zeroes = sinit_make_zero(decl_bytes - init_bytes);
             list_push_back(init, &zeroes->list);
         }
-    } 
+    }
+
+    if (type->tag == TT_STRUCT && init->head == NULL) {
+        StaticInitializer *zeroes = sinit_make_zero(type_size(state->typetab, type));
+        list_push_back(init, &zeroes->list);
+    }
 }
 
 //
@@ -2104,7 +2109,7 @@ static void ast_check_var_decl(TypeCheckState *state, Declaration *decl, bool fi
         }
     } else if (var->storage_class == SC_STATIC) {
         if (var->init == NULL) {
-            ast_check_static_init(state, type, &init, init_scalar, decl->loc);
+            ast_check_static_init(state, type, &init, init_scalar, decl->loc);            
             sym_update_static_var(sym, type, SIV_INIT, init, false, decl->loc);
         } else {
             init_scalar = ast_flatten_compound_init_for_static(state, var->init, var->type, &init, decl->loc);

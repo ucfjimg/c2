@@ -649,7 +649,7 @@ static void ast_resolve_function(ResolveState *state, Declaration *decl, bool gl
     }
 
     //
-    // Resolve paramerter types.
+    // Resolve parameter types.
     //
     for (ListNode *curr = func->type->func.parms.head; curr; curr= curr->next) {
         TypeFuncParam *tfp = CONTAINER_OF(curr, TypeFuncParam, list);

@@ -739,38 +739,6 @@ void emit_static_const(EmitState *state, AsmStaticConst *cn)
             fprintf(state->out, "        .zero\t%zd\n", si->bytes);
             break;
     }
-
-
-
-
-
-    #ifdef TODO
-    BackEndSymbol *sym = bstab_lookup(state->bstab, cn->name);
-    ICE_ASSERT(sym->tag == BST_OBJECT);
-    int size = asmtype_size(sym->object.type);
-
-
-    bool is_quad = size == 8;
-
-
-    fprintf(state->out, "        .section\t.rodata\n");
-    if (sym->object.type->tag == AT_DOUBLE) {
-        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
-        fprintf(state->out, "%s:\n", cn->name);
-        fprintf(state->out, "        .double\t%.20g\n", cn->init.floatval); 
-    } else if (cn->init.intval.value == 0) {
-        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
-        fprintf(state->out, "%s:\n", cn->name);
-        fprintf(state->out, "        .zero\t%d\n", size);
-    } else {
-        fprintf(state->out, "        .balign\t%d\n", cn->alignment);
-        fprintf(state->out, "%s:\n", cn->name);
-        fprintf(state->out, "        .%s\t%lu\n", 
-            is_quad ? "quad" : "long",
-            is_quad ? cn->init.intval.value : (cn->init.intval.value & 0xffffffff));
-    }
-
-    #endif
     fprintf(state->out, "        .text\n");
 }
 
